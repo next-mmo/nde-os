@@ -192,15 +192,15 @@ See [`docs/plugin-spec.md`](docs/plugin-spec.md) for the full spec.
 
 ## Roadmap
 
-| Phase | Status     | Description                                             |
-| ----- | ---------- | ------------------------------------------------------- |
-| 0     | ✅ Done    | Sandbox + uv + REST API + plugins                       |
-| 0.5   | 🔄 Current | Desktop migration (Tauri 2 + Svelte 5 + shadcn-svelte)  |
-| 0.6   | 📋 Planned | License server (Axum + Ed25519)                         |
-| 1     | 📋 Planned | Agent runtime (loop, LLM drivers, tools)                |
-| 2     | 📋 Planned | Memory & tools (SQLite, MCP, 20+ built-in)              |
-| 3     | 📋 Planned | Workflows & orchestration (DAG, sub-agents)             |
-| 4     | 📋 Planned | Channels & autonomy (Telegram, Discord, cron)           |
+| Phase | Status     | Description                                            |
+| ----- | ---------- | ------------------------------------------------------ |
+| 0     | ✅ Done    | Sandbox + uv + REST API + plugins                      |
+| 0.5   | 🔄 partial | Desktop migration (Tauri 2 + Svelte 5 + shadcn-svelte) |
+| 0.6   | 📋 Planned | License server (Axum + Ed25519)                        |
+| 1     | 📋 current | Agent runtime (loop, LLM drivers, tools)               |
+| 2     | 📋 current | Memory & tools (SQLite, MCP, 20+ built-in)             |
+| 3     | 📋 current | Workflows & orchestration (DAG, sub-agents)            |
+| 4     | 📋 current | Channels & autonomy (Telegram, Discord, cron)          |
 
 See [`docs/current-plan.md`](docs/current-plan.md) and [`docs/future-plan.md`](docs/future-plan.md) for details.
 
@@ -232,14 +232,14 @@ cargo build      # Build the backend
 
 ## Tech Stack
 
-| Component      | Technology                               |
-| -------------- | ---------------------------------------- |
-| Backend        | Rust (tiny_http, serde, anyhow)          |
-| Web Desktop    | Svelte 5, TypeScript, Vite, SCSS         |
-| Sandboxing     | Custom filesystem jail (no Docker)       |
-| Python envs    | uv (Rust-based, 10–100× faster than pip) |
-| API spec       | OpenAPI 3.0.3                            |
-| Desktop        | Tauri 2                                  |
+| Component   | Technology                               |
+| ----------- | ---------------------------------------- |
+| Backend     | Rust (tiny_http, serde, anyhow)          |
+| Web Desktop | Svelte 5, TypeScript, Vite, SCSS         |
+| Sandboxing  | Custom filesystem jail (no Docker)       |
+| Python envs | uv (Rust-based, 10–100× faster than pip) |
+| API spec    | OpenAPI 3.0.3                            |
+| Desktop     | Tauri 2                                  |
 
 ---
 

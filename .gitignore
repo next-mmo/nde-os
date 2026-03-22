@@ -9,3 +9,5 @@ desktop/check-errors.txt
 target-codex-build/
 target-codex-build-serial
 target-buildcheck
+models/*.gguf
+.env
