@@ -4,11 +4,38 @@
   import { elevation } from "🍎/actions";
   import { apps_config } from "🍎/configs/apps/apps-config";
   import DockItem from "🍎/components/Dock/DockItem.svelte";
+  import { desktop } from "🍎/state/desktop.svelte";
 
   let mouseX = $state<number | null>(null);
+
+  const dockApps = $derived.by(() => {
+    const ObjectKeys = Object.keys(apps_config) as (keyof typeof apps_config)[];
+    const apps = ObjectKeys.map(id => ({ app_id: id as string, isStatic: true }));
+    const existing = new Set(apps.map(a => a.app_id));
+
+    if (desktop.sessions) {
+      for (const session of desktop.sessions) {
+        if (!existing.has(session.app_id) && session.app_id !== "browser") {
+          apps.push({ app_id: session.app_id, isStatic: false });
+          existing.add(session.app_id);
+        }
+      }
+    }
+
+    if (desktop.windows) {
+      for (const win of desktop.windows) {
+        if (!existing.has(win.app_id) && win.app_id !== "browser") {
+          apps.push({ app_id: win.app_id as string, isStatic: false });
+          existing.add(win.app_id);
+        }
+      }
+    }
+
+    return apps;
+  });
 </script>
 
-<section class="dock-shell" use:elevation={"dock"}>
+<section class="dock-shell" class:auto-hide={desktop.dock_auto_hide} use:elevation={"dock"}>
   <div
     class="dock"
     role="toolbar"
@@ -17,11 +44,11 @@
     onmousemove={(event) => (mouseX = event.clientX)}
     onmouseleave={() => (mouseX = null)}
   >
-    {#each Object.entries(apps_config) as [app_id, config]}
-      {#if config.dock_breaks_before}
+    {#each dockApps as { app_id } (app_id)}
+      {#if apps_config[app_id as keyof typeof apps_config]?.dock_breaks_before}
         <div class="divider" aria-hidden="true"></div>
       {/if}
-      <DockItem app_id={app_id} mouse_x={mouseX} />
+      <DockItem {app_id} mouse_x={mouseX} />
     {/each}
   </div>
 </section>
@@ -32,6 +59,20 @@
     justify-content: center;
     padding: 0.55rem 0 0.95rem;
     pointer-events: none;
+    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .dock-shell.auto-hide {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 1000;
+    transform: translateY(calc(100% - 10px));
+  }
+
+  .dock-shell.auto-hide:hover, .dock-shell.auto-hide:focus-within {
+    transform: translateY(0);
   }
 
   .dock {

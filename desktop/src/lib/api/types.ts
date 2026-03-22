@@ -49,6 +49,27 @@ export interface DiskUsage {
   human_readable: string;
 }
 
+export type SourceType = 'folder' | 'zip' | 'git_url';
+
+export interface StoreUploadRequest {
+  source_type: SourceType;
+  source_path?: string;
+  git_url?: string;
+}
+
+export interface ValidationError {
+  field: string;
+  message: string;
+}
+
+export interface StoreUploadResult {
+  accepted: boolean;
+  app_id?: string;
+  app_name?: string;
+  validation_errors: ValidationError[];
+  install_log: string[];
+}
+
 export interface LaunchResult {
   pid: number;
   port: number;
@@ -63,6 +84,16 @@ export interface SystemInfo {
   base_dir: string;
   total_apps: number;
   running_apps: number;
+}
+
+export interface ResourceUsage {
+  memory_used_bytes: number;
+  memory_total_bytes: number;
+  memory_percent: number;
+  disk_used_bytes: number;
+  disk_total_bytes: number;
+  disk_percent: number;
+  disk_mount_point: string;
 }
 
 export interface LogEntry {

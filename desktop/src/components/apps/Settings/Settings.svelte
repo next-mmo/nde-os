@@ -1,9 +1,41 @@
 <svelte:options runes={true} />
 
 <script lang="ts">
-  import { healthStatus, lastRefreshAt, refreshAll, systemInfo } from "$lib/stores/state";
+  import {
+    healthStatus,
+    lastRefreshAt,
+    refreshAll,
+    resourceUsage,
+    systemInfo,
+  } from "$lib/stores/state";
 
   let refreshing = $state(false);
+
+  const displayVersion = (value: string | null | undefined) => value?.trim() || "Not detected";
+
+  function formatBytes(bytes: number): string {
+    if (bytes >= 1024 ** 3) {
+      return `${(bytes / 1024 ** 3).toFixed(1)} GB`;
+    }
+
+    if (bytes >= 1024 ** 2) {
+      return `${(bytes / 1024 ** 2).toFixed(1)} MB`;
+    }
+
+    return `${Math.round(bytes / 1024)} KB`;
+  }
+
+  function usageTone(percent: number): "safe" | "warning" | "danger" {
+    if (percent >= 85) {
+      return "danger";
+    }
+
+    if (percent >= 70) {
+      return "warning";
+    }
+
+    return "safe";
+  }
 
   async function handleRefresh() {
     refreshing = true;
@@ -58,8 +90,39 @@
         <h3>uv</h3>
         <dl>
           <div><dt>Path</dt><dd>{$systemInfo.uv.uv_path}</dd></div>
-          <div><dt>Version</dt><dd>{$systemInfo.uv.uv_version}</dd></div>
+          <div><dt>Version</dt><dd>{displayVersion($systemInfo.uv.uv_version)}</dd></div>
         </dl>
+      </article>
+
+      <article class="card">
+        <h3>Live resources</h3>
+        {#if $resourceUsage}
+          <div class="resource-list">
+            <section class="resource-item" data-resource-card="memory">
+              <div class="resource-heading">
+                <span>Memory</span>
+                <strong>{$resourceUsage.memory_percent}%</strong>
+              </div>
+              <div class={`resource-bar ${usageTone($resourceUsage.memory_percent)}`} style:--fill={`${$resourceUsage.memory_percent}%`}>
+                <span></span>
+              </div>
+              <p>{formatBytes($resourceUsage.memory_used_bytes)} of {formatBytes($resourceUsage.memory_total_bytes)} used</p>
+            </section>
+
+            <section class="resource-item" data-resource-card="disk">
+              <div class="resource-heading">
+                <span>Disk</span>
+                <strong>{$resourceUsage.disk_percent}%</strong>
+              </div>
+              <div class={`resource-bar ${usageTone($resourceUsage.disk_percent)}`} style:--fill={`${$resourceUsage.disk_percent}%`}>
+                <span></span>
+              </div>
+              <p>{formatBytes($resourceUsage.disk_used_bytes)} of {formatBytes($resourceUsage.disk_total_bytes)} used on {$resourceUsage.disk_mount_point}</p>
+            </section>
+          </div>
+        {:else}
+          <div class="loading">Loading live resource usage...</div>
+        {/if}
       </article>
     </div>
   {:else}
@@ -107,13 +170,13 @@
 
   .grid {
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
     gap: 0.85rem;
   }
 
   .details {
     display: grid;
-    grid-template-columns: 1.2fr 1fr;
+    grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr));
     gap: 0.85rem;
   }
 
@@ -160,14 +223,61 @@
     word-break: break-word;
   }
 
-  .loading {
-    color: var(--system-color-text-muted);
+  .resource-list {
+    margin-top: 1rem;
+    display: grid;
+    gap: 0.85rem;
   }
 
-  @media (max-width: 900px) {
-    .grid,
-    .details {
-      grid-template-columns: 1fr;
-    }
+  .resource-item {
+    display: grid;
+    gap: 0.45rem;
+  }
+
+  .resource-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+  }
+
+  .resource-heading span {
+    font-size: 0.82rem;
+    font-weight: 600;
+  }
+
+  .resource-heading strong {
+    font-size: 1.15rem;
+  }
+
+  .resource-bar {
+    --fill: 0%;
+
+    height: 0.5rem;
+    overflow: hidden;
+    border-radius: 999px;
+    background-color: hsla(var(--system-color-dark-hsl) / 0.08);
+  }
+
+  .resource-bar span {
+    display: block;
+    width: var(--fill);
+    height: 100%;
+    border-radius: inherit;
+    background: linear-gradient(90deg, var(--system-color-success), var(--system-color-primary));
+  }
+
+  .resource-bar.warning span {
+    background: linear-gradient(90deg, var(--system-color-warning), var(--system-color-primary));
+  }
+
+  .resource-bar.danger span {
+    background: linear-gradient(90deg, var(--system-color-warning), var(--system-color-danger));
+  }
+
+  .resource-item p,
+  .loading {
+    margin: 0;
+    color: var(--system-color-text-muted);
   }
 </style>

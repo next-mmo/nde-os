@@ -1,11 +1,13 @@
 import type {
   AppManifest,
   InstalledApp,
+  ResourceUsage,
   SystemInfo,
   SandboxVerifyResult,
   DiskUsage,
   LaunchResult,
 } from "./types";
+import type { StoreUploadRequest, StoreUploadResult } from "./types";
 
 const API_BASE = "http://localhost:8080";
 
@@ -33,6 +35,7 @@ async function httpFallback<T>(command: string, args?: Record<string, unknown>):
   const routeMap: Record<string, { method: string; url: string; body?: unknown }> = {
     health_check:    { method: "GET",    url: "/api/health" },
     get_system_info: { method: "GET",    url: "/api/system" },
+    get_resource_usage: { method: "GET", url: "/api/system/resources" },
     get_catalog:     { method: "GET",    url: "/api/catalog" },
     list_apps:       { method: "GET",    url: "/api/apps" },
     get_app:         { method: "GET",    url: `/api/apps/${appId}` },
@@ -42,6 +45,7 @@ async function httpFallback<T>(command: string, args?: Record<string, unknown>):
     stop_app:        { method: "POST",   url: `/api/apps/${appId}/stop` },
     verify_sandbox:  { method: "GET",    url: `/api/sandbox/${appId}/verify` },
     get_disk_usage:  { method: "GET",    url: `/api/sandbox/${appId}/disk` },
+    upload_app:      { method: "POST",   url: `/api/store/upload`, body: args?.req },
   };
 
   const route = routeMap[command];
@@ -60,6 +64,10 @@ async function httpFallback<T>(command: string, args?: Record<string, unknown>):
   const json = await res.json();
 
   if (!json.success) {
+    if (command === "upload_app" && json.data) {
+      // Return the StoreUploadResult even if backend returns 400 for validation details.
+      return json.data as T;
+    }
     throw new Error(json.message || "API error");
   }
 
@@ -74,6 +82,10 @@ export async function healthCheck(): Promise<string> {
 
 export async function getSystemInfo(): Promise<SystemInfo> {
   return smartInvoke<SystemInfo>("get_system_info");
+}
+
+export async function getResourceUsage(): Promise<ResourceUsage> {
+  return smartInvoke<ResourceUsage>("get_resource_usage");
 }
 
 // ── Catalog ──
@@ -119,4 +131,8 @@ export async function verifySandbox(appId: string): Promise<SandboxVerifyResult>
 
 export async function getDiskUsage(appId: string): Promise<DiskUsage> {
   return smartInvoke<DiskUsage>("get_disk_usage", { appId });
+}
+
+export async function uploadApp(req: StoreUploadRequest): Promise<StoreUploadResult> {
+  return smartInvoke<StoreUploadResult>("upload_app", { req });
 }

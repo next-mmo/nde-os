@@ -2,12 +2,13 @@
 
 <script lang="ts">
   import { catalogCount, healthStatus, runningCount } from "$lib/stores/state";
-  import { desktop, toggleTheme } from "🍎/state/desktop.svelte";
+  import { desktop, toggleTheme, toggleDockAutoHide } from "🍎/state/desktop.svelte";
   import { click_outside, elevation } from "🍎/actions";
 
   let visible = $state(false);
 
   const isDark = $derived(desktop.theme === "dark");
+  const isDockAutoHide = $derived(desktop.dock_auto_hide);
 
   function show() { visible = true; }
   function hide() { visible = false; }
@@ -42,13 +43,20 @@
         </div>
       </div>
 
-      <!-- Dark Mode + Theme -->
+      <!-- Settings Row: Dark Mode + Auto Hide -->
       <div class="ac-surface row">
-        <button class="ac-tile clickable" onclick={toggleTheme}>
+        <button class="ac-tile clickable flex-half" onclick={toggleTheme}>
           <span class="toggle-icon" class:filled={isDark}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M21 12.79A9 9 0 1 1 11.21 3a7 7 0 0 0 9.79 9.79z"/></svg>
           </span>
           <span class="tile-text">Dark Mode</span>
+        </button>
+
+        <button class="ac-tile clickable flex-half" onclick={toggleDockAutoHide}>
+          <span class="toggle-icon" class:filled={isDockAutoHide}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M20 3H4c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2Zm0 16H4V5h16v14Zm-4-4h4v2h-4v-2Zm-6 0h4v2h-4v-2ZM4 15h4v2H4v-2Z"/></svg>
+          </span>
+          <span class="tile-text">Auto-hide</span>
         </button>
       </div>
 
@@ -195,6 +203,10 @@
     border-radius: 0.5rem;
     padding: 0.3rem;
     transition: background-color 120ms ease;
+  }
+
+  .flex-half {
+    flex: 1 1 50%;
   }
 
   .clickable:hover {

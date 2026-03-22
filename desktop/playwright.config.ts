@@ -49,7 +49,7 @@ export default defineConfig({
       },
     },
     {
-      command: "npm run dev",
+      command: "pnpm dev",
       port: 5173,
       reuseExistingServer: false,
       timeout: 60000,

@@ -12,7 +12,7 @@
 use anyhow::{anyhow, Context, Result};
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output, Stdio};
+use std::process::Command;
 
 /// UV environment for a single app.
 #[derive(Debug, Clone)]
@@ -308,9 +308,24 @@ impl UvEnv {
 
     /// Get uv version string
     pub fn uv_version(&self) -> Option<String> {
-        self.uv_cmd(&["version"]).ok()
-            .and_then(|o| String::from_utf8(o.stdout).ok())
-            .map(|s| s.trim().to_string())
+        let output = Command::new(&self.uv_bin)
+            .arg("--version")
+            .output()
+            .ok()?;
+
+        if !output.status.success() {
+            return None;
+        }
+
+        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        let version = if !stdout.is_empty() { stdout } else { stderr };
+
+        if version.is_empty() {
+            None
+        } else {
+            Some(version)
+        }
     }
 
     /// Check if venv exists

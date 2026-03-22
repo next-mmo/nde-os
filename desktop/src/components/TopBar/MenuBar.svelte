@@ -3,7 +3,7 @@
 <script lang="ts">
   import { click_outside, elevation } from "🍎/actions";
   import { menubar_menus, setActiveMenu, clearActiveMenu, type MenuSection } from "🍎/state/menubar.svelte";
-  import { activeWindow, toggleLaunchpad, toggleTheme, desktop, selectLauncherSection } from "🍎/state/desktop.svelte";
+  import { activeWindow, toggleLaunchpad, toggleTheme, desktop, selectLauncherSection, openStaticApp, openGenericBrowserWindow } from "🍎/state/desktop.svelte";
   import Menu from "./Menu.svelte";
 
   const title = $derived(activeWindow()?.title ?? "AI Launcher");
@@ -11,9 +11,9 @@
   const apple_menu: MenuSection = {
     title: "",
     menu: {
-      "about-this-mac": { title: "About This Mac", action: () => selectLauncherSection("server") },
-      "system-preferences": { title: "System Settings...", breakAfter: true, action: () => selectLauncherSection("server") },
-      "app-store": { title: "App Store...", action: () => selectLauncherSection("catalog"), breakAfter: true },
+      "about-this-mac": { title: "About This Mac", action: () => openStaticApp("settings") },
+      "system-preferences": { title: "System Settings...", breakAfter: true, action: () => openStaticApp("settings") },
+      "app-store": { title: "App Store...", action: () => openStaticApp("app-store"), breakAfter: true },
       "force-quit": { title: "Force Quit...", disabled: true, breakAfter: true },
       "sleep": { title: "Sleep", disabled: true },
       "restart": { title: "Restart...", disabled: true },
@@ -66,7 +66,7 @@
       title: "Help",
       menu: {
         "launcher-help": { title: "AI Launcher Help", disabled: true, breakAfter: true },
-        "swagger-ui": { title: "Open API Docs", action: () => window.open("http://localhost:8080/swagger-ui/", "_blank") },
+        "swagger-ui": { title: "Open API Docs", action: () => openGenericBrowserWindow("http://localhost:8080/swagger-ui/", "Open API Docs") },
       },
     },
   };

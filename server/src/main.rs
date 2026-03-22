@@ -47,6 +47,7 @@ fn route(req: &mut Request, mgr: &AppManager) -> tiny_http::Response<std::io::Cu
         }
         (Method::Get, "/api/health") => return handlers::health(),
         (Method::Get, "/api/system") => return handlers::system_info(mgr),
+        (Method::Get, "/api/system/resources") => return handlers::system_resources(mgr),
         (Method::Get, "/api/catalog") => return handlers::catalog(mgr),
         (Method::Get, "/api/apps") => return handlers::list_apps(mgr),
         (Method::Post, "/api/apps") => return handlers::install_app(req, mgr),
@@ -100,6 +101,7 @@ fn main() {
     println!("  Endpoints:");
     println!("    GET    /api/health");
     println!("    GET    /api/system");
+    println!("    GET    /api/system/resources");
     println!("    GET    /api/catalog");
     println!("    GET    /api/apps");
     println!("    POST   /api/apps");

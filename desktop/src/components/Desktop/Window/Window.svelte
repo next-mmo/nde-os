@@ -111,17 +111,8 @@
     if (!windowEl) return;
     if (window.fullscreen) {
       draggingEnabled = false;
-      previousTransform = windowEl.style.transform;
-      windowEl.style.transform = "translate(0px, 0px)";
-      windowEl.style.width = "calc(100vw - 48px)";
-      windowEl.style.height = "calc(100vh - 126px)";
     } else {
       draggingEnabled = true;
-      if (previousTransform) {
-        windowEl.style.transform = previousTransform;
-      }
-      windowEl.style.width = `${window.width}px`;
-      windowEl.style.height = `${window.height}px`;
     }
   });
 
@@ -142,7 +133,7 @@
   style:width={`${window.width}px`}
   style:height={`${window.height}px`}
   style:z-index={window.z_index}
-  onclick={() => focusWindow(window.id)}
+  onpointerdowncapture={() => focusWindow(window.id)}
   onkeydown={(event: KeyboardEvent) => {
     if (event.key === "Enter" || event.key === " ") {
       focusWindow(window.id);
@@ -210,8 +201,11 @@
   }
 
   .window.fullscreen {
-    top: 0;
-    left: 0;
+    top: 24px !important;
+    left: 24px !important;
+    width: calc(100vw - 48px) !important;
+    height: calc(100vh - 126px) !important;
+    transform: none !important;
   }
 
   .window-chrome {

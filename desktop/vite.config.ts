@@ -1,11 +1,13 @@
 import { svelte } from "@sveltejs/vite-plugin-svelte";
 import tailwindcss from "@tailwindcss/vite";
 import { defineConfig } from "vite";
+import { codeInspectorPlugin } from "code-inspector-plugin";
 
 export default defineConfig({
   plugins: [
     svelte(),
     tailwindcss(),
+    codeInspectorPlugin({ bundler: "vite" }),
   ],
   resolve: {
     alias: {

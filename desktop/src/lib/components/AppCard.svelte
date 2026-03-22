@@ -16,41 +16,45 @@
 
   let { app, installed }: Props = $props();
 
-  let loading = $state(false);
-  let error = $state("");
+  import { createMutation } from "@tanstack/svelte-query";
+
+  const installMutation = createMutation(() => ({ mutationFn: () => installApp(app) }));
+  const launchMutation = createMutation(() => ({ mutationFn: () => launchApp(app.id) }));
+  const stopMutation = createMutation(() => ({ mutationFn: () => stopApp(app.id) }));
+  const uninstallMutation = createMutation(() => ({ mutationFn: () => uninstallApp(app.id) }));
+
+  const loading = $derived(
+    installMutation.isPending || 
+    launchMutation.isPending || 
+    stopMutation.isPending || 
+    uninstallMutation.isPending
+  );
+
+  const errorMsg = $derived.by(() => {
+    const err = installMutation.error || launchMutation.error || stopMutation.error || uninstallMutation.error;
+    return err ? String(err) : "";
+  });
 
   const icon = $derived(app.icon || ICONS[app.id] || "📦");
   const status = $derived(installed?.status.state ?? "NotInstalled");
   const isRunning = $derived(status === "Running");
   const isInstalled = $derived(status === "Installed" || isRunning);
 
-  async function handleInstall() {
-    loading = true; error = "";
-    try { await installApp(app); }
-    catch (e) { error = String(e); }
-    finally { loading = false; }
+  function handleInstall() {
+    installMutation.mutate();
   }
 
-  async function handleLaunch() {
-    loading = true; error = "";
-    try { await launchApp(app.id); }
-    catch (e) { error = String(e); }
-    finally { loading = false; }
+  function handleLaunch() {
+    launchMutation.mutate();
   }
 
-  async function handleStop() {
-    loading = true; error = "";
-    try { await stopApp(app.id); }
-    catch (e) { error = String(e); }
-    finally { loading = false; }
+  function handleStop() {
+    stopMutation.mutate();
   }
 
-  async function handleUninstall() {
+  function handleUninstall() {
     if (!confirm(`Uninstall "${app.name}"? This removes all data.`)) return;
-    loading = true; error = "";
-    try { await uninstallApp(app.id); }
-    catch (e) { error = String(e); }
-    finally { loading = false; }
+    uninstallMutation.mutate();
   }
 
   async function handleOpen() {
@@ -88,8 +92,8 @@
     <span class="tag tag-size">{app.disk_size}</span>
   </div>
 
-  {#if error}
-    <div class="error">{error}</div>
+  {#if errorMsg}
+    <div class="error">{errorMsg}</div>
   {/if}
 
   <div class="actions">

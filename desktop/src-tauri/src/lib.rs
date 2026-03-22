@@ -23,6 +23,7 @@ pub fn run() {
     let app_state = AppState::new(base_dir).expect("Failed to initialize AppState");
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
         .setup(|app| {
             if cfg!(debug_assertions) {
@@ -39,6 +40,7 @@ pub fn run() {
             // system
             commands::system::health_check,
             commands::system::get_system_info,
+            commands::system::get_resource_usage,
             // catalog
             commands::catalog::get_catalog,
             // apps
@@ -46,6 +48,7 @@ pub fn run() {
             commands::apps::get_app,
             commands::apps::install_app,
             commands::apps::uninstall_app,
+            commands::apps::upload_app,
             // lifecycle
             commands::lifecycle::launch_app,
             commands::lifecycle::stop_app,

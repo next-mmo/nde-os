@@ -1,13 +1,17 @@
 <svelte:options runes={true} />
 
 <script lang="ts">
+  import { createMutation } from "@tanstack/svelte-query";
   import {
     installAndFocusCatalog,
     openSessionInNewOsWindow,
     revealOrLaunchManifest,
     stopManifest,
+    type OpenTarget,
   } from "$lib/session-actions";
   import type { AppManifest, InstalledApp } from "$lib/api/types";
+  import { uploadApp } from "$lib/api/backend";
+  import { open } from "@tauri-apps/plugin-dialog";
   import {
     catalog,
     catalogCount,
@@ -33,12 +37,27 @@
     selectLauncherSection,
     selectManifest,
     syncSessionsFromInstalled,
+    toggleDefaultSessionMode,
     type LauncherSection,
   } from "🍎/state/desktop.svelte";
 
-  let workingAppId = $state<string | null>(null);
   let visibleLimit = $state(12);
-  let catalogLayout = $state<"grid" | "list">("grid");
+  function getSavedCatalogLayout(): "grid" | "list" {
+    try {
+      const saved = localStorage.getItem("ai-launcher:catalog-layout");
+      if (saved === "grid" || saved === "list") return saved;
+    } catch {}
+    return "grid";
+  }
+
+  let catalogLayout = $state<"grid" | "list">(getSavedCatalogLayout());
+
+  function setCatalogLayout(layout: "grid" | "list") {
+    catalogLayout = layout;
+    try {
+      localStorage.setItem("ai-launcher:catalog-layout", layout);
+    } catch {}
+  }
 
   const storeGradients = [
     "linear-gradient(160deg, hsl(215 100% 58%), hsl(191 86% 48%) 58%, hsl(171 77% 42%))",
@@ -54,6 +73,53 @@
     { id: "running", label: "Running" },
     { id: "server", label: "Server & System" },
   ];
+
+  type PendingAction =
+    | "install"
+    | "launch-dashboard"
+    | "launch-window"
+    | "stop"
+    | "uninstall";
+
+  const installMutation = createMutation(() => ({
+    mutationKey: ["launcher", "install"],
+    mutationFn: async (app: AppManifest) => {
+      await installAndFocusCatalog(app);
+      return app.id;
+    },
+  }));
+
+  const launchMutation = createMutation(() => ({
+    mutationKey: ["launcher", "launch"],
+    mutationFn: async ({
+      app,
+      installed,
+      target,
+    }: {
+      app: AppManifest;
+      installed: InstalledApp | null;
+      target: OpenTarget;
+    }) => {
+      await revealOrLaunchManifest(app, installed, target);
+      return { appId: app.id, target };
+    },
+  }));
+
+  const stopMutation = createMutation(() => ({
+    mutationKey: ["launcher", "stop"],
+    mutationFn: async (installedApp: InstalledApp) => {
+      await stopManifest(installedApp);
+      return installedApp.manifest.id;
+    },
+  }));
+
+  const uninstallMutation = createMutation(() => ({
+    mutationKey: ["launcher", "uninstall"],
+    mutationFn: async (app: AppManifest) => {
+      await uninstallApp(app.id);
+      return app.id;
+    },
+  }));
 
   $effect(() => {
     syncSessionsFromInstalled($installed);
@@ -87,6 +153,7 @@
   const selectedInstalled = $derived(selectedManifest ? $installedMap[selectedManifest.id] ?? null : null);
   const sessions = $derived(launcherRunningSessions());
   const quickCatalog = $derived($catalog.slice(0, 4));
+  const displayVersion = (value: string | null | undefined) => value?.trim() || "Not detected";
 
   function appStatus(app: AppManifest) {
     const installedApp = $installedMap[app.id];
@@ -100,41 +167,32 @@
   }
 
   async function launchManifest(app: AppManifest, target: "embedded" | "windowed") {
-    const installedApp = $installedMap[app.id] ?? null;
-    workingAppId = app.id;
     try {
-      await revealOrLaunchManifest(app, installedApp, target);
+      await launchMutation.mutateAsync({
+        app,
+        installed: $installedMap[app.id] ?? null,
+        target,
+      });
       selectManifest(app.id);
-    } finally {
-      workingAppId = null;
-    }
+    } catch {}
   }
 
   async function installManifest(app: AppManifest) {
-    workingAppId = app.id;
     try {
-      await installAndFocusCatalog(app);
-    } finally {
-      workingAppId = null;
-    }
+      await installMutation.mutateAsync(app);
+    } catch {}
   }
 
   async function stopInstalledApp(installedApp: InstalledApp) {
-    workingAppId = installedApp.manifest.id;
     try {
-      await stopManifest(installedApp);
-    } finally {
-      workingAppId = null;
-    }
+      await stopMutation.mutateAsync(installedApp);
+    } catch {}
   }
 
   async function uninstallManifest(app: AppManifest) {
-    workingAppId = app.id;
     try {
-      await uninstallApp(app.id);
-    } finally {
-      workingAppId = null;
-    }
+      await uninstallMutation.mutateAsync(app);
+    } catch {}
   }
 
   function selectSection(section: LauncherSection) {
@@ -147,7 +205,12 @@
 
   function showSession(sessionId: string) {
     focusSessionDetails(sessionId);
-    openSessionInDashboard(sessionId);
+    const session = getSessionById(sessionId);
+    if (session?.mode === "windowed") {
+      openSessionInWindow(sessionId);
+    } else {
+      openSessionInDashboard(sessionId);
+    }
   }
 
   async function defaultTileAction(app: AppManifest) {
@@ -157,7 +220,7 @@
       selectManifest(app.id);
       return;
     }
-    await launchManifest(app, "embedded");
+    await launchManifest(app, desktop.default_session_mode);
   }
 
   function currentLoadLabel() {
@@ -183,6 +246,90 @@
   function statusLabel(app: AppManifest) {
     const status = appStatus(app);
     return status.charAt(0).toUpperCase() + status.slice(1);
+  }
+
+  function pendingActionFor(appId: string): PendingAction | null {
+    const installVariables = installMutation.variables;
+    if (installMutation.isPending && installVariables?.id === appId) {
+      return "install";
+    }
+
+    const launchVariables = launchMutation.variables;
+    if (launchMutation.isPending && launchVariables?.app.id === appId) {
+      return launchVariables.target === "embedded" ? "launch-dashboard" : "launch-window";
+    }
+
+    const stopVariables = stopMutation.variables;
+    if (stopMutation.isPending && stopVariables?.manifest.id === appId) {
+      return "stop";
+    }
+
+    const uninstallVariables = uninstallMutation.variables;
+    if (uninstallMutation.isPending && uninstallVariables?.id === appId) {
+      return "uninstall";
+    }
+
+    return null;
+  }
+
+  function isAppPending(appId: string) {
+    return pendingActionFor(appId) !== null;
+  }
+
+  function installLabel(appId: string) {
+    return pendingActionFor(appId) === "install" ? "Installing..." : "Install";
+  }
+
+  function launchLabel(appId: string, target: OpenTarget) {
+    const expectedAction = target === "embedded" ? "launch-dashboard" : "launch-window";
+    if (pendingActionFor(appId) === expectedAction) {
+      return "Opening...";
+    }
+    return target === "embedded" ? "Open in Dashboard" : "Open in Window";
+  }
+
+  function stopLabel(appId: string) {
+    return pendingActionFor(appId) === "stop" ? "Stopping..." : "Stop";
+  }
+
+  function uninstallLabel(appId: string) {
+    return pendingActionFor(appId) === "uninstall" ? "Uninstalling..." : "Uninstall";
+  }
+
+  let isUploading = $state(false);
+
+  async function handleUploadFolder() {
+    try {
+      if (!("__TAURI_INTERNALS__" in window)) {
+        alert("Upload is only supported in the desktop app.");
+        return;
+      }
+      const selected = await open({
+        directory: true,
+        multiple: false,
+        title: "Select App Folder"
+      });
+      if (selected === null || typeof selected !== "string") return;
+
+      isUploading = true;
+
+      const result = await uploadApp({
+        source_type: "folder",
+        source_path: selected
+      });
+
+      if (!result.accepted) {
+        const errorMsg = result.validation_errors.map(e => `* ${e.field}: ${e.message}`).join("\n");
+        alert(`Upload Invalid:\n${errorMsg}\n\nLogs:\n${result.install_log.slice(-10).join('\n')}`);
+      } else {
+        alert(`Successfully uploaded ${result.app_name || "app"} (${result.app_id})`);
+        await refreshWorkspace();
+      }
+    } catch (e: any) {
+      alert(`Error uploading: ${e.message}`);
+    } finally {
+      isUploading = false;
+    }
   }
 </script>
 
@@ -214,9 +361,14 @@
     </nav>
 
     <div class="rail-card">
-      <span class="eyebrow">Default open</span>
-      <strong>Dashboard first</strong>
-      <p>Primary actions focus the main workspace. Use the secondary action to pop out into a browser window.</p>
+      <div style="display: flex; justify-content: space-between; align-items: start;">
+        <span class="eyebrow">Default open</span>
+        <button class="toggle-btn" tabindex="-1" onclick={toggleDefaultSessionMode} style="background: transparent; border: 1px solid var(--system-color-border); color: var(--system-color-text-muted); padding: 0.15rem 0.45rem; font-size: 0.7rem; border-radius: 999px; cursor: default;">Toggle</button>
+      </div>
+      <strong>{desktop.default_session_mode === "embedded" ? "Dashboard first" : "Window first"}</strong>
+      <p>{desktop.default_session_mode === "embedded" 
+        ? "Primary actions focus the main workspace. Use the secondary action to pop out into a browser window." 
+        : "Primary actions open in a separate browser window. Use the secondary action to view in the dashboard."}</p>
     </div>
   </aside>
 
@@ -363,6 +515,13 @@
                 <h3>Explore AI apps</h3>
               </div>
               <div class="catalog-header-actions">
+                <button 
+                  onclick={handleUploadFolder} 
+                  disabled={isUploading} 
+                  class="action-btn upload-btn"
+                >
+                  {isUploading ? "Uploading..." : "Upload Folder"}
+                </button>
                 <span>{filteredCatalog.length} result(s)</span>
                 <div class="catalog-layout-toggle" aria-label="Catalog layout">
                   <button
@@ -370,7 +529,7 @@
                     class:active={catalogLayout === "grid"}
                     aria-pressed={catalogLayout === "grid"}
                     data-catalog-layout="grid"
-                    onclick={() => (catalogLayout = "grid")}
+                    onclick={() => setCatalogLayout("grid")}
                   >
                     Grid
                   </button>
@@ -379,7 +538,7 @@
                     class:active={catalogLayout === "list"}
                     aria-pressed={catalogLayout === "list"}
                     data-catalog-layout="list"
-                    onclick={() => (catalogLayout = "list")}
+                    onclick={() => setCatalogLayout("list")}
                   >
                     List
                   </button>
@@ -412,13 +571,15 @@
                       </div>
                       <div class="catalog-card-actions">
                         {#if !$installedMap[app.id]}
-                          <button disabled={workingAppId === app.id} onclick={() => installManifest(app)}>Install</button>
-                        {:else}
-                          <button disabled={workingAppId === app.id} onclick={() => launchManifest(app, "embedded")}>
-                            Open in Dashboard
+                          <button disabled={isAppPending(app.id)} aria-busy={pendingActionFor(app.id) === "install"} onclick={() => installManifest(app)}>
+                            {installLabel(app.id)}
                           </button>
-                          <button disabled={workingAppId === app.id} onclick={() => launchManifest(app, "windowed")}>
-                            Open in Window
+                        {:else}
+                          <button disabled={isAppPending(app.id)} aria-busy={pendingActionFor(app.id) === "launch-dashboard"} onclick={() => launchManifest(app, "embedded")}>
+                            {launchLabel(app.id, "embedded")}
+                          </button>
+                          <button disabled={isAppPending(app.id)} aria-busy={pendingActionFor(app.id) === "launch-window"} onclick={() => launchManifest(app, "windowed")}>
+                            {launchLabel(app.id, "windowed")}
                           </button>
                         {/if}
                       </div>
@@ -453,13 +614,15 @@
                     </button>
                     <div class="catalog-list-actions">
                       {#if !$installedMap[app.id]}
-                        <button disabled={workingAppId === app.id} onclick={() => installManifest(app)}>Install</button>
-                      {:else}
-                        <button disabled={workingAppId === app.id} onclick={() => launchManifest(app, "embedded")}>
-                          Open in Dashboard
+                        <button disabled={isAppPending(app.id)} aria-busy={pendingActionFor(app.id) === "install"} onclick={() => installManifest(app)}>
+                          {installLabel(app.id)}
                         </button>
-                        <button disabled={workingAppId === app.id} onclick={() => launchManifest(app, "windowed")}>
-                          Open in Window
+                      {:else}
+                        <button disabled={isAppPending(app.id)} aria-busy={pendingActionFor(app.id) === "launch-dashboard"} onclick={() => launchManifest(app, "embedded")}>
+                          {launchLabel(app.id, "embedded")}
+                        </button>
+                        <button disabled={isAppPending(app.id)} aria-busy={pendingActionFor(app.id) === "launch-window"} onclick={() => launchManifest(app, "windowed")}>
+                          {launchLabel(app.id, "windowed")}
                         </button>
                       {/if}
                     </div>
@@ -493,9 +656,9 @@
                     </div>
                   </button>
                   <div class="row-actions">
-                    <button disabled={workingAppId === app.manifest.id} onclick={() => launchManifest(app.manifest, "embedded")}>Open in Dashboard</button>
-                    <button disabled={workingAppId === app.manifest.id} onclick={() => launchManifest(app.manifest, "windowed")}>Open in Window</button>
-                    <button disabled={workingAppId === app.manifest.id} onclick={() => uninstallManifest(app.manifest)}>Uninstall</button>
+                    <button disabled={isAppPending(app.manifest.id)} aria-busy={pendingActionFor(app.manifest.id) === "launch-dashboard"} onclick={() => launchManifest(app.manifest, "embedded")}>{launchLabel(app.manifest.id, "embedded")}</button>
+                    <button disabled={isAppPending(app.manifest.id)} aria-busy={pendingActionFor(app.manifest.id) === "launch-window"} onclick={() => launchManifest(app.manifest, "windowed")}>{launchLabel(app.manifest.id, "windowed")}</button>
+                    <button disabled={isAppPending(app.manifest.id)} aria-busy={pendingActionFor(app.manifest.id) === "uninstall"} onclick={() => uninstallManifest(app.manifest)}>{uninstallLabel(app.manifest.id)}</button>
                   </div>
                 </article>
               {:else}
@@ -556,7 +719,7 @@
                 </div>
                 <div class="detail-card">
                   <span>uv</span>
-                  <strong>{$systemInfo.uv.uv_version}</strong>
+                  <strong>{displayVersion($systemInfo.uv.uv_version)}</strong>
                 </div>
               </div>
             {/if}
@@ -589,21 +752,21 @@
 
             <div class="detail-actions">
               {#if !selectedInstalled}
-                <button onclick={() => installManifest(selectedManifest)}>Install</button>
+                <button disabled={isAppPending(selectedManifest.id)} aria-busy={pendingActionFor(selectedManifest.id) === "install"} onclick={() => installManifest(selectedManifest)}>{installLabel(selectedManifest.id)}</button>
               {:else if selectedInstalled.status.state === "Running"}
-                <button onclick={() => launchManifest(selectedManifest, "embedded")}>Open in Dashboard</button>
-                <button onclick={() => launchManifest(selectedManifest, "windowed")}>Open in Window</button>
-                <button onclick={() => stopInstalledApp(selectedInstalled)}>Stop</button>
-                <button onclick={() => uninstallManifest(selectedManifest)}>Uninstall</button>
+                <button disabled={isAppPending(selectedManifest.id)} aria-busy={pendingActionFor(selectedManifest.id) === "launch-dashboard"} onclick={() => launchManifest(selectedManifest, "embedded")}>{launchLabel(selectedManifest.id, "embedded")}</button>
+                <button disabled={isAppPending(selectedManifest.id)} aria-busy={pendingActionFor(selectedManifest.id) === "launch-window"} onclick={() => launchManifest(selectedManifest, "windowed")}>{launchLabel(selectedManifest.id, "windowed")}</button>
+                <button disabled={isAppPending(selectedManifest.id)} aria-busy={pendingActionFor(selectedManifest.id) === "stop"} onclick={() => stopInstalledApp(selectedInstalled)}>{stopLabel(selectedManifest.id)}</button>
+                <button disabled={isAppPending(selectedManifest.id)} aria-busy={pendingActionFor(selectedManifest.id) === "uninstall"} onclick={() => uninstallManifest(selectedManifest)}>{uninstallLabel(selectedManifest.id)}</button>
                 {#if selectedInstalled.status.port}
                   <button onclick={() => openSessionInNewOsWindow(selectedInstalled.status.port!, selectedManifest.name)}>
                     New OS Window
                   </button>
                 {/if}
               {:else}
-                <button onclick={() => launchManifest(selectedManifest, "embedded")}>Open in Dashboard</button>
-                <button onclick={() => launchManifest(selectedManifest, "windowed")}>Open in Window</button>
-                <button onclick={() => uninstallManifest(selectedManifest)}>Uninstall</button>
+                <button disabled={isAppPending(selectedManifest.id)} aria-busy={pendingActionFor(selectedManifest.id) === "launch-dashboard"} onclick={() => launchManifest(selectedManifest, "embedded")}>{launchLabel(selectedManifest.id, "embedded")}</button>
+                <button disabled={isAppPending(selectedManifest.id)} aria-busy={pendingActionFor(selectedManifest.id) === "launch-window"} onclick={() => launchManifest(selectedManifest, "windowed")}>{launchLabel(selectedManifest.id, "windowed")}</button>
+                <button disabled={isAppPending(selectedManifest.id)} aria-busy={pendingActionFor(selectedManifest.id) === "uninstall"} onclick={() => uninstallManifest(selectedManifest)}>{uninstallLabel(selectedManifest.id)}</button>
               {/if}
             </div>
           </div>
@@ -635,6 +798,20 @@
     grid-template-columns: 15.5rem 1fr;
     height: 100%;
     min-height: 0;
+  }
+
+  .upload-btn {
+    padding: 0.3rem 0.6rem;
+    font-size: 0.8rem;
+    border-radius: 0.4rem;
+    background: var(--system-color-accent);
+    color: white;
+    border: none;
+    cursor: pointer;
+  }
+  .upload-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
   }
 
   .rail {

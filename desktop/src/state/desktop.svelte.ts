@@ -48,6 +48,45 @@ type WorkspaceView =
 const makeWindowId = (prefix: string) =>
   `${prefix}-${Math.random().toString(36).slice(2, 9)}-${Date.now().toString(36)}`;
 
+function getSavedSessionMode(): SessionMode {
+  try {
+    const saved = localStorage.getItem("ai-launcher:default-mode");
+    if (saved === "embedded" || saved === "windowed") return saved as SessionMode;
+  } catch {}
+  return "windowed";
+}
+
+function getSavedTheme(): ThemeScheme {
+  try {
+    const saved = localStorage.getItem("ai-launcher:theme");
+    if (saved === "light" || saved === "dark") return saved as ThemeScheme;
+    
+    // Fallback to system preference if no saved preference
+    if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+      return "dark";
+    }
+  } catch {}
+  return "light";
+}
+
+function getSavedLauncherSection(): LauncherSection {
+  try {
+    const saved = localStorage.getItem("ai-launcher:launcher-section");
+    if (saved === "overview" || saved === "catalog" || saved === "installed" || saved === "running" || saved === "server") {
+      return saved as LauncherSection;
+    }
+  } catch {}
+  return "overview";
+}
+
+function getSavedDockAutoHide(): boolean {
+  try {
+    const saved = localStorage.getItem("ai-launcher:dock-auto-hide");
+    if (saved === "true" || saved === "false") return saved === "true";
+  } catch {}
+  return false;
+}
+
 const createWindow = (
   app_id: WindowAppID | "browser",
   title: string,
@@ -70,9 +109,9 @@ const createWindow = (
 });
 
 export const desktop = $state({
-  theme: "light" as ThemeScheme,
+  theme: getSavedTheme(),
   launchpad_open: false,
-  launcher_section: "overview" as LauncherSection,
+  launcher_section: getSavedLauncherSection(),
   launcher_query: "",
   selected_app_id: null as string | null,
   selected_session_id: null as string | null,
@@ -80,7 +119,23 @@ export const desktop = $state({
   windows: [] as DesktopWindow[],
   sessions: [] as RunningSession[],
   next_z_index: 10,
+  default_session_mode: getSavedSessionMode(),
+  dock_auto_hide: getSavedDockAutoHide(),
 });
+
+export function toggleDockAutoHide() {
+  desktop.dock_auto_hide = !desktop.dock_auto_hide;
+  try {
+    localStorage.setItem("ai-launcher:dock-auto-hide", String(desktop.dock_auto_hide));
+  } catch {}
+}
+
+export function toggleDefaultSessionMode() {
+  desktop.default_session_mode = desktop.default_session_mode === "windowed" ? "embedded" : "windowed";
+  try {
+    localStorage.setItem("ai-launcher:default-mode", desktop.default_session_mode);
+  } catch {}
+}
 
 function nextZIndex() {
   desktop.next_z_index += 2;
@@ -105,6 +160,9 @@ export function bootDesktop() {
 
 export function toggleTheme() {
   desktop.theme = desktop.theme === "light" ? "dark" : "light";
+  try {
+    localStorage.setItem("ai-launcher:theme", desktop.theme);
+  } catch {}
 }
 
 export function toggleLaunchpad(force?: boolean) {
@@ -177,6 +235,9 @@ export function openStaticApp(app_id: StaticAppID) {
 
 export function selectLauncherSection(section: LauncherSection) {
   desktop.launcher_section = section;
+  try {
+    localStorage.setItem("ai-launcher:launcher-section", section);
+  } catch {}
   desktop.workspace_view = { kind: "dashboard" };
   desktop.selected_session_id = null;
   openStaticApp("ai-launcher");
@@ -349,7 +410,7 @@ export function syncSessionsFromInstalled(installedApps: InstalledApp[]) {
         title: app.manifest.name,
         url: `http://localhost:${app.status.port!}`,
         port: app.status.port!,
-        mode: "embedded",
+        mode: desktop.default_session_mode,
         window_id: null,
         load_state: "idle",
         last_focused_at: new Date().toISOString(),
@@ -395,14 +456,14 @@ export function sessionForApp(app_id: string) {
   return desktop.sessions.find((item) => item.app_id === app_id) ?? null;
 }
 
-export function isDockAppOpen(app_id: StaticAppID) {
+export function isDockAppOpen(app_id: StaticAppID | string) {
   if (app_id === "launchpad") {
     return desktop.launchpad_open;
   }
   if (app_id === "browser") {
     return desktop.windows.some((item) => item.app_id === "browser");
   }
-  return desktop.windows.some((item) => item.app_id === app_id);
+  return desktop.windows.some((item) => item.app_id === app_id) || desktop.sessions.some((item) => item.app_id === app_id);
 }
 
 export type { StaticAppID };

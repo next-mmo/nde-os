@@ -21,6 +21,7 @@ pub fn openapi_spec() -> serde_json::Value {
         "paths":{
             "/api/health":{"get":{"tags":["system"],"summary":"Health check","operationId":"healthCheck","responses":{"200":{"description":"Healthy"}}}},
             "/api/system":{"get":{"tags":["system"],"summary":"System info (OS, Python, GPU)","operationId":"getSystemInfo","responses":{"200":{"description":"System details"}}}},
+            "/api/system/resources":{"get":{"tags":["system"],"summary":"Live RAM and disk usage","operationId":"getSystemResources","responses":{"200":{"description":"Live resource usage","content":{"application/json":{"schema":{"$ref":"#/components/schemas/ResourceUsage"}}}}}}},
             "/api/catalog":{"get":{"tags":["catalog"],"summary":"List available apps","operationId":"getCatalog","responses":{"200":{"description":"App catalog"}}}},
             "/api/apps":{
                 "get":{"tags":["apps"],"summary":"List installed apps","operationId":"listApps","responses":{"200":{"description":"Installed apps"}}},
@@ -76,6 +77,7 @@ pub fn openapi_spec() -> serde_json::Value {
             "LaunchResult":{"type":"object","properties":{"pid":{"type":"integer"},"port":{"type":"integer"}}},
             "SandboxVerifyResult":{"type":"object","properties":{"path_traversal_blocked":{"type":"boolean"},"absolute_escape_blocked":{"type":"boolean"},"symlink_escape_blocked":{"type":"boolean"},"valid_path_works":{"type":"boolean"},"sandbox_root":{"type":"string"},"platform":{"type":"string"}}},
             "SystemInfo":{"type":"object","properties":{"os":{"type":"string"},"arch":{"type":"string"},"python_version":{"type":"string"},"gpu_detected":{"type":"boolean"},"base_dir":{"type":"string"},"total_apps":{"type":"integer"},"running_apps":{"type":"integer"}}},
+            "ResourceUsage":{"type":"object","properties":{"memory_used_bytes":{"type":"integer"},"memory_total_bytes":{"type":"integer"},"memory_percent":{"type":"integer"},"disk_used_bytes":{"type":"integer"},"disk_total_bytes":{"type":"integer"},"disk_percent":{"type":"integer"},"disk_mount_point":{"type":"string"}}},
             "ApiResponse":{"type":"object","properties":{"success":{"type":"boolean"},"message":{"type":"string"},"data":{}}},
             "DiskUsage":{"type":"object","properties":{"app_id":{"type":"string"},"bytes":{"type":"integer"},"human_readable":{"type":"string"}}}
         }}

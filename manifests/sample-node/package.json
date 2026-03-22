@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "postinstall": "cd server && npm install && cd ../ui && npm install && npm run build",
+    "postinstall": "cd server && pnpm install && cd ../ui && pnpm install && pnpm build",
     "start": "node server/server.js"
   }
 }

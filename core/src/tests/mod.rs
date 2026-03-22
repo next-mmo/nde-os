@@ -2,6 +2,8 @@ mod manifest;
 mod sandbox;
 mod manager;
 mod store_upload;
+mod system_metrics;
+mod uv_env;
 
 use crate::manifest::AppManifest;
 

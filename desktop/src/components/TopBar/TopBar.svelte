@@ -3,6 +3,7 @@
 <script lang="ts">
   import MenuBar from "🍎/components/TopBar/MenuBar.svelte";
   import ActionCenter from "🍎/components/TopBar/ActionCenter.svelte";
+  import TopBarMetrics from "./TopBarMetrics.svelte";
   import TopBarTime from "🍎/components/TopBar/TopBarTime.svelte";
 </script>
 
@@ -12,6 +13,7 @@
   <span class="spacer"></span>
 
   <ActionCenter />
+  <TopBarMetrics />
 
   <button class="topbar-button" aria-label="Current time">
     <TopBarTime />

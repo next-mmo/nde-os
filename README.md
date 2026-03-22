@@ -50,7 +50,7 @@ chmod +x run.sh && ./run.sh
 ```bash
 cd desktop
 npm install
-npm run dev
+pnpm dev
 ```
 
 ### Endpoints

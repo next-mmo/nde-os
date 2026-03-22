@@ -1,6 +1,6 @@
 import { writable, derived } from "svelte/store";
 import * as api from "$lib/api/backend";
-import type { AppManifest, InstalledApp, SystemInfo } from "$lib/api/types";
+import type { AppManifest, InstalledApp, ResourceUsage, SystemInfo } from "$lib/api/types";
 import { logStore } from "./logs";
 
 export type HealthStatus = "unknown" | "online" | "offline";
@@ -8,6 +8,7 @@ export type HealthStatus = "unknown" | "online" | "offline";
 export const catalog = writable<AppManifest[]>([]);
 export const installed = writable<InstalledApp[]>([]);
 export const systemInfo = writable<SystemInfo | null>(null);
+export const resourceUsage = writable<ResourceUsage | null>(null);
 export const healthStatus = writable<HealthStatus>("unknown");
 export const lastRefreshAt = writable<string | null>(null);
 
@@ -49,6 +50,14 @@ export async function refreshSystemInfo() {
   }
 }
 
+export async function refreshResourceUsage() {
+  try {
+    resourceUsage.set(await api.getResourceUsage());
+  } catch (error) {
+    logStore.error(`Failed to load resource usage: ${error}`);
+  }
+}
+
 export async function refreshHealth() {
   try {
     await api.healthCheck();
@@ -60,7 +69,13 @@ export async function refreshHealth() {
 }
 
 export async function refreshAll() {
-  await Promise.all([refreshCatalog(), refreshInstalled(), refreshSystemInfo(), refreshHealth()]);
+  await Promise.all([
+    refreshCatalog(),
+    refreshInstalled(),
+    refreshSystemInfo(),
+    refreshResourceUsage(),
+    refreshHealth(),
+  ]);
   lastRefreshAt.set(new Date().toISOString());
 }
 

@@ -1,9 +1,10 @@
 use ai_launcher_core::app_manager::AppManager;
 use ai_launcher_core::manifest::*;
+use ai_launcher_core::system_metrics::snapshot_resource_usage;
 use serde_json::json;
 use std::io::Cursor;
 use std::process::Command;
-use tiny_http::{Header, Method, Request, Response};
+use tiny_http::{Header, Request, Response};
 
 use crate::response::*;
 
@@ -38,6 +39,14 @@ pub fn system_info(mgr: &AppManager) -> Response<Cursor<Vec<u8>>> {
         "total_apps": mgr.total_count(),
         "running_apps": mgr.running_count(),
     }))
+}
+
+/// GET /api/system/resources
+pub fn system_resources(mgr: &AppManager) -> Response<Cursor<Vec<u8>>> {
+    match snapshot_resource_usage(mgr.base_dir()) {
+        Ok(usage) => ok("System resource usage", usage),
+        Err(error) => err(500, &error.to_string()),
+    }
 }
 
 /// GET /api/catalog
@@ -170,6 +179,23 @@ mod tests {
         mgr.uninstall(&manifest.id).ok();
         std::fs::remove_dir_all(base_dir).ok();
     }
+
+    #[test]
+    fn system_resources_returns_percentages() {
+        let base_dir = temp_base_dir();
+        let mgr = AppManager::new(&base_dir).unwrap();
+
+        let response = system_resources(&mgr);
+        let json = response_json(response);
+
+        assert_eq!(json["success"], true);
+        assert!(json["data"]["memory_total_bytes"].as_u64().unwrap() > 0);
+        assert!(json["data"]["disk_total_bytes"].as_u64().unwrap() > 0);
+        assert!(json["data"]["memory_percent"].as_u64().unwrap() <= 100);
+        assert!(json["data"]["disk_percent"].as_u64().unwrap() <= 100);
+
+        std::fs::remove_dir_all(base_dir).ok();
+    }
 }
 
 /// POST /api/apps/{id}/stop
@@ -233,4 +259,3 @@ pub fn store_upload(req: &mut Request, mgr: &AppManager) -> Response<Cursor<Vec<
         Err(e) => err(500, &format!("Upload error: {}", e)),
     }
 }
-

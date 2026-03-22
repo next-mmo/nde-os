@@ -17,10 +17,17 @@
     "noEmit": true,
     "sourceMap": true,
     "baseUrl": ".",
+    "types": ["svelte", "vite/client"],
     "paths": {
       "$lib/*": ["src/lib/*"],
       "🍎/*": ["src/*"]
     }
   },
-  "include": ["src/**/*.ts", "src/**/*.d.ts", "src/**/*.svelte", "e2e/**/*.ts", "vite.config.ts"]
+  "include": [
+    "src/**/*.ts",
+    "src/**/*.d.ts",
+    "src/**/*.svelte",
+    "e2e/**/*.ts",
+    "vite.config.ts"
+  ]
 }

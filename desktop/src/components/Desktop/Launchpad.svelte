@@ -87,7 +87,7 @@
       <div class="catalog-grid">
         {#each filteredCatalog as app (app.id)}
           <article class="catalog-card">
-            <button class="catalog-main" onclick={() => openManifest(app.id, "embedded")}>
+            <button class="catalog-main" onclick={() => openManifest(app.id, desktop.default_session_mode)}>
               <div class="catalog-icon">{app.icon ?? "AI"}</div>
               <div>
                 <strong>{app.name}</strong>

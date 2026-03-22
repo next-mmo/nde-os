@@ -7,7 +7,7 @@
   import Launchpad from "🍎/components/Desktop/Launchpad.svelte";
   import WindowsArea from "🍎/components/Desktop/Window/WindowsArea.svelte";
   import TopBar from "🍎/components/TopBar/TopBar.svelte";
-  import { refreshAll } from "$lib/stores/state";
+  import { refreshAll, refreshResourceUsage } from "$lib/stores/state";
   import { bootDesktop, desktop } from "🍎/state/desktop.svelte";
 
   const queryClient = new QueryClient({
@@ -27,7 +27,14 @@
       refreshAll();
     }, 20_000);
 
-    return () => window.clearInterval(refreshTimer);
+    const resourceTimer = window.setInterval(() => {
+      refreshResourceUsage();
+    }, 5_000);
+
+    return () => {
+      window.clearInterval(refreshTimer);
+      window.clearInterval(resourceTimer);
+    };
   });
 
   $effect(() => {
