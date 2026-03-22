@@ -195,7 +195,7 @@ See [`docs/plugin-spec.md`](docs/plugin-spec.md) for the full spec.
 | Phase | Status     | Description                                             |
 | ----- | ---------- | ------------------------------------------------------- |
 | 0     | ✅ Done    | Sandbox + uv + REST API + plugins                       |
-| 0.5   | 🔄 Current | Desktop migration (Tauri 2 + SvelteKit + shadcn-svelte) |
+| 0.5   | 🔄 Current | Desktop migration (Tauri 2 + Svelte 5 + shadcn-svelte)  |
 | 0.6   | 📋 Planned | License server (Axum + Ed25519)                         |
 | 1     | 📋 Planned | Agent runtime (loop, LLM drivers, tools)                |
 | 2     | 📋 Planned | Memory & tools (SQLite, MCP, 20+ built-in)              |
@@ -239,7 +239,7 @@ cargo build      # Build the backend
 | Sandboxing     | Custom filesystem jail (no Docker)       |
 | Python envs    | uv (Rust-based, 10–100× faster than pip) |
 | API spec       | OpenAPI 3.0.3                            |
-| Future desktop | Tauri 2                                  |
+| Desktop        | Tauri 2                                  |
 
 ---
 

@@ -1,9 +1,6 @@
-use ai_launcher_core::app_manager::AppManager;
-use ai_launcher_core::manifest::*;
 use serde_json::{json, Value};
 use std::io::Cursor;
-use std::process::Command;
-use tiny_http::{Header, Method, Request, Response};
+use tiny_http::{Header, Request, Response};
 
 /// Create a JSON response with CORS headers
 pub fn json_resp(status: u16, body: &Value) -> Response<Cursor<Vec<u8>>> {
