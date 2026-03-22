@@ -6,7 +6,7 @@ Instructions for AI coding agents (Claude Code, Cursor, Copilot, Windsurf, etc.)
 
 ## Project Overview
 
-AI Launcher is a cross-platform (Linux + Windows native, no WSL) sandboxed AI application manager. Users install and run AI apps (Stable Diffusion, Ollama, ComfyUI, etc.) inside isolated filesystem jails with per-app Python virtual environments managed by **uv**.
+AI Launcher is a cross-platform (Mac, Linux + Windows native, no WSL, No docker) sandboxed AI application manager. Users install and run AI apps (Stable Diffusion, Ollama, ComfyUI, etc.) inside isolated filesystem jails with per-app Python virtual environments managed by **uv**.
 
 **Tech stack**: Rust, tiny_http, serde_json, uv (Python package manager), OpenAPI 3.0.3  
 **Desktop frontend**: Svelte 5, Vite, `@neodrag/svelte`, `popmotion`, `unplugin-icons`, lightningcss — macOS Ventura-style UI
@@ -39,16 +39,16 @@ macos-web-main/src/
 
 ### Mandatory UI Patterns
 
-| Pattern | Rule |
-|---------|------|
-| **Window management** | Every app view opens as a draggable macOS-style window via `Window.svelte` + `@neodrag/svelte`. Windows have traffic lights (red=close, yellow=minimize, green=fullscreen). |
-| **Dock** | All apps appear in the animated Dock at the bottom. Dock items use `popmotion` interpolation for magnification on hover. Icons live in `public/app-icons/{app_id}/256.webp`. |
-| **TopBar** | Always visible at top with translucent blur. Shows current app menu via `MenuBar.svelte` and `ActionCenter` (theme toggle, Wi-Fi, etc.). |
-| **Theming** | Use CSS custom properties from `theme.css` (`--system-color-*`, `--system-font-family`, `--system-cursor-*`). Support light/dark via `body.dark` class. Never hardcode colors. |
-| **State management** | Use Svelte 5 runes (`$state`, `$effect`, `$derived`). App open/close/z-index state lives in `state/apps.svelte.ts`. |
-| **Path alias** | Use `🍎` alias for `src/` (configured in `vite.config.ts` → `resolve.alias`). |
-| **No Tailwind** | Style with scoped `<style>` in `.svelte` files using CSS variables from the theme. |
-| **No SvelteKit** | Plain Svelte 5 + Vite. No SSR, no routing — all navigation is via window open/close. |
+| Pattern               | Rule                                                                                                                                                                           |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Window management** | Every app view opens as a draggable macOS-style window via `Window.svelte` + `@neodrag/svelte`. Windows have traffic lights (red=close, yellow=minimize, green=fullscreen).    |
+| **Dock**              | All apps appear in the animated Dock at the bottom. Dock items use `popmotion` interpolation for magnification on hover. Icons live in `public/app-icons/{app_id}/256.webp`.   |
+| **TopBar**            | Always visible at top with translucent blur. Shows current app menu via `MenuBar.svelte` and `ActionCenter` (theme toggle, Wi-Fi, etc.).                                       |
+| **Theming**           | Use CSS custom properties from `theme.css` (`--system-color-*`, `--system-font-family`, `--system-cursor-*`). Support light/dark via `body.dark` class. Never hardcode colors. |
+| **State management**  | Use Svelte 5 runes (`$state`, `$effect`, `$derived`). App open/close/z-index state lives in `state/apps.svelte.ts`.                                                            |
+| **Path alias**        | Use `🍎` alias for `src/` (configured in `vite.config.ts` → `resolve.alias`).                                                                                                  |
+| **No Tailwind**       | Style with scoped `<style>` in `.svelte` files using CSS variables from the theme.                                                                                             |
+| **No SvelteKit**      | Plain Svelte 5 + Vite. No SSR, no routing — all navigation is via window open/close.                                                                                           |
 
 ### Adding a New App to the Desktop
 
@@ -71,32 +71,60 @@ macos-web-main/src/
 
 ## Architecture Rules
 
+### Workspace Layout
+
+```
+ai-launcher/
+├── Cargo.toml              # workspace root (members: core, server, desktop/src-tauri)
+├── core/                   # ai-launcher-core — shared Rust library
+│   └── src/
+│       ├── lib.rs
+│       ├── sandbox/mod.rs
+│       ├── uv_env/mod.rs
+│       ├── app_manager/mod.rs
+│       ├── manifest/mod.rs
+│       └── tests/          # unit tests (manifest.rs, sandbox.rs, manager.rs)
+├── server/                 # ai-launcher-server — HTTP API binary
+│   └── src/
+│       ├── main.rs          # startup + router
+│       ├── handlers.rs      # 13 endpoint handlers
+│       ├── response.rs      # JSON/HTML helpers
+│       └── openapi.rs       # OpenAPI spec + Swagger UI
+├── desktop/                # ai-launcher-desktop — Tauri 2 app
+│   ├── src/                 # SvelteKit frontend
+│   ├── src-tauri/src/       # Tauri commands (modular: commands/*.rs)
+│   └── e2e/                 # Playwright E2E tests
+├── manifests/              # App manifest JSONs
+├── plugins/                # Plugin specs (future)
+└── docs/                   # Plans & documentation
+```
+
 ### Module Responsibilities
 
-| Module | File | Owns | Never Does |
-|--------|------|------|------------|
-| `sandbox` | `src/sandbox/mod.rs` | Path validation, symlink defense, env var generation, workspace init, security verification | Network calls, process management |
-| `uv_env` | `src/uv_env/mod.rs` | uv binary bootstrap, Python installation, venv creation, pip deps, venv env vars | Sandbox enforcement, process tracking |
-| `app_manager` | `src/app_manager/mod.rs` | App lifecycle (install/launch/stop/uninstall), registry persistence, process tracking | HTTP handling, path security (delegates to sandbox) |
-| `manifest` | `src/manifest/mod.rs` | Type definitions (AppManifest, AppStatus, InstalledApp), built-in catalog | Business logic |
-| `main` | `src/main.rs` | HTTP server, routing, JSON responses, OpenAPI spec, Swagger UI | Business logic (delegates to app_manager) |
+| Crate / Module  | Location                     | Owns                                                                                        | Never Does                                          |
+| --------------- | ---------------------------- | ------------------------------------------------------------------------------------------- | --------------------------------------------------- |
+| `core::sandbox` | `core/src/sandbox/mod.rs`    | Path validation, symlink defense, env var generation, workspace init, security verification | Network calls, process management                   |
+| `core::uv_env`  | `core/src/uv_env/mod.rs`     | uv binary bootstrap, Python installation, venv creation, pip deps, venv env vars            | Sandbox enforcement, process tracking               |
+| `core::app_manager` | `core/src/app_manager/mod.rs` | App lifecycle (install/launch/stop/uninstall), registry persistence, process tracking   | HTTP handling, path security (delegates to sandbox) |
+| `core::manifest` | `core/src/manifest/mod.rs`  | Type definitions (AppManifest, AppStatus, InstalledApp), built-in catalog                   | Business logic                                      |
+| `server`        | `server/src/main.rs`         | HTTP server, routing, JSON responses, OpenAPI spec, Swagger UI                              | Business logic (delegates to core)                  |
+| `desktop`       | `desktop/src-tauri/src/`     | Tauri commands, IPC bridge, desktop window                                                  | Business logic (delegates to core)                  |
 
 ### Dependency Direction
 
 ```
-main.rs
-  ├── app_manager (uses sandbox + uv_env + manifest)
-  ├── manifest    (standalone types)
-  ├── sandbox     (standalone, no deps on other modules)
-  └── uv_env      (standalone, no deps on other modules)
+server  ──────┐
+              ├──→ core (sandbox + uv_env + app_manager + manifest)
+desktop ──────┘
 ```
 
-**Never** create circular dependencies between modules.
+`core` has ZERO dependencies on `server` or `desktop`. **Never** create circular dependencies.
 
 ### Data Flow
 
 ```
-HTTP Request → main.rs (parse + route) → app_manager (orchestrate) → sandbox + uv_env (execute) → Response
+HTTP:   Request → server/main.rs (route) → core::app_manager → core::sandbox + core::uv_env → Response
+Tauri:  invoke() → desktop/commands/*.rs → core::app_manager → core::sandbox + core::uv_env → IPC result
 ```
 
 ---
@@ -198,20 +226,33 @@ self.save_registry()?; // this can take time, don't hold the lock
 
 ## File Descriptions
 
-### `src/main.rs`
-HTTP server using `tiny_http`. Synchronous request handling (one at a time, robust against crashes). Contains the full OpenAPI 3.0.3 spec as a `serde_json::Value`, and serves Swagger UI from CDN. All routes delegate to `AppManager`.
+### `core/src/sandbox/mod.rs`
 
-### `src/sandbox/mod.rs`
 The security core. `Sandbox::new()` creates the workspace, sets permissions. `Sandbox::resolve()` is the path validator — handles traversal, absolute paths, symlink resolution. `Sandbox::verify()` runs all 4 security tests and returns a structured result. `Sandbox::env_vars()` generates the jailed environment variables (both Linux and Windows variants).
 
-### `src/uv_env/mod.rs`
+### `core/src/uv_env/mod.rs`
+
 Manages uv binary lifecycle. `ensure_uv()` bootstraps uv (check bundled → check PATH → download). `UvEnv` wraps per-app operations: `ensure_python()`, `create_venv()`, `install_deps()`. `build_launch_cmd()` rewrites `python3 app.py` to use the venv python. `env_vars()` returns `VIRTUAL_ENV` and modified `PATH`.
 
-### `src/app_manager/mod.rs`
+### `core/src/app_manager/mod.rs`
+
 Orchestrates install/launch/stop/uninstall. `install()` chains: sandbox creation → security verify → uv python → venv → deps. `launch()` builds combined env vars (sandbox + uv), rewrites the launch command, and spawns the process. Uses `Arc<Mutex<>>` for thread-safe registry and running process tracking.
 
-### `src/manifest/mod.rs`
+### `core/src/manifest/mod.rs`
+
 Pure data types: `AppManifest`, `AppStatus` (tagged enum), `InstalledApp`, `InstallRequest`. Also contains factory methods for built-in catalog apps (`gradio_demo()`, `stable_diffusion()`, `ollama()`). No business logic.
+
+### `server/src/main.rs`
+
+HTTP server using `tiny_http`. Thin router that delegates to `handlers.rs`. Synchronous request handling (one at a time, robust against crashes).
+
+### `server/src/handlers.rs`
+
+13 route handlers, each a standalone function with doc comments. Uses `core::app_manager` for all business logic.
+
+### `server/src/openapi.rs`
+
+Full OpenAPI 3.0.3 spec as `serde_json::Value`, plus Swagger UI HTML served from CDN.
 
 ---
 
@@ -246,7 +287,66 @@ Pure data types: `AppManifest`, `AppStatus` (tagged enum), `InstalledApp`, `Inst
 
 ---
 
-## Testing
+## Testing — MANDATORY
+
+**Every change to logic or new feature MUST include test evidence. No exceptions.**
+
+### Rule: No Code Without Tests
+
+| Change Type | Required Tests | Location |
+|---|---|---|
+| New/modified **core logic** (sandbox, app_manager, manifest, uv_env) | Unit tests in `core/src/tests/` | `core/src/tests/{module}.rs` |
+| New/modified **server endpoint** | Unit test for handler + manual curl verification | `server/src/` (inline `#[cfg(test)]`) |
+| New/modified **desktop UI feature** | Playwright E2E test | `desktop/e2e/*.spec.ts` |
+| New/modified **Tauri command** | Unit test in command module + E2E test | `desktop/src-tauri/` + `desktop/e2e/` |
+| **Bug fix** | Regression test that reproduces the bug first, then verifies the fix | Appropriate test file |
+| **Refactor** | Existing tests must still pass. Run full suite before and after. | All |
+
+### Test Commands
+
+```bash
+# Core unit tests (35 tests: manifest, sandbox, app_manager)
+cargo test -p ai-launcher-core
+
+# Server build verification
+cargo build -p ai-launcher-server
+
+# Desktop E2E tests (requires Vite dev server running)
+cd desktop && npx playwright test
+
+# Full workspace
+cargo test --workspace
+```
+
+### Test Structure
+
+```
+core/src/tests/
+├── mod.rs              # shared helpers (test_manifest, temp_base)
+├── manifest.rs         # 10 tests — factories, serialization, status, platform
+├── sandbox.rs          # 12 tests — creation, security, env vars, disk
+└── manager.rs          # 13 tests — CRUD lifecycle, persistence, errors
+
+desktop/e2e/
+├── navigation.spec.ts  # sidebar, routing, redirects
+├── catalog.spec.ts     # app cards, search, filtering
+├── lifecycle.spec.ts   # install → launch → stop → uninstall
+├── logs.spec.ts        # activity log display, clear
+├── settings.spec.ts    # system info, refresh
+└── apps.spec.ts        # installed/running empty states, multi-app
+```
+
+### Enforcement Checklist
+
+Before completing ANY task, the agent MUST verify:
+
+- [ ] `cargo test -p ai-launcher-core` — **all pass**
+- [ ] `cargo build --workspace` — **no errors**
+- [ ] If UI changed: `npx playwright test` in `desktop/` — **all pass**
+- [ ] New logic has corresponding test(s) added
+- [ ] Bug fixes include a regression test
+
+**If tests fail, the task is NOT complete. Fix the tests before reporting done.**
 
 ### Manual API Test Script
 
@@ -277,6 +377,7 @@ curl -s -X DELETE http://localhost:8080/api/apps/test
 ### Expected Sandbox Verification
 
 All four checks must return `true`:
+
 ```json
 {
   "path_traversal_blocked": true,
@@ -290,25 +391,25 @@ All four checks must return `true`:
 
 ## Common Pitfalls
 
-| Pitfall | Fix |
-|---------|-----|
-| Server crashes after N requests | Use `server.recv()` loop, not iterator. Handle errors gracefully. |
-| Borrow checker on `format!` in match | Bind to `let` before the match, or use `.to_string()` |
-| Windows paths fail | Use `PathBuf::join()`, never string concatenation |
-| uv hangs on install | Network blocked. Make uv steps non-fatal (sandbox is the security layer). |
-| `tiny_http` no async | Intentional. Synchronous is simpler and more robust for this use case. |
-| Temporary `to_string_lossy()` dropped | Bind to `let binding = path.to_string_lossy().to_string();` first |
+| Pitfall                               | Fix                                                                       |
+| ------------------------------------- | ------------------------------------------------------------------------- |
+| Server crashes after N requests       | Use `server.recv()` loop, not iterator. Handle errors gracefully.         |
+| Borrow checker on `format!` in match  | Bind to `let` before the match, or use `.to_string()`                     |
+| Windows paths fail                    | Use `PathBuf::join()`, never string concatenation                         |
+| uv hangs on install                   | Network blocked. Make uv steps non-fatal (sandbox is the security layer). |
+| `tiny_http` no async                  | Intentional. Synchronous is simpler and more robust for this use case.    |
+| Temporary `to_string_lossy()` dropped | Bind to `let binding = path.to_string_lossy().to_string();` first         |
 
 ---
 
 ## Dependencies
 
-| Crate | Version | Purpose |
-|-------|---------|---------|
-| `serde` | 1.0.197 | JSON serialization |
-| `serde_json` | 1.0.114 | JSON parsing |
-| `anyhow` | 1.0.81 | Error handling |
-| `chrono` | 0.4.35 | Timestamps |
-| `tiny_http` | 0.12 | HTTP server (zero async deps, works on Rust 1.75) |
+| Crate        | Version | Purpose                                           |
+| ------------ | ------- | ------------------------------------------------- |
+| `serde`      | 1.0.197 | JSON serialization                                |
+| `serde_json` | 1.0.114 | JSON parsing                                      |
+| `anyhow`     | 1.0.81  | Error handling                                    |
+| `chrono`     | 0.4.35  | Timestamps                                        |
+| `tiny_http`  | 0.12    | HTTP server (zero async deps, works on Rust 1.75) |
 
 **No platform-specific crates.** All platform branching uses `cfg!(windows)` / `cfg!(unix)` with stdlib.

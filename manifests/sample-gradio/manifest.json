@@ -1,0 +1,21 @@
+{
+  "id": "sample-gradio",
+  "name": "Sample Counter",
+  "description": "A simple Gradio counter app to test the sandbox launcher",
+  "author": "ai-launcher",
+  "python_version": "3.12",
+  "needs_gpu": false,
+  "pip_deps": [
+    "gradio"
+  ],
+  "launch_cmd": "python3 app.py",
+  "port": 7860,
+  "disk_size": "~200MB",
+  "tags": [
+    "demo",
+    "gradio",
+    "counter"
+  ],
+  "icon": "🔢",
+  "license": "MIT"
+}
