@@ -8,7 +8,64 @@ Instructions for AI coding agents (Claude Code, Cursor, Copilot, Windsurf, etc.)
 
 AI Launcher is a cross-platform (Linux + Windows native, no WSL) sandboxed AI application manager. Users install and run AI apps (Stable Diffusion, Ollama, ComfyUI, etc.) inside isolated filesystem jails with per-app Python virtual environments managed by **uv**.
 
-**Tech stack**: Rust, tiny_http, serde_json, uv (Python package manager), OpenAPI 3.0.3
+**Tech stack**: Rust, tiny_http, serde_json, uv (Python package manager), OpenAPI 3.0.3  
+**Desktop frontend**: Svelte 5, Vite, `@neodrag/svelte`, `popmotion`, `unplugin-icons`, lightningcss — macOS Ventura-style UI
+
+---
+
+## Desktop Frontend Rules — macOS Style (MANDATORY)
+
+**The desktop UI MUST use the macOS Ventura-style design from `macos-web-main/`.** This is the single source of truth for all visual patterns. Do NOT use shadcn, Tailwind, Material UI, or any other component library.
+
+### Reference Project
+
+The `macos-web-main/` directory contains the reference implementation. Key architecture:
+
+```
+macos-web-main/src/
+├── components/
+│   ├── Desktop/          # Desktop shell, bootup screen, context menu, Window system
+│   │   └── Window/       # Draggable windows with TrafficLights (@neodrag/svelte)
+│   ├── Dock/             # Animated dock with magnification (popmotion interpolation)
+│   ├── TopBar/           # Menu bar, ActionCenter, clock
+│   ├── SystemUI/         # System dialogs
+│   └── apps/             # App components rendered inside windows via AppNexus.svelte
+├── configs/apps/         # App configs (title, size, resizable, dock_breaks_before)
+├── state/                # Svelte 5 runes ($state, $effect, $derived)
+├── css/                  # theme.css (CSS variables), global.css, reset.css
+├── actions/              # Svelte actions (elevation, click-outside, portal, trap-focus)
+└── helpers/              # create-app-config, fade, random, sleep
+```
+
+### Mandatory UI Patterns
+
+| Pattern | Rule |
+|---------|------|
+| **Window management** | Every app view opens as a draggable macOS-style window via `Window.svelte` + `@neodrag/svelte`. Windows have traffic lights (red=close, yellow=minimize, green=fullscreen). |
+| **Dock** | All apps appear in the animated Dock at the bottom. Dock items use `popmotion` interpolation for magnification on hover. Icons live in `public/app-icons/{app_id}/256.webp`. |
+| **TopBar** | Always visible at top with translucent blur. Shows current app menu via `MenuBar.svelte` and `ActionCenter` (theme toggle, Wi-Fi, etc.). |
+| **Theming** | Use CSS custom properties from `theme.css` (`--system-color-*`, `--system-font-family`, `--system-cursor-*`). Support light/dark via `body.dark` class. Never hardcode colors. |
+| **State management** | Use Svelte 5 runes (`$state`, `$effect`, `$derived`). App open/close/z-index state lives in `state/apps.svelte.ts`. |
+| **Path alias** | Use `🍎` alias for `src/` (configured in `vite.config.ts` → `resolve.alias`). |
+| **No Tailwind** | Style with scoped `<style>` in `.svelte` files using CSS variables from the theme. |
+| **No SvelteKit** | Plain Svelte 5 + Vite. No SSR, no routing — all navigation is via window open/close. |
+
+### Adding a New App to the Desktop
+
+1. Add config in `configs/apps/apps-config.ts` using `create_app_config({ title, width, height, resizable })`
+2. Add app ID to `state/apps.svelte.ts` (open, z_indices, fullscreen maps)
+3. Create component in `components/apps/MyApp/MyApp.svelte`
+4. Register in `components/apps/AppNexus.svelte` with `{#if app_id === 'my-app'}` branch
+5. Place icon at `public/app-icons/my-app/256.webp`
+
+### Visual Standards
+
+- **Blur effects**: Use `backdrop-filter: blur()` for TopBar, Dock, and window chrome
+- **Rounded corners**: Windows `border-radius: 0.75rem`, Dock `1.2rem`
+- **Shadows**: Elevated shadow for active windows, subtle for inactive
+- **Typography**: Inter font family (`@fontsource/inter`), system font stack fallback
+- **Animations**: Spring-based for Dock magnification, `sineInOut` easing for window transitions
+- **Cursors**: Custom macOS cursors from `public/cursors/`
 
 ---
 
