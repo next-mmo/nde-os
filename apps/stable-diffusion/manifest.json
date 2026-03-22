@@ -1,0 +1,50 @@
+{
+  "id": "stable-diffusion-webui",
+  "name": "Stable Diffusion WebUI",
+  "description": "AUTOMATIC1111 web interface for Stable Diffusion image generation",
+  "author": "AUTOMATIC1111",
+  "repo": "https://github.com/AUTOMATIC1111/stable-diffusion-webui.git",
+  "branch": "master",
+  "python_version": "3.10",
+  "needs_gpu": true,
+  "cuda_version": "12.1",
+  "min_vram": 4,
+  "min_ram": 8,
+  "pip_deps": [],
+  "requirements_file": "requirements_versions.txt",
+  "launch_cmd": "python3 launch.py --listen --port 7860",
+  "port": 7860,
+  "health_check": "http://localhost:7860/sdapi/v1/progress",
+  "health_timeout": 120,
+  "env": [
+    [
+      "COMMANDLINE_ARGS",
+      "--xformers"
+    ]
+  ],
+  "disk_size": "~12GB",
+  "tags": [
+    "image-generation",
+    "diffusion",
+    "gpu",
+    "txt2img"
+  ],
+  "icon": "\ud83c\udfa8",
+  "homepage": "https://github.com/AUTOMATIC1111/stable-diffusion-webui",
+  "license": "AGPL-3.0",
+  "models": [
+    {
+      "name": "v1-5-pruned-emaonly.safetensors",
+      "url": "https://huggingface.co/runwayml/stable-diffusion-v1-5/resolve/main/v1-5-pruned-emaonly.safetensors",
+      "destination": "models/Stable-diffusion/",
+      "size": "4.27GB"
+    }
+  ],
+  "volumes": [
+    {
+      "name": "sd-models",
+      "mount_path": "models/",
+      "shared": true
+    }
+  ]
+}

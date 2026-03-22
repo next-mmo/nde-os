@@ -1,0 +1,21 @@
+{
+  "id": "port-manager",
+  "name": "Port Manager",
+  "version": "1.0.0",
+  "type": "middleware",
+  "description": "Prevent port conflicts. Auto-assign available ports. Show port map",
+  "author": "ai-launcher",
+  "entry": "ports.py",
+  "language": "python",
+  "intercept": [
+    "pre_launch"
+  ],
+  "priority": 50,
+  "api_routes": [
+    {
+      "method": "GET",
+      "path": "/api/plugins/port-manager/map",
+      "description": "Port usage map"
+    }
+  ]
+}

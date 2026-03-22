@@ -1,0 +1,23 @@
+{
+  "id": "log-viewer",
+  "name": "Log Viewer",
+  "version": "1.0.0",
+  "type": "ui",
+  "description": "Aggregated stdout/stderr from all running apps. Searchable and filterable",
+  "author": "ai-launcher",
+  "entry": "viewer.html",
+  "language": "html",
+  "ui_slot": "tab",
+  "api_routes": [
+    {
+      "method": "GET",
+      "path": "/api/plugins/log-viewer/stream",
+      "description": "Live log stream"
+    },
+    {
+      "method": "GET",
+      "path": "/api/plugins/log-viewer/search",
+      "description": "Search logs"
+    }
+  ]
+}

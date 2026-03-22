@@ -1,0 +1,27 @@
+{
+  "id": "whisper-web",
+  "name": "Whisper Web",
+  "description": "OpenAI Whisper speech recognition with web UI. 100+ languages",
+  "author": "openai",
+  "python_version": "3.10",
+  "needs_gpu": true,
+  "min_vram": 4,
+  "pip_deps": [
+    "openai-whisper",
+    "gradio",
+    "ffmpeg-python"
+  ],
+  "launch_cmd": "python3 app.py",
+  "port": 9090,
+  "disk_size": "~4.6GB",
+  "tags": [
+    "audio",
+    "transcription",
+    "asr",
+    "speech-to-text",
+    "gpu"
+  ],
+  "icon": "\ud83c\udf99\ufe0f",
+  "homepage": "https://github.com/openai/whisper",
+  "license": "MIT"
+}

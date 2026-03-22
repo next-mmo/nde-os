@@ -1,0 +1,36 @@
+{
+  "id": "backup-restore",
+  "name": "Backup & Restore",
+  "version": "1.0.0",
+  "type": "ui",
+  "description": "Export/import app configs, models, and workspace snapshots",
+  "author": "ai-launcher",
+  "entry": "backup.py",
+  "language": "python",
+  "ui_slot": "tab",
+  "deps": [
+    "boto3"
+  ],
+  "api_routes": [
+    {
+      "method": "POST",
+      "path": "/api/plugins/backup-restore/export",
+      "description": "Export backup"
+    },
+    {
+      "method": "POST",
+      "path": "/api/plugins/backup-restore/import",
+      "description": "Import backup"
+    }
+  ],
+  "config_schema": {
+    "s3_bucket": {
+      "type": "string",
+      "description": "S3 bucket for remote backups"
+    },
+    "s3_prefix": {
+      "type": "string",
+      "default": "ai-launcher-backups/"
+    }
+  }
+}

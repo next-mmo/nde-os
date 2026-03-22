@@ -1,0 +1,23 @@
+{
+  "id": "disk-cleaner",
+  "name": "Disk Cleaner",
+  "version": "1.0.0",
+  "type": "ui",
+  "description": "Find and clean uv caches, unused venvs, old logs, orphaned workspaces",
+  "author": "ai-launcher",
+  "entry": "cleaner.py",
+  "language": "python",
+  "ui_slot": "tab",
+  "api_routes": [
+    {
+      "method": "GET",
+      "path": "/api/plugins/disk-cleaner/scan",
+      "description": "Scan for cleanable data"
+    },
+    {
+      "method": "POST",
+      "path": "/api/plugins/disk-cleaner/clean",
+      "description": "Run cleanup"
+    }
+  ]
+}

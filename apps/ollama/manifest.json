@@ -1,0 +1,24 @@
+{
+  "id": "ollama",
+  "name": "Ollama",
+  "description": "Run large language models locally. Supports Llama 3, Mistral, Gemma, Phi-3",
+  "author": "ollama",
+  "repo": "https://github.com/ollama/ollama.git",
+  "python_version": "3",
+  "needs_gpu": false,
+  "pip_deps": [],
+  "launch_cmd": "ollama serve",
+  "port": 11434,
+  "health_check": "http://localhost:11434/api/version",
+  "disk_size": "~1.2GB + models",
+  "tags": [
+    "llm",
+    "text-generation",
+    "local",
+    "chat"
+  ],
+  "icon": "\ud83e\udd99",
+  "homepage": "https://ollama.com",
+  "license": "MIT",
+  "min_ram": 8
+}

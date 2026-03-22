@@ -1,0 +1,30 @@
+{
+  "id": "fooocus",
+  "name": "Fooocus",
+  "description": "Simplified Stable Diffusion. Focus on prompting, minimal setup",
+  "author": "lllyasviel",
+  "repo": "https://github.com/lllyasviel/Fooocus.git",
+  "python_version": "3.10",
+  "needs_gpu": true,
+  "min_vram": 4,
+  "pip_deps": [],
+  "requirements_file": "requirements_versions.txt",
+  "launch_cmd": "python3 entry_with_update.py --listen --port 7865",
+  "port": 7865,
+  "disk_size": "~10.1GB",
+  "tags": [
+    "image-generation",
+    "easy-setup",
+    "gpu"
+  ],
+  "icon": "\ud83d\udd2e",
+  "homepage": "https://github.com/lllyasviel/Fooocus",
+  "license": "GPL-3.0",
+  "volumes": [
+    {
+      "name": "sd-models",
+      "mount_path": "models/",
+      "shared": true
+    }
+  ]
+}

@@ -1,0 +1,27 @@
+{
+  "id": "kohya-ss",
+  "name": "Kohya SS",
+  "description": "Training GUI for LoRA, DreamBooth, and fine-tuning. Supports SDXL",
+  "author": "bmaltais",
+  "repo": "https://github.com/bmaltais/kohya_ss.git",
+  "python_version": "3.10",
+  "needs_gpu": true,
+  "min_vram": 12,
+  "min_ram": 16,
+  "pip_deps": [],
+  "requirements_file": "requirements.txt",
+  "pre_install": "bash setup.sh",
+  "launch_cmd": "python3 kohya_gui.py --listen 0.0.0.0 --server_port 7861",
+  "port": 7861,
+  "disk_size": "~6.3GB",
+  "tags": [
+    "training",
+    "lora",
+    "dreambooth",
+    "fine-tuning",
+    "gpu"
+  ],
+  "icon": "\u26a1",
+  "homepage": "https://github.com/bmaltais/kohya_ss",
+  "license": "Apache-2.0"
+}

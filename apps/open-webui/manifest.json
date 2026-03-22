@@ -1,0 +1,31 @@
+{
+  "id": "open-webui",
+  "name": "Open WebUI",
+  "description": "Self-hosted ChatGPT-like interface for local LLMs. Works with Ollama",
+  "author": "open-webui",
+  "repo": "https://github.com/open-webui/open-webui.git",
+  "python_version": "3.11",
+  "needs_gpu": false,
+  "pip_deps": [
+    "open-webui"
+  ],
+  "launch_cmd": "open-webui serve --host 0.0.0.0 --port 3000",
+  "port": 3000,
+  "health_check": "http://localhost:3000/health",
+  "disk_size": "~2.1GB",
+  "tags": [
+    "llm",
+    "chat-ui",
+    "self-hosted",
+    "ollama"
+  ],
+  "icon": "\ud83d\udcac",
+  "homepage": "https://openwebui.com",
+  "license": "MIT",
+  "env": [
+    [
+      "OLLAMA_BASE_URL",
+      "http://localhost:11434"
+    ]
+  ]
+}

@@ -1,0 +1,36 @@
+{
+  "id": "gpu-monitor",
+  "name": "GPU Monitor",
+  "version": "1.0.0",
+  "type": "monitor",
+  "description": "Real-time NVIDIA GPU monitoring \u2014 utilization, temperature, VRAM, power",
+  "author": "ai-launcher",
+  "entry": "monitor.py",
+  "language": "python",
+  "interval_seconds": 5,
+  "deps": [
+    "pynvml"
+  ],
+  "api_routes": [
+    {
+      "method": "GET",
+      "path": "/api/plugins/gpu-monitor/stats",
+      "description": "Current GPU stats"
+    },
+    {
+      "method": "GET",
+      "path": "/api/plugins/gpu-monitor/history",
+      "description": "Usage history"
+    }
+  ],
+  "config_schema": {
+    "refresh_rate": {
+      "type": "integer",
+      "default": 5
+    },
+    "alert_temp": {
+      "type": "integer",
+      "default": 85
+    }
+  }
+}

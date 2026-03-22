@@ -1,0 +1,36 @@
+{
+  "id": "comfyui",
+  "name": "ComfyUI",
+  "description": "Powerful node-based Stable Diffusion UI with workflows and ControlNet",
+  "author": "comfyanonymous",
+  "repo": "https://github.com/comfyanonymous/ComfyUI.git",
+  "python_version": "3.11",
+  "needs_gpu": true,
+  "cuda_version": "12.1",
+  "min_vram": 6,
+  "pip_deps": [
+    "torch",
+    "torchvision",
+    "torchaudio"
+  ],
+  "requirements_file": "requirements.txt",
+  "launch_cmd": "python3 main.py --listen 0.0.0.0 --port 8188",
+  "port": 8188,
+  "disk_size": "~8.7GB",
+  "tags": [
+    "image-generation",
+    "node-based",
+    "gpu",
+    "workflows"
+  ],
+  "icon": "\ud83e\udde9",
+  "homepage": "https://github.com/comfyanonymous/ComfyUI",
+  "license": "GPL-3.0",
+  "volumes": [
+    {
+      "name": "sd-models",
+      "mount_path": "models/",
+      "shared": true
+    }
+  ]
+}

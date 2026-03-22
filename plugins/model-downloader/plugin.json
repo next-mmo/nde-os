@@ -1,0 +1,41 @@
+{
+  "id": "model-downloader",
+  "name": "Model Downloader",
+  "version": "1.0.0",
+  "type": "hook",
+  "description": "Background model downloading with progress tracking. HuggingFace, CivitAI, direct URLs",
+  "author": "ai-launcher",
+  "entry": "downloader.py",
+  "language": "python",
+  "hooks": [
+    "post_install"
+  ],
+  "deps": [
+    "huggingface-hub",
+    "requests",
+    "tqdm"
+  ],
+  "api_routes": [
+    {
+      "method": "POST",
+      "path": "/api/plugins/model-downloader/download",
+      "description": "Start download"
+    },
+    {
+      "method": "GET",
+      "path": "/api/plugins/model-downloader/progress",
+      "description": "Download progress"
+    }
+  ],
+  "config_schema": {
+    "hf_token": {
+      "type": "string",
+      "secret": true,
+      "description": "HuggingFace token"
+    },
+    "max_concurrent": {
+      "type": "integer",
+      "default": 2
+    }
+  }
+}
