@@ -1,13 +1,11 @@
 import { svelte } from "@sveltejs/vite-plugin-svelte";
-import UnpluginIcons from "unplugin-icons/vite";
+import tailwindcss from "@tailwindcss/vite";
 import { defineConfig } from "vite";
 
 export default defineConfig({
   plugins: [
     svelte(),
-    UnpluginIcons({
-      compiler: "svelte",
-    }),
+    tailwindcss(),
   ],
   resolve: {
     alias: {
@@ -18,6 +16,10 @@ export default defineConfig({
   server: {
     port: 5173,
     strictPort: true,
+    watch: {
+      // 3. tell Vite to ignore watching `src-tauri`
+      ignored: ["**/src-tauri/**"],
+    },
   },
   build: {
     outDir: "build",

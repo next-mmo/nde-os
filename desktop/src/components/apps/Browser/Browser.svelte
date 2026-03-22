@@ -1,10 +1,10 @@
 <svelte:options runes={true} />
 
 <script lang="ts">
-  import { openSessionExternally } from "$lib/session-actions";
   import {
     currentBrowserUrl,
     getSessionById,
+    openGenericBrowserWindow,
     reloadBrowserWindow,
     sendSessionToDashboard,
     stepBrowserHistory,
@@ -46,8 +46,10 @@
     <div class="toolbar-actions">
       {#if session}
         <button type="button" onclick={() => sendSessionToDashboard(session.id)}>Return to Dashboard</button>
-        <button type="button" onclick={() => openSessionExternally(session.port)}>Open External</button>
       {/if}
+      <button type="button" onclick={() => openGenericBrowserWindow(currentBrowserUrl(window), window.title)}>
+        New Window
+      </button>
     </div>
   </form>
 
@@ -93,6 +95,16 @@
     border: 1px solid var(--system-color-border);
     background: hsla(var(--system-color-light-hsl) / 0.72);
     font-size: 0.8rem;
+    cursor: pointer;
+    transition: background 0.15s ease, transform 0.1s ease;
+  }
+
+  .toolbar button:hover {
+    background: hsla(var(--system-color-light-hsl) / 0.92);
+  }
+
+  .toolbar button:active {
+    transform: scale(0.96);
   }
 
   input {

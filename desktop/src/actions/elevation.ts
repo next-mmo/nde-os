@@ -4,6 +4,8 @@ const z_index_config = {
   dock: 80,
   launchpad: 100,
   window_traffic_lights: 12,
+  "menubar-menu-parent": 200,
+  "action-center-panel": 210,
 };
 
 if (typeof document !== "undefined") {

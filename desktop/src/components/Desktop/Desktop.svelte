@@ -2,12 +2,22 @@
 
 <script lang="ts">
   import { onMount } from "svelte";
+  import { QueryClient, QueryClientProvider } from "@tanstack/svelte-query";
   import Dock from "🍎/components/Dock/Dock.svelte";
   import Launchpad from "🍎/components/Desktop/Launchpad.svelte";
   import WindowsArea from "🍎/components/Desktop/Window/WindowsArea.svelte";
   import TopBar from "🍎/components/TopBar/TopBar.svelte";
   import { refreshAll } from "$lib/stores/state";
   import { bootDesktop, desktop } from "🍎/state/desktop.svelte";
+
+  const queryClient = new QueryClient({
+    defaultOptions: {
+      queries: {
+        staleTime: 30_000,
+        refetchOnWindowFocus: false,
+      },
+    },
+  });
 
   onMount(() => {
     bootDesktop();
@@ -25,19 +35,21 @@
   });
 </script>
 
-<div class="desktop-shell">
-  <div class="wallpaper" aria-hidden="true"></div>
+<QueryClientProvider client={queryClient}>
+  <div class="desktop-shell">
+    <div class="wallpaper" aria-hidden="true"></div>
 
-  <main class="desktop-grid">
-    <TopBar />
-    <WindowsArea />
-    <Dock />
-  </main>
+    <main class="desktop-grid">
+      <TopBar />
+      <WindowsArea />
+      <Dock />
+    </main>
 
-  {#if desktop.launchpad_open}
-    <Launchpad />
-  {/if}
-</div>
+    {#if desktop.launchpad_open}
+      <Launchpad />
+    {/if}
+  </div>
+</QueryClientProvider>
 
 <style>
   .desktop-shell {

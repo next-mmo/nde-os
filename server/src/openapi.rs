@@ -15,6 +15,7 @@ pub fn openapi_spec() -> serde_json::Value {
             {"name":"apps","description":"App lifecycle: install, launch, stop, uninstall"},
             {"name":"catalog","description":"Browse available AI apps"},
             {"name":"sandbox","description":"Sandbox security & disk usage"},
+            {"name":"store","description":"Store: upload apps via folder, zip, or git URL"},
             {"name":"system","description":"Health & system info"}
         ],
         "paths":{
@@ -29,6 +30,19 @@ pub fn openapi_spec() -> serde_json::Value {
                         "example":{"manifest":{"id":"gradio-demo","name":"Gradio Demo","description":"Test app","author":"ai-launcher","python_version":"3","needs_gpu":false,"pip_deps":["gradio"],"launch_cmd":"python3 app.py","port":7860,"env":[],"disk_size":"~200MB","tags":["demo"]}}}}},
                     "responses":{"201":{"description":"Installed"},"400":{"description":"Failed"},"409":{"description":"Already installed"}}}
             },
+            "/api/store/upload":{"post":{"tags":["store"],"summary":"Upload app to store","operationId":"storeUpload",
+                "description":"Upload an app via local folder, ZIP file, or Git URL. Validates structure, reads manifest.json, performs a trial install. Only accepts the app if install succeeds.",
+                "requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/StoreUploadRequest"},
+                    "examples":{
+                        "folder":{"summary":"Upload from folder","value":{"source_type":"folder","source_path":"/path/to/my-app"}},
+                        "zip":{"summary":"Upload from ZIP","value":{"source_type":"zip","source_path":"/path/to/my-app.zip"}},
+                        "git":{"summary":"Upload from Git URL","value":{"source_type":"git_url","git_url":"https://github.com/user/my-app.git"}}
+                    }}}},
+                "responses":{
+                    "201":{"description":"App uploaded and installed successfully","content":{"application/json":{"schema":{"$ref":"#/components/schemas/StoreUploadResult"}}}},
+                    "400":{"description":"Validation or install failed","content":{"application/json":{"schema":{"$ref":"#/components/schemas/StoreUploadResult"}}}},
+                    "500":{"description":"Internal error"}
+                }}},
             "/api/apps/{app_id}":{
                 "get":{"tags":["apps"],"summary":"Get app details","operationId":"getApp","parameters":[{"name":"app_id","in":"path","required":true,"schema":{"type":"string"}}],"responses":{"200":{"description":"App details"},"404":{"description":"Not found"}}},
                 "delete":{"tags":["apps"],"summary":"Uninstall app and remove workspace","operationId":"uninstallApp","parameters":[{"name":"app_id","in":"path","required":true,"schema":{"type":"string"}}],"responses":{"200":{"description":"Uninstalled"},"404":{"description":"Not found"}}}
@@ -43,6 +57,22 @@ pub fn openapi_spec() -> serde_json::Value {
             "AppStatus":{"type":"object","properties":{"state":{"type":"string","enum":["NotInstalled","Installed","Running","Error"]},"pid":{"type":"integer"},"port":{"type":"integer"}}},
             "InstalledApp":{"type":"object","properties":{"manifest":{"$ref":"#/components/schemas/AppManifest"},"status":{"$ref":"#/components/schemas/AppStatus"},"workspace":{"type":"string"},"installed_at":{"type":"string"},"last_run":{"type":"string"}}},
             "InstallRequest":{"type":"object","required":["manifest"],"properties":{"manifest":{"$ref":"#/components/schemas/AppManifest"}}},
+            "StoreUploadRequest":{"type":"object","required":["source_type"],"properties":{
+                "source_type":{"type":"string","enum":["folder","zip","git_url"],"description":"Upload source type"},
+                "source_path":{"type":"string","description":"Local path to folder or ZIP file (required for folder/zip)"},
+                "git_url":{"type":"string","description":"Git repository URL (required for git_url)"}
+            }},
+            "StoreUploadResult":{"type":"object","properties":{
+                "accepted":{"type":"boolean","description":"Whether the upload was accepted"},
+                "app_id":{"type":"string","nullable":true},
+                "app_name":{"type":"string","nullable":true},
+                "validation_errors":{"type":"array","items":{"$ref":"#/components/schemas/ValidationError"}},
+                "install_log":{"type":"array","items":{"type":"string"}}
+            }},
+            "ValidationError":{"type":"object","properties":{
+                "field":{"type":"string","description":"Field that failed validation"},
+                "message":{"type":"string","description":"Error message"}
+            }},
             "LaunchResult":{"type":"object","properties":{"pid":{"type":"integer"},"port":{"type":"integer"}}},
             "SandboxVerifyResult":{"type":"object","properties":{"path_traversal_blocked":{"type":"boolean"},"absolute_escape_blocked":{"type":"boolean"},"symlink_escape_blocked":{"type":"boolean"},"valid_path_works":{"type":"boolean"},"sandbox_root":{"type":"string"},"platform":{"type":"string"}}},
             "SystemInfo":{"type":"object","properties":{"os":{"type":"string"},"arch":{"type":"string"},"python_version":{"type":"string"},"gpu_detected":{"type":"boolean"},"base_dir":{"type":"string"},"total_apps":{"type":"integer"},"running_apps":{"type":"integer"}}},

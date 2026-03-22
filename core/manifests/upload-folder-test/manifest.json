@@ -1,0 +1,16 @@
+{
+  "author": "test",
+  "description": "Test app for upload",
+  "disk_size": "1MB",
+  "env": [],
+  "id": "upload-folder-test",
+  "launch_cmd": "python -c \"print('hello')\"",
+  "name": "Test Upload upload-folder-test",
+  "needs_gpu": false,
+  "pip_deps": [],
+  "port": 19999,
+  "python_version": "3",
+  "tags": [
+    "test"
+  ]
+}

@@ -110,16 +110,6 @@ export async function stopApp(appId: string): Promise<string> {
   return smartInvoke<string>("stop_app", { appId });
 }
 
-export async function openAppBrowser(port: number): Promise<string> {
-  const url = `http://localhost:${port}`;
-  if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
-    const { open } = await import("@tauri-apps/plugin-shell");
-    await open(url);
-  } else {
-    window.open(url, "_blank");
-  }
-  return url;
-}
 
 // ── Sandbox ──
 

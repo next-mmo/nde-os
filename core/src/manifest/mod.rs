@@ -46,10 +46,48 @@ pub struct InstallRequest {
     pub manifest: AppManifest,
 }
 
+/// Source type for store uploads
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum SourceType {
+    Folder,
+    Zip,
+    GitUrl,
+}
+
+/// Request payload for uploading an app to the store
+#[derive(Debug, Deserialize)]
+pub struct StoreUploadRequest {
+    pub source_type: SourceType,
+    /// Local path — required for Folder and Zip sources
+    #[serde(default)]
+    pub source_path: Option<String>,
+    /// Git clone URL — required for GitUrl source
+    #[serde(default)]
+    pub git_url: Option<String>,
+}
+
+/// Structured validation error
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ValidationError {
+    pub field: String,
+    pub message: String,
+}
+
+/// Result of a store upload attempt
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StoreUploadResult {
+    pub accepted: bool,
+    pub app_id: Option<String>,
+    pub app_name: Option<String>,
+    pub validation_errors: Vec<ValidationError>,
+    pub install_log: Vec<String>,
+}
+
 impl AppManifest {
     pub fn sample_node_fullstack() -> Self {
         Self {
-            id: "sample-node-fullstack".into(),
+            id: "sample-node".into(),
             name: "Node.js Fullstack Counter".into(),
             description: "A fullstack React + Express counter app to demonstrate Node.js support in AI Launcher".into(),
             author: "ai-launcher".into(),

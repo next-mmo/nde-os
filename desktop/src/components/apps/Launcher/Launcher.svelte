@@ -3,7 +3,7 @@
 <script lang="ts">
   import {
     installAndFocusCatalog,
-    openSessionExternally,
+    openSessionInNewOsWindow,
     revealOrLaunchManifest,
     stopManifest,
   } from "$lib/session-actions";
@@ -38,6 +38,14 @@
 
   let workingAppId = $state<string | null>(null);
   let visibleLimit = $state(12);
+  let catalogLayout = $state<"grid" | "list">("grid");
+
+  const storeGradients = [
+    "linear-gradient(160deg, hsl(215 100% 58%), hsl(191 86% 48%) 58%, hsl(171 77% 42%))",
+    "linear-gradient(160deg, hsl(261 82% 61%), hsl(215 92% 58%) 58%, hsl(188 88% 46%))",
+    "linear-gradient(160deg, hsl(16 100% 63%), hsl(346 83% 60%) 58%, hsl(281 74% 58%))",
+    "linear-gradient(160deg, hsl(148 68% 44%), hsl(191 87% 43%) 58%, hsl(214 100% 55%))",
+  ];
 
   const sections: { id: LauncherSection; label: string }[] = [
     { id: "overview", label: "Overview" },
@@ -162,6 +170,20 @@
     }
     return "";
   }
+
+  function appCategory(app: AppManifest) {
+    return app.tags[0]?.replace(/-/g, " ") ?? "AI app";
+  }
+
+  function appGradient(app: AppManifest) {
+    const seed = Array.from(app.id).reduce((sum, char) => sum + char.charCodeAt(0), 0);
+    return storeGradients[seed % storeGradients.length];
+  }
+
+  function statusLabel(app: AppManifest) {
+    const status = appStatus(app);
+    return status.charAt(0).toUpperCase() + status.slice(1);
+  }
 </script>
 
 <section class="launcher">
@@ -210,7 +232,7 @@
       </div>
       <div class="toolbar-right">
         <button onclick={() => openStaticApp("settings")}>Settings</button>
-        <button onclick={openGenericBrowserWindow}>New Browser</button>
+        <button onclick={() => openGenericBrowserWindow()}>New Browser</button>
       </div>
     </header>
 
@@ -244,7 +266,9 @@
             </div>
             <div class="session-actions">
               <button onclick={() => openSessionInWindow(currentSession.id)}>Open in Window</button>
-              <button onclick={() => openSessionExternally(currentSession.port)}>Open External</button>
+              <button onclick={() => openSessionInNewOsWindow(currentSession.port, currentSession.title)}>
+                New OS Window
+              </button>
             </div>
           </div>
 
@@ -332,35 +356,117 @@
             </article>
           </div>
         {:else if desktop.launcher_section === "catalog"}
-          <div class="panel">
-            <div class="panel-header">
+          <div class="panel catalog-panel">
+            <div class="panel-header catalog-header">
               <div>
                 <p class="eyebrow">Catalog</p>
-                <h3>Available AI apps</h3>
+                <h3>Explore AI apps</h3>
               </div>
-              <span>{filteredCatalog.length} result(s)</span>
-            </div>
-            <div class="row-list">
-              {#each visibleCatalog as app (app.id)}
-                <article class="app-row" data-app-id={app.id}>
-                  <button class="app-main" onclick={() => showManifestDetails(app.id)}>
-                    <div class="icon">{app.icon ?? app.name.slice(0, 2).toUpperCase()}</div>
-                    <div>
-                      <strong>{app.name}</strong>
-                      <p>{app.description}</p>
-                    </div>
+              <div class="catalog-header-actions">
+                <span>{filteredCatalog.length} result(s)</span>
+                <div class="catalog-layout-toggle" aria-label="Catalog layout">
+                  <button
+                    type="button"
+                    class:active={catalogLayout === "grid"}
+                    aria-pressed={catalogLayout === "grid"}
+                    data-catalog-layout="grid"
+                    onclick={() => (catalogLayout = "grid")}
+                  >
+                    Grid
                   </button>
-                  <div class="row-actions">
-                    {#if !$installedMap[app.id]}
-                      <button disabled={workingAppId === app.id} onclick={() => installManifest(app)}>Install</button>
-                    {:else}
-                      <button disabled={workingAppId === app.id} onclick={() => launchManifest(app, "embedded")}>Open in Dashboard</button>
-                      <button disabled={workingAppId === app.id} onclick={() => launchManifest(app, "windowed")}>Open in Window</button>
-                    {/if}
-                  </div>
-                </article>
-              {/each}
+                  <button
+                    type="button"
+                    class:active={catalogLayout === "list"}
+                    aria-pressed={catalogLayout === "list"}
+                    data-catalog-layout="list"
+                    onclick={() => (catalogLayout = "list")}
+                  >
+                    List
+                  </button>
+                </div>
+              </div>
             </div>
+            {#if catalogLayout === "grid"}
+              <div class="catalog-grid" data-catalog-surface data-layout="grid">
+                {#each visibleCatalog as app (app.id)}
+                  <article class="catalog-card" data-app-id={app.id}>
+                    <button class="catalog-card-main" onclick={() => showManifestDetails(app.id)}>
+                      <div class="catalog-card-art" style={`background:${appGradient(app)}`}>
+                        <div class="catalog-card-topline">
+                          <span class="catalog-card-category">{appCategory(app)}</span>
+                          <span class={`catalog-status ${appStatus(app)}`}>{statusLabel(app)}</span>
+                        </div>
+                        <div class="catalog-card-copy">
+                          <span class="catalog-card-id">{app.id}</span>
+                          <strong>{app.name}</strong>
+                          <p>{app.description}</p>
+                        </div>
+                      </div>
+                    </button>
+                    <div class="catalog-card-footer">
+                      <div class="catalog-card-meta">
+                        {#each app.tags.slice(0, 3) as tag}
+                          <span>{tag}</span>
+                        {/each}
+                        <span>{app.disk_size}</span>
+                      </div>
+                      <div class="catalog-card-actions">
+                        {#if !$installedMap[app.id]}
+                          <button disabled={workingAppId === app.id} onclick={() => installManifest(app)}>Install</button>
+                        {:else}
+                          <button disabled={workingAppId === app.id} onclick={() => launchManifest(app, "embedded")}>
+                            Open in Dashboard
+                          </button>
+                          <button disabled={workingAppId === app.id} onclick={() => launchManifest(app, "windowed")}>
+                            Open in Window
+                          </button>
+                        {/if}
+                      </div>
+                    </div>
+                  </article>
+                {/each}
+              </div>
+            {:else}
+              <div class="catalog-list" data-catalog-surface data-layout="list">
+                {#each visibleCatalog as app (app.id)}
+                  <article class="catalog-list-row" data-app-id={app.id}>
+                    <button class="catalog-list-main" onclick={() => showManifestDetails(app.id)}>
+                      <div class="catalog-list-art" style={`background:${appGradient(app)}`}>
+                        <span>{app.icon ?? app.name.slice(0, 2).toUpperCase()}</span>
+                      </div>
+                      <div class="catalog-list-copy">
+                        <div class="catalog-list-head">
+                          <div>
+                            <small>{appCategory(app)}</small>
+                            <strong>{app.name}</strong>
+                          </div>
+                          <span class={`catalog-status ${appStatus(app)}`}>{statusLabel(app)}</span>
+                        </div>
+                        <p>{app.description}</p>
+                        <div class="catalog-card-meta">
+                          {#each app.tags.slice(0, 3) as tag}
+                            <span>{tag}</span>
+                          {/each}
+                          <span>{app.disk_size}</span>
+                        </div>
+                      </div>
+                    </button>
+                    <div class="catalog-list-actions">
+                      {#if !$installedMap[app.id]}
+                        <button disabled={workingAppId === app.id} onclick={() => installManifest(app)}>Install</button>
+                      {:else}
+                        <button disabled={workingAppId === app.id} onclick={() => launchManifest(app, "embedded")}>
+                          Open in Dashboard
+                        </button>
+                        <button disabled={workingAppId === app.id} onclick={() => launchManifest(app, "windowed")}>
+                          Open in Window
+                        </button>
+                      {/if}
+                    </div>
+                  </article>
+                {/each}
+              </div>
+            {/if}
             {#if visibleCatalog.length < filteredCatalog.length}
               <div class="show-more">
                 <button onclick={() => (visibleLimit += 12)}>Show more</button>
@@ -490,7 +596,9 @@
                 <button onclick={() => stopInstalledApp(selectedInstalled)}>Stop</button>
                 <button onclick={() => uninstallManifest(selectedManifest)}>Uninstall</button>
                 {#if selectedInstalled.status.port}
-                  <button onclick={() => openSessionExternally(selectedInstalled.status.port!)}>Open External</button>
+                  <button onclick={() => openSessionInNewOsWindow(selectedInstalled.status.port!, selectedManifest.name)}>
+                    New OS Window
+                  </button>
                 {/if}
               {:else}
                 <button onclick={() => launchManifest(selectedManifest, "embedded")}>Open in Dashboard</button>
@@ -652,6 +760,9 @@
   .toolbar button,
   .session-pill,
   .row-actions button,
+  .catalog-layout-toggle button,
+  .catalog-card-actions button,
+  .catalog-list-actions button,
   .hero-actions button,
   .detail-actions button,
   .utility-list button,
@@ -793,6 +904,237 @@
     font-size: 1.15rem;
   }
 
+  .catalog-panel {
+    background:
+      radial-gradient(circle at top left, hsla(var(--system-color-primary-hsl) / 0.16), transparent 30%),
+      linear-gradient(180deg, hsla(var(--system-color-light-hsl) / 0.72), hsla(var(--system-color-light-hsl) / 0.92)),
+      var(--system-color-panel);
+  }
+
+  :global(body.dark) .catalog-panel {
+    background:
+      radial-gradient(circle at top left, hsla(var(--system-color-primary-hsl) / 0.2), transparent 34%),
+      linear-gradient(180deg, hsla(223 18% 18% / 0.96), hsla(224 18% 15% / 0.98)),
+      var(--system-color-panel);
+  }
+
+  .catalog-header {
+    align-items: center;
+  }
+
+  .catalog-header-actions {
+    display: flex;
+    gap: 0.8rem;
+    align-items: center;
+  }
+
+  .catalog-layout-toggle {
+    display: inline-flex;
+    gap: 0.25rem;
+    padding: 0.24rem;
+    border-radius: 999px;
+    border: 1px solid var(--system-color-border);
+    background: hsla(var(--system-color-light-hsl) / 0.62);
+  }
+
+  .catalog-layout-toggle button {
+    padding: 0.48rem 0.85rem;
+    background: transparent;
+    border-color: transparent;
+    font-size: 0.8rem;
+  }
+
+  .catalog-layout-toggle button.active {
+    background: linear-gradient(180deg, hsla(var(--system-color-primary-hsl) / 0.18), hsla(var(--system-color-primary-hsl) / 0.08));
+    border-color: hsla(var(--system-color-primary-hsl) / 0.2);
+    color: var(--system-color-primary);
+  }
+
+  .catalog-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(16.5rem, 1fr));
+    gap: 1rem;
+  }
+
+  .catalog-card,
+  .catalog-list-row {
+    border-radius: 1.25rem;
+    border: 1px solid var(--system-color-border);
+    background: var(--system-color-panel-solid);
+    overflow: hidden;
+    box-shadow: 0 18px 40px hsla(220 24% 12% / 0.08);
+  }
+
+  .catalog-card-main,
+  .catalog-list-main {
+    text-align: left;
+  }
+
+  .catalog-card-art {
+    position: relative;
+    min-height: 17.5rem;
+    padding: 1rem;
+    display: grid;
+    align-content: space-between;
+    gap: 1rem;
+    color: white;
+    overflow: hidden;
+  }
+
+  .catalog-card-art::before,
+  .catalog-list-art::before {
+    content: "";
+    position: absolute;
+    inset: auto -12% -22% auto;
+    width: 9rem;
+    height: 9rem;
+    border-radius: 999px;
+    background: hsla(var(--system-color-light-hsl) / 0.22);
+    filter: blur(10px);
+  }
+
+  .catalog-card-topline,
+  .catalog-list-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.75rem;
+    align-items: flex-start;
+  }
+
+  .catalog-card-category,
+  .catalog-card-id,
+  .catalog-list-copy small {
+    display: block;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+  }
+
+  .catalog-card-category,
+  .catalog-card-id {
+    color: hsla(var(--system-color-light-hsl) / 0.82);
+  }
+
+  .catalog-card-copy,
+  .catalog-card-topline {
+    position: relative;
+    z-index: 1;
+  }
+
+  .catalog-card-copy strong {
+    display: block;
+    margin-top: 0.38rem;
+    font-size: 1.55rem;
+    line-height: 1.02;
+  }
+
+  .catalog-card-copy p {
+    margin: 0.55rem 0 0;
+    max-width: 18rem;
+    color: hsla(var(--system-color-light-hsl) / 0.88);
+    line-height: 1.45;
+  }
+
+  .catalog-status {
+    border-radius: 999px;
+    padding: 0.35rem 0.65rem;
+    font-size: 0.72rem;
+    font-weight: 600;
+    white-space: nowrap;
+    background: hsla(var(--system-color-light-hsl) / 0.18);
+    color: white;
+    border: 1px solid hsla(var(--system-color-light-hsl) / 0.24);
+  }
+
+  .catalog-status.installed {
+    background: hsla(211 100% 50% / 0.18);
+  }
+
+  .catalog-status.running {
+    background: hsla(142 64% 42% / 0.2);
+  }
+
+  .catalog-card-footer,
+  .catalog-list-actions {
+    padding: 0.95rem 1rem 1rem;
+  }
+
+  .catalog-card-footer {
+    display: grid;
+    gap: 0.9rem;
+  }
+
+  .catalog-card-meta {
+    display: flex;
+    gap: 0.45rem;
+    flex-wrap: wrap;
+  }
+
+  .catalog-card-meta span {
+    border-radius: 999px;
+    padding: 0.32rem 0.62rem;
+    background: var(--system-color-chip);
+    color: var(--system-color-text-muted);
+    font-size: 0.74rem;
+  }
+
+  .catalog-card-actions,
+  .catalog-list-actions {
+    display: flex;
+    gap: 0.55rem;
+    flex-wrap: wrap;
+  }
+
+  .catalog-list {
+    display: grid;
+    gap: 0.8rem;
+  }
+
+  .catalog-list-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 1rem;
+    align-items: center;
+  }
+
+  .catalog-list-main {
+    display: grid;
+    grid-template-columns: 6rem minmax(0, 1fr);
+    gap: 1rem;
+    align-items: stretch;
+    padding: 0.9rem;
+  }
+
+  .catalog-list-art {
+    position: relative;
+    min-height: 7.25rem;
+    border-radius: 1rem;
+    display: grid;
+    place-items: center;
+    color: white;
+    font-size: 1.2rem;
+    font-weight: 700;
+    overflow: hidden;
+  }
+
+  .catalog-list-copy {
+    display: grid;
+    gap: 0.55rem;
+    align-content: center;
+  }
+
+  .catalog-list-copy strong {
+    display: block;
+    margin-top: 0.22rem;
+    font-size: 1.1rem;
+  }
+
+  .catalog-list-copy p {
+    margin: 0;
+    color: var(--system-color-text-muted);
+    line-height: 1.45;
+  }
+
   .row-list {
     display: grid;
     gap: 0.7rem;
@@ -929,6 +1271,14 @@
       grid-template-columns: repeat(2, minmax(0, 1fr));
       display: grid;
     }
+
+    .catalog-list-row {
+      grid-template-columns: 1fr;
+    }
+
+    .catalog-list-actions {
+      padding-top: 0;
+    }
   }
 
   @media (max-width: 980px) {
@@ -944,6 +1294,25 @@
     .detail-grid,
     .detail-pane {
       grid-template-columns: 1fr;
+    }
+
+    .catalog-header,
+    .catalog-header-actions,
+    .catalog-list-head {
+      align-items: flex-start;
+      flex-direction: column;
+    }
+
+    .catalog-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .catalog-list-main {
+      grid-template-columns: 1fr;
+    }
+
+    .catalog-list-art {
+      min-height: 8.5rem;
     }
   }
 </style>

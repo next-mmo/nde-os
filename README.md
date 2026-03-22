@@ -4,7 +4,7 @@
 
 NDE-OS combines a **macOS-style web desktop** with a **Rust-powered sandbox backend** to give users a familiar, secure environment for installing and running AI apps. Each app lives in its own filesystem jail with an isolated Python virtual environment managed by [uv](https://docs.astral.sh/uv/).
 
-> **Cross-platform. Linux + Windows native. No WSL required.**
+> **Cross-platform. Mac, Linux + Windows native. No WSL required.**
 
 ---
 
@@ -55,11 +55,11 @@ npm run dev
 
 ### Endpoints
 
-| URL | Description |
-|-----|-------------|
-| `http://localhost:5173` | Desktop UI |
-| `http://localhost:8080/swagger-ui/` | Swagger API Explorer |
-| `http://localhost:8080/api-docs/openapi.json` | OpenAPI 3.0.3 Spec |
+| URL                                           | Description          |
+| --------------------------------------------- | -------------------- |
+| `http://localhost:5173`                       | Desktop UI           |
+| `http://localhost:8080/swagger-ui/`           | Swagger API Explorer |
+| `http://localhost:8080/api-docs/openapi.json` | OpenAPI 3.0.3 Spec   |
 
 ---
 
@@ -103,23 +103,23 @@ nde-os/
 
 Every installed app runs inside a **jailed workspace** with strict security enforcement:
 
-| Attack Vector | Defense | Result |
-|---------------|---------|--------|
-| Path traversal (`../../../etc/passwd`) | Canonicalize + containment check | ✅ Blocked |
-| Absolute escape (`/etc/shadow`) | Reject paths outside workspace | ✅ Blocked |
-| Symlink escape (`ln -s /etc escape`) | Resolve symlinks before validation | ✅ Blocked |
-| Env variable leak | Override HOME, TMPDIR, APPDATA, etc. | ✅ Jailed |
+| Attack Vector                          | Defense                              | Result     |
+| -------------------------------------- | ------------------------------------ | ---------- |
+| Path traversal (`../../../etc/passwd`) | Canonicalize + containment check     | ✅ Blocked |
+| Absolute escape (`/etc/shadow`)        | Reject paths outside workspace       | ✅ Blocked |
+| Symlink escape (`ln -s /etc escape`)   | Resolve symlinks before validation   | ✅ Blocked |
+| Env variable leak                      | Override HOME, TMPDIR, APPDATA, etc. | ✅ Jailed  |
 
 ### Environment Jailing
 
-| Variable | Jailed To |
-|----------|-----------|
-| `HOME` / `USERPROFILE` | `workspace/` |
-| `TMPDIR` / `TEMP` / `TMP` | `workspace/tmp/` |
-| `XDG_CONFIG_HOME` / `APPDATA` | `workspace/config/` |
-| `VIRTUAL_ENV` | `workspace/.venv/` |
-| `PATH` | `workspace/.venv/bin/:$SYSTEM_PATH` |
-| `UV_CACHE_DIR` | `workspace/.uv_cache/` |
+| Variable                      | Jailed To                           |
+| ----------------------------- | ----------------------------------- |
+| `HOME` / `USERPROFILE`        | `workspace/`                        |
+| `TMPDIR` / `TEMP` / `TMP`     | `workspace/tmp/`                    |
+| `XDG_CONFIG_HOME` / `APPDATA` | `workspace/config/`                 |
+| `VIRTUAL_ENV`                 | `workspace/.venv/`                  |
+| `PATH`                        | `workspace/.venv/bin/:$SYSTEM_PATH` |
+| `UV_CACHE_DIR`                | `workspace/.uv_cache/`              |
 
 ### Verify any app's sandbox
 
@@ -134,19 +134,19 @@ curl http://localhost:8080/api/sandbox/gradio-demo/verify
 
 Base URL: `http://localhost:8080`
 
-| Method | Path | Description |
-|--------|------|-------------|
-| `GET` | `/api/health` | Health check |
-| `GET` | `/api/system` | OS, Python, GPU, uv info |
-| `GET` | `/api/catalog` | Available apps |
-| `GET` | `/api/apps` | Installed apps |
-| `POST` | `/api/apps` | Install app |
-| `GET` | `/api/apps/{id}` | App details |
-| `DELETE` | `/api/apps/{id}` | Uninstall app |
-| `POST` | `/api/apps/{id}/launch` | Launch app |
-| `POST` | `/api/apps/{id}/stop` | Stop app |
-| `GET` | `/api/sandbox/{id}/verify` | Security tests |
-| `GET` | `/api/sandbox/{id}/disk` | Disk usage |
+| Method   | Path                       | Description              |
+| -------- | -------------------------- | ------------------------ |
+| `GET`    | `/api/health`              | Health check             |
+| `GET`    | `/api/system`              | OS, Python, GPU, uv info |
+| `GET`    | `/api/catalog`             | Available apps           |
+| `GET`    | `/api/apps`                | Installed apps           |
+| `POST`   | `/api/apps`                | Install app              |
+| `GET`    | `/api/apps/{id}`           | App details              |
+| `DELETE` | `/api/apps/{id}`           | Uninstall app            |
+| `POST`   | `/api/apps/{id}/launch`    | Launch app               |
+| `POST`   | `/api/apps/{id}/stop`      | Stop app                 |
+| `GET`    | `/api/sandbox/{id}/verify` | Security tests           |
+| `GET`    | `/api/sandbox/{id}/disk`   | Disk usage               |
 
 Interactive docs: [Swagger UI](http://localhost:8080/swagger-ui/)
 
@@ -168,7 +168,7 @@ Apps are defined by JSON manifests in the `apps/` directory:
   "launch_cmd": "python3 app.py",
   "port": 7860,
   "disk_size": "~200MB",
-  "tags": ["image-gen", "gpu"]
+  "tags": ["image-gen", "gpu"],
 }
 ```
 
@@ -178,13 +178,13 @@ See [`docs/app-manifest-spec.md`](docs/app-manifest-spec.md) for the full spec.
 
 ## Plugin System
 
-| Type | Description | Example |
-|------|-------------|---------|
-| `hook` | Lifecycle events (pre-install, post-launch) | Notifications |
-| `monitor` | Background tasks | GPU monitor |
-| `provider` | New app sources | HuggingFace browser |
-| `middleware` | API request interceptors | Auth, rate limiting |
-| `ui` | Dashboard panels | System stats |
+| Type         | Description                                 | Example             |
+| ------------ | ------------------------------------------- | ------------------- |
+| `hook`       | Lifecycle events (pre-install, post-launch) | Notifications       |
+| `monitor`    | Background tasks                            | GPU monitor         |
+| `provider`   | New app sources                             | HuggingFace browser |
+| `middleware` | API request interceptors                    | Auth, rate limiting |
+| `ui`         | Dashboard panels                            | System stats        |
 
 See [`docs/plugin-spec.md`](docs/plugin-spec.md) for the full spec.
 
@@ -192,15 +192,15 @@ See [`docs/plugin-spec.md`](docs/plugin-spec.md) for the full spec.
 
 ## Roadmap
 
-| Phase | Status | Description |
-|-------|--------|-------------|
-| 0 | ✅ Done | Sandbox + uv + REST API + plugins |
-| 0.5 | 🔄 Current | Desktop migration (Tauri 2 + SvelteKit + shadcn-svelte) |
-| 0.6 | 📋 Planned | License server (Axum + Ed25519) |
-| 1 | 📋 Planned | Agent runtime (loop, LLM drivers, tools) |
-| 2 | 📋 Planned | Memory & tools (SQLite, MCP, 20+ built-in) |
-| 3 | 📋 Planned | Workflows & orchestration (DAG, sub-agents) |
-| 4 | 📋 Planned | Channels & autonomy (Telegram, Discord, cron) |
+| Phase | Status     | Description                                             |
+| ----- | ---------- | ------------------------------------------------------- |
+| 0     | ✅ Done    | Sandbox + uv + REST API + plugins                       |
+| 0.5   | 🔄 Current | Desktop migration (Tauri 2 + SvelteKit + shadcn-svelte) |
+| 0.6   | 📋 Planned | License server (Axum + Ed25519)                         |
+| 1     | 📋 Planned | Agent runtime (loop, LLM drivers, tools)                |
+| 2     | 📋 Planned | Memory & tools (SQLite, MCP, 20+ built-in)              |
+| 3     | 📋 Planned | Workflows & orchestration (DAG, sub-agents)             |
+| 4     | 📋 Planned | Channels & autonomy (Telegram, Discord, cron)           |
 
 See [`docs/current-plan.md`](docs/current-plan.md) and [`docs/future-plan.md`](docs/future-plan.md) for details.
 
@@ -208,14 +208,14 @@ See [`docs/current-plan.md`](docs/current-plan.md) and [`docs/future-plan.md`](d
 
 ## Cross-Platform
 
-| Feature | Linux | Windows |
-|---------|-------|---------|
-| Process spawn | `sh -c` | `cmd.exe /C` |
-| Permissions | `chmod 700` | `icacls` ACLs |
-| Python binary | `python3` | `python` |
-| uv bootstrap | `curl \| sh` | `PowerShell irm \| iex` |
-| Data directory | `~/.ai-launcher` | `%LOCALAPPDATA%\ai-launcher` |
-| Venv python | `.venv/bin/python` | `.venv\Scripts\python.exe` |
+| Feature        | Linux              | Windows                      |
+| -------------- | ------------------ | ---------------------------- |
+| Process spawn  | `sh -c`            | `cmd.exe /C`                 |
+| Permissions    | `chmod 700`        | `icacls` ACLs                |
+| Python binary  | `python3`          | `python`                     |
+| uv bootstrap   | `curl \| sh`       | `PowerShell irm \| iex`      |
+| Data directory | `~/.ai-launcher`   | `%LOCALAPPDATA%\ai-launcher` |
+| Venv python    | `.venv/bin/python` | `.venv\Scripts\python.exe`   |
 
 ---
 
@@ -232,14 +232,14 @@ cargo build      # Build the backend
 
 ## Tech Stack
 
-| Component | Technology |
-|-----------|------------|
-| Backend | Rust (tiny_http, serde, anyhow) |
-| Web Desktop | Svelte 5, TypeScript, Vite, SCSS |
-| Sandboxing | Custom filesystem jail (no Docker) |
-| Python envs | uv (Rust-based, 10–100× faster than pip) |
-| API spec | OpenAPI 3.0.3 |
-| Future desktop | Tauri 2 |
+| Component      | Technology                               |
+| -------------- | ---------------------------------------- |
+| Backend        | Rust (tiny_http, serde, anyhow)          |
+| Web Desktop    | Svelte 5, TypeScript, Vite, SCSS         |
+| Sandboxing     | Custom filesystem jail (no Docker)       |
+| Python envs    | uv (Rust-based, 10–100× faster than pip) |
+| API spec       | OpenAPI 3.0.3                            |
+| Future desktop | Tauri 2                                  |
 
 ---
 

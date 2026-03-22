@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { AppManifest, InstalledApp } from "$lib/api/types";
   import { installApp, launchApp, stopApp, uninstallApp } from "$lib/stores/state";
-  import * as api from "$lib/api/backend";
+  import { openGenericBrowserWindow } from "../../state/desktop.svelte";
 
   const ICONS: Record<string, string> = {
     "sample-gradio": "🔢", "stable-diffusion-webui": "🎨", "ollama": "🦙",
@@ -55,7 +55,7 @@
 
   async function handleOpen() {
     if (installed?.status.port) {
-      await api.openAppBrowser(installed.status.port);
+      openGenericBrowserWindow(`http://localhost:${installed.status.port}`, app.name);
     }
   }
 </script>

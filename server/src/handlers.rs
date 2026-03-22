@@ -200,3 +200,37 @@ pub fn disk_usage(id: &str, mgr: &AppManager) -> Response<Cursor<Vec<u8>>> {
         Err(e) => err(404, &e.to_string()),
     }
 }
+
+/// POST /api/store/upload
+/// Accept folder, zip, or git url uploads with validation and trial install
+pub fn store_upload(req: &mut Request, mgr: &AppManager) -> Response<Cursor<Vec<u8>>> {
+    let body = match read_body(req) {
+        Some(b) => b,
+        None => return err(400, "Missing request body"),
+    };
+
+    let upload_req: StoreUploadRequest = match serde_json::from_str(&body) {
+        Ok(r) => r,
+        Err(e) => return err(400, &format!("Invalid JSON: {}", e)),
+    };
+
+    match mgr.upload_to_store(&upload_req) {
+        Ok(result) => {
+            if result.accepted {
+                created(
+                    &format!("App '{}' uploaded and installed successfully",
+                        result.app_name.as_deref().unwrap_or("unknown")),
+                    &result,
+                )
+            } else {
+                json_resp(400, &json!({
+                    "success": false,
+                    "message": "Upload validation or install failed",
+                    "data": result,
+                }))
+            }
+        }
+        Err(e) => err(500, &format!("Upload error: {}", e)),
+    }
+}
+

@@ -36,6 +36,7 @@ export type DesktopWindow = {
   fullscreen: boolean;
   resizable: boolean;
   expandable: boolean;
+  closable: boolean;
   session_id: string | null;
   browser: BrowserState | null;
 };
@@ -63,6 +64,7 @@ const createWindow = (
   fullscreen: false,
   resizable: true,
   expandable: true,
+  closable: true,
   session_id: null,
   browser: null,
 });
@@ -96,6 +98,7 @@ export function bootDesktop() {
   const launcher = createWindow("ai-launcher", launcherConfig.title, launcherConfig.width!, launcherConfig.height!);
   launcher.resizable = launcherConfig.resizable!;
   launcher.expandable = launcherConfig.expandable!;
+  launcher.closable = false;
   assignWindowFocus(launcher);
   desktop.windows.push(launcher);
 }
@@ -269,11 +272,11 @@ export function openSessionInWindow(session_id: string) {
   desktop.selected_session_id = session.id;
 }
 
-export function openGenericBrowserWindow() {
+export function openGenericBrowserWindow(initialUrl = "http://localhost:3000", title = apps_config.browser.title) {
   const browserConfig = apps_config.browser;
-  const window = createWindow("browser", browserConfig.title, browserConfig.width!, browserConfig.height!);
+  const window = createWindow("browser", title, browserConfig.width!, browserConfig.height!);
   window.browser = {
-    history: ["http://localhost:3000"],
+    history: [initialUrl],
     index: 0,
     reload_key: 0,
   };

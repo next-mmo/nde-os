@@ -1,83 +1,67 @@
 <svelte:options runes={true} />
 
 <script lang="ts">
-  import { catalogCount, healthStatus, runningCount } from "$lib/stores/state";
+  import MenuBar from "🍎/components/TopBar/MenuBar.svelte";
+  import ActionCenter from "🍎/components/TopBar/ActionCenter.svelte";
   import TopBarTime from "🍎/components/TopBar/TopBarTime.svelte";
-  import { activeWindow, toggleLaunchpad, toggleTheme } from "🍎/state/desktop.svelte";
-
-  const title = $derived(activeWindow()?.title ?? "AI Launcher");
 </script>
 
 <header class="topbar">
-  <div class="cluster left">
-    <button class="apple" aria-label="Open Launchpad" onclick={() => toggleLaunchpad(true)}>LP</button>
-    <strong>{title}</strong>
-  </div>
+  <MenuBar />
 
-  <div class="cluster right">
-    <span class="pill" class:online={$healthStatus === "online"}>
-      {$healthStatus === "online" ? "Server online" : $healthStatus === "offline" ? "Server offline" : "Checking server"}
-    </span>
-    <span class="meta">{$catalogCount} apps</span>
-    <span class="meta">{$runningCount} running</span>
-    <button class="icon-button" aria-label="Toggle theme" onclick={toggleTheme}>Theme</button>
-    <button class="icon-button" aria-label="Open Launchpad" onclick={() => toggleLaunchpad(true)}>Apps</button>
-    <button class="time-button" aria-label="Current time"><TopBarTime /></button>
-  </div>
+  <span class="spacer"></span>
+
+  <ActionCenter />
+
+  <button class="topbar-button" aria-label="Current time">
+    <TopBarTime />
+  </button>
 </header>
 
 <style>
   .topbar {
     display: flex;
-    justify-content: space-between;
     align-items: center;
-    gap: 1rem;
-    padding: 0.45rem 1rem;
-    background: hsla(var(--system-color-light-hsl) / 0.35);
+    position: relative;
+    width: 100%;
+    height: 1.65rem;
+
+    background-color: hsla(var(--system-color-light-hsl) / 0.3);
     color: var(--system-color-text);
+    fill: var(--system-color-text);
+
+    z-index: 9990;
+  }
+
+  .topbar::before {
+    content: "";
+    width: inherit;
+    height: inherit;
+    position: fixed;
+    left: 0;
+    top: 0;
+    z-index: 0;
     backdrop-filter: blur(14px);
-    border-bottom: 1px solid hsla(0 0% 100% / 0.14);
   }
 
-  .cluster {
-    display: flex;
-    align-items: center;
-    gap: 0.7rem;
-    min-width: 0;
+  .spacer {
+    flex: 1 1 auto;
   }
 
-  .left strong {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    font-size: 0.9rem;
-  }
-
-  .pill,
-  .meta,
-  .icon-button,
-  .time-button {
-    border-radius: 999px;
-    padding: 0.45rem 0.75rem;
-    background: hsla(var(--system-color-light-hsl) / 0.45);
-    border: 1px solid var(--system-color-border);
+  .topbar-button {
+    font-weight: 500;
     font-size: 0.78rem;
+    font-family: var(--system-font-family);
+    letter-spacing: 0.3px;
+    position: relative;
+    height: 100%;
+    padding: 0 0.6rem;
+    color: var(--system-color-text);
+    white-space: nowrap;
+    border-radius: 0.25rem;
   }
 
-  .pill.online {
-    color: var(--system-color-success);
-  }
-
-  .apple {
-    font-size: 0.72rem;
-    font-weight: 700;
-  }
-
-  .icon-button {
-    min-width: 3.2rem;
-  }
-
-  .time-button {
-    min-width: 6rem;
+  .topbar-button:hover {
+    background-color: hsla(var(--system-color-dark-hsl) / 0.1);
   }
 </style>

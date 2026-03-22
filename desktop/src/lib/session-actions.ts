@@ -1,8 +1,8 @@
-import * as api from "$lib/api/backend";
 import type { AppManifest, InstalledApp } from "$lib/api/types";
 import { installApp, launchApp, stopApp } from "$lib/stores/state";
 import {
   focusSessionDetails,
+  openGenericBrowserWindow,
   openSessionInDashboard,
   openSessionInWindow,
   selectLauncherSection,
@@ -71,8 +71,9 @@ export async function stopManifest(installed: InstalledApp) {
   await stopApp(installed.manifest.id);
 }
 
-export async function openSessionExternally(port: number) {
-  await api.openAppBrowser(port);
+export function openSessionInNewOsWindow(port: number, title?: string) {
+  const url = `http://localhost:${port}`;
+  openGenericBrowserWindow(url, title ?? url.replace(/^https?:\/\//, ""));
 }
 
 export function moveSessionToDashboard(session_id: string) {

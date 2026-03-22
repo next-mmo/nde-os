@@ -1,5 +1,5 @@
 {
-  "id": "sample-node-fullstack",
+  "id": "sample-node",
   "name": "Node.js Fullstack Counter",
   "description": "A fullstack React + Express counter app to demonstrate Node.js support in AI Launcher",
   "author": "ai-launcher",

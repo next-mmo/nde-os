@@ -24,7 +24,7 @@ fn catalog_has_4_apps() {
     let cat = mgr.catalog();
     assert_eq!(cat.len(), 4);
     let ids: Vec<&str> = cat.iter().map(|a| a.id.as_str()).collect();
-    assert!(ids.contains(&"sample-node-fullstack"));
+    assert!(ids.contains(&"sample-node"));
     assert!(ids.contains(&"sample-gradio"));
     assert!(ids.contains(&"stable-diffusion-webui"));
     assert!(ids.contains(&"ollama"));

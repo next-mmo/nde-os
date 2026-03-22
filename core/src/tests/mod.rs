@@ -1,6 +1,7 @@
 mod manifest;
 mod sandbox;
 mod manager;
+mod store_upload;
 
 use crate::manifest::AppManifest;
 

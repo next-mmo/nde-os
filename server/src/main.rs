@@ -50,6 +50,7 @@ fn route(req: &mut Request, mgr: &AppManager) -> tiny_http::Response<std::io::Cu
         (Method::Get, "/api/catalog") => return handlers::catalog(mgr),
         (Method::Get, "/api/apps") => return handlers::list_apps(mgr),
         (Method::Post, "/api/apps") => return handlers::install_app(req, mgr),
+        (Method::Post, "/api/store/upload") => return handlers::store_upload(req, mgr),
         _ => {}
     }
 
@@ -65,6 +66,10 @@ fn route(req: &mut Request, mgr: &AppManager) -> tiny_http::Response<std::io::Cu
             (Method::Get,    ["api", "sandbox", id, "disk"])   => handlers::disk_usage(id, mgr),
             _ => err(404, &format!("Not found: {}", path)),
         };
+    }
+
+    if path.starts_with("/api/store/") {
+        return err(404, &format!("Not found: {}", path));
     }
 
     err(404, &format!("Not found: {}", path))
@@ -104,6 +109,7 @@ fn main() {
     println!("    POST   /api/apps/{{id}}/stop");
     println!("    GET    /api/sandbox/{{id}}/verify");
     println!("    GET    /api/sandbox/{{id}}/disk");
+    println!("    POST   /api/store/upload          ← NEW: folder/zip/git");
     println!();
 
     loop {
