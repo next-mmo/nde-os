@@ -3,14 +3,14 @@ import * as api from "$lib/api/backend";
 import type { AppManifest, InstalledApp, SystemInfo } from "$lib/api/types";
 import { logStore } from "./logs";
 
-// ── Stores ──
+export type HealthStatus = "unknown" | "online" | "offline";
 
 export const catalog = writable<AppManifest[]>([]);
 export const installed = writable<InstalledApp[]>([]);
 export const systemInfo = writable<SystemInfo | null>(null);
-export const searchFilter = writable("");
+export const healthStatus = writable<HealthStatus>("unknown");
+export const lastRefreshAt = writable<string | null>(null);
 
-// Derived: map installed apps by ID for quick lookup
 export const installedMap = derived(installed, ($installed) => {
   const map: Record<string, InstalledApp> = {};
   for (const app of $installed) {
@@ -19,42 +19,49 @@ export const installedMap = derived(installed, ($installed) => {
   return map;
 });
 
-// Derived: count of running apps
 export const runningCount = derived(installed, ($installed) =>
-  $installed.filter((a) => a.status.state === "Running").length
+  $installed.filter((app) => app.status.state === "Running").length,
 );
 
-// ── Actions ──
+export const catalogCount = derived(catalog, ($catalog) => $catalog.length);
 
 export async function refreshCatalog() {
   try {
-    const data = await api.getCatalog();
-    catalog.set(data);
-  } catch (e) {
-    logStore.error(`Failed to load catalog: ${e}`);
+    catalog.set(await api.getCatalog());
+  } catch (error) {
+    logStore.error(`Failed to load catalog: ${error}`);
   }
 }
 
 export async function refreshInstalled() {
   try {
-    const data = await api.listApps();
-    installed.set(data);
-  } catch (e) {
-    logStore.error(`Failed to load installed apps: ${e}`);
+    installed.set(await api.listApps());
+  } catch (error) {
+    logStore.error(`Failed to load installed apps: ${error}`);
   }
 }
 
 export async function refreshSystemInfo() {
   try {
-    const data = await api.getSystemInfo();
-    systemInfo.set(data);
-  } catch (e) {
-    logStore.error(`Failed to load system info: ${e}`);
+    systemInfo.set(await api.getSystemInfo());
+  } catch (error) {
+    logStore.error(`Failed to load system info: ${error}`);
+  }
+}
+
+export async function refreshHealth() {
+  try {
+    await api.healthCheck();
+    healthStatus.set("online");
+  } catch (error) {
+    healthStatus.set("offline");
+    logStore.warn(`Server health check failed: ${error}`);
   }
 }
 
 export async function refreshAll() {
-  await Promise.all([refreshCatalog(), refreshInstalled(), refreshSystemInfo()]);
+  await Promise.all([refreshCatalog(), refreshInstalled(), refreshSystemInfo(), refreshHealth()]);
+  lastRefreshAt.set(new Date().toISOString());
 }
 
 export async function installApp(manifest: AppManifest) {
@@ -63,9 +70,9 @@ export async function installApp(manifest: AppManifest) {
     await api.installApp(manifest);
     logStore.success(`${manifest.name} installed`, manifest.id);
     await refreshInstalled();
-  } catch (e) {
-    logStore.error(`Install failed: ${e}`, manifest.id);
-    throw e;
+  } catch (error) {
+    logStore.error(`Install failed: ${error}`, manifest.id);
+    throw error;
   }
 }
 
@@ -76,9 +83,9 @@ export async function launchApp(appId: string) {
     logStore.success(`Launched PID:${result.pid} port:${result.port}`, appId);
     await refreshInstalled();
     return result;
-  } catch (e) {
-    logStore.error(`Launch failed: ${e}`, appId);
-    throw e;
+  } catch (error) {
+    logStore.error(`Launch failed: ${error}`, appId);
+    throw error;
   }
 }
 
@@ -88,9 +95,9 @@ export async function stopApp(appId: string) {
     await api.stopApp(appId);
     logStore.success(`${appId} stopped`, appId);
     await refreshInstalled();
-  } catch (e) {
-    logStore.error(`Stop failed: ${e}`, appId);
-    throw e;
+  } catch (error) {
+    logStore.error(`Stop failed: ${error}`, appId);
+    throw error;
   }
 }
 
@@ -100,8 +107,8 @@ export async function uninstallApp(appId: string) {
     await api.uninstallApp(appId);
     logStore.success(`${appId} uninstalled`, appId);
     await refreshInstalled();
-  } catch (e) {
-    logStore.error(`Uninstall failed: ${e}`, appId);
-    throw e;
+  } catch (error) {
+    logStore.error(`Uninstall failed: ${error}`, appId);
+    throw error;
   }
 }

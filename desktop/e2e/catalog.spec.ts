@@ -1,69 +1,28 @@
 import { test, expect } from "@playwright/test";
+import { APP_NAME, openLauncher, openRailSection } from "./helpers";
 
-test.describe("Catalog Page", () => {
-  test.beforeEach(async ({ page }) => {
-    await page.goto("/catalog");
-    // Wait for mock catalog to load
-    await expect(page.locator("text=Sample Counter")).toBeVisible({ timeout: 5000 });
-  });
+test.describe("Launcher catalog", () => {
+  test("shows catalog apps and filters them from the workspace toolbar", async ({ page }) => {
+    await openLauncher(page);
+    await openRailSection(page, "Catalog");
 
-  test("should display page header", async ({ page }) => {
-    await expect(page.getByRole("heading", { name: "App Catalog" })).toBeVisible();
-    await expect(page.locator("text=Browse and install AI applications")).toBeVisible();
-  });
+    await expect(page.getByText(APP_NAME)).toBeVisible({ timeout: 10000 });
+    await expect(page.getByText("Ollama")).toBeVisible();
 
-  test("should show all 3 catalog apps", async ({ page }) => {
-    await expect(page.locator("text=Sample Counter")).toBeVisible();
-    await expect(page.locator("text=Stable Diffusion WebUI")).toBeVisible();
-    await expect(page.locator("text=Ollama")).toBeVisible();
-  });
-
-  test("should show app descriptions", async ({ page }) => {
-    await expect(page.locator("text=A simple Gradio counter app")).toBeVisible();
-    await expect(page.locator("text=AUTOMATIC1111 Stable Diffusion")).toBeVisible();
-    await expect(page.locator("text=Run large language models locally")).toBeVisible();
-  });
-
-  test("should show GPU tags for GPU apps", async ({ page }) => {
-    // Stable Diffusion and Ollama need GPU
-    const gpuTags = page.locator(".tag-gpu");
-    expect(await gpuTags.count()).toBe(2);
-  });
-
-  test("should show Install button for uninstalled apps", async ({ page }) => {
-    const installButtons = page.locator("button", { hasText: "Install" });
-    expect(await installButtons.count()).toBe(3);
-  });
-
-  test("should filter apps by search", async ({ page }) => {
-    const search = page.getByPlaceholder("Search apps, tags...");
+    const search = page.getByRole("textbox", { name: "Search AI apps" });
     await search.fill("ollama");
-    await expect(page.locator("text=Ollama")).toBeVisible();
-    await expect(page.locator("text=Sample Counter")).not.toBeVisible();
-    await expect(page.locator("text=Stable Diffusion")).not.toBeVisible();
+
+    await expect(page.getByText("Ollama")).toBeVisible();
+    await expect(page.getByText(APP_NAME)).not.toBeVisible();
   });
 
-  test("should filter apps by tag", async ({ page }) => {
-    const search = page.getByPlaceholder("Search apps, tags...");
-    await search.fill("gpu");
-    await expect(page.locator("text=Stable Diffusion WebUI")).toBeVisible();
-    await expect(page.locator("text=Ollama")).toBeVisible();
-    await expect(page.locator("text=Sample Counter")).not.toBeVisible();
-  });
+  test("overview and server sections remain available inside the main launcher window", async ({ page }) => {
+    await openLauncher(page);
 
-  test("should show empty state for no matches", async ({ page }) => {
-    const search = page.getByPlaceholder("Search apps, tags...");
-    await search.fill("nonexistent-app-xyz");
-    await expect(page.locator("text=No apps match")).toBeVisible();
-  });
+    await expect(page.getByText("Manage local AI apps like browser workspaces.")).toBeVisible();
 
-  test("should clear search and restore results", async ({ page }) => {
-    const search = page.getByPlaceholder("Search apps, tags...");
-    await search.fill("ollama");
-    expect(await page.locator("text=Sample Counter").count()).toBe(0);
-
-    await search.clear();
-    await expect(page.locator("text=Sample Counter")).toBeVisible();
-    await expect(page.locator("text=Ollama")).toBeVisible();
+    await openRailSection(page, "Server & System");
+    await expect(page.getByText("Runtime status")).toBeVisible();
+    await expect(page.getByText(/Server health/i)).toBeVisible();
   });
 });

@@ -1,0 +1,48 @@
+body {
+  --system-color-primary: hsl(211 100% 50%);
+  --system-color-primary-hsl: 211 100% 50%;
+  --system-color-dark: hsl(240 3% 11%);
+  --system-color-dark-hsl: 240 3% 11%;
+  --system-color-light: hsl(240 24% 100%);
+  --system-color-light-hsl: 240 24% 100%;
+  --system-color-surface: hsla(0 0% 100% / 0.62);
+  --system-color-surface-strong: hsla(0 0% 100% / 0.8);
+  --system-color-panel: hsla(220 25% 98% / 0.8);
+  --system-color-panel-solid: hsl(0 0% 100%);
+  --system-color-border: hsla(220 15% 34% / 0.16);
+  --system-color-border-strong: hsla(220 15% 20% / 0.22);
+  --system-color-text: hsl(220 20% 15%);
+  --system-color-text-muted: hsla(220 12% 18% / 0.68);
+  --system-color-success: hsl(142 64% 42%);
+  --system-color-warning: hsl(36 92% 52%);
+  --system-color-danger: hsl(4 84% 58%);
+  --system-color-info: hsl(211 100% 50%);
+  --system-color-running: hsl(191 84% 41%);
+  --system-color-chip: hsla(220 16% 92% / 0.9);
+  --system-font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --system-radius-window: 0.75rem;
+  --system-radius-panel: 1rem;
+  --system-focus-outline: 0 0 0 3px hsla(211 100% 50% / 0.35);
+  --system-cursor-default: url("/cursors/normal-select.svg");
+  --system-cursor-pointer: url("/cursors/link-select.svg");
+  --system-cursor-text-select: url("/cursors/text-select.svg");
+  --system-wallpaper: url("/wallpapers/ventura-1.webp");
+}
+
+body.dark {
+  --system-color-primary: hsl(210 100% 56%);
+  --system-color-primary-hsl: 210 100% 56%;
+  --system-color-dark: hsl(240 24% 100%);
+  --system-color-dark-hsl: 240 24% 100%;
+  --system-color-light: hsl(228 19% 12%);
+  --system-color-light-hsl: 228 19% 12%;
+  --system-color-surface: hsla(224 18% 18% / 0.72);
+  --system-color-surface-strong: hsla(224 18% 16% / 0.88);
+  --system-color-panel: hsla(225 18% 16% / 0.88);
+  --system-color-panel-solid: hsl(224 19% 14%);
+  --system-color-border: hsla(220 20% 90% / 0.1);
+  --system-color-border-strong: hsla(220 20% 90% / 0.18);
+  --system-color-text: hsl(220 24% 96%);
+  --system-color-text-muted: hsla(220 24% 96% / 0.68);
+  --system-color-chip: hsla(225 14% 25% / 0.95);
+}

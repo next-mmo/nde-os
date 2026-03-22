@@ -1,11 +1,30 @@
-import { sveltekit } from '@sveltejs/kit/vite';
-import tailwindcss from '@tailwindcss/vite';
-import { defineConfig } from 'vite';
+import { svelte } from "@sveltejs/vite-plugin-svelte";
+import UnpluginIcons from "unplugin-icons/vite";
+import { defineConfig } from "vite";
 
 export default defineConfig({
-	plugins: [tailwindcss(), sveltekit()],
-	server: {
-		port: 5173,
-		strictPort: true
-	}
+  plugins: [
+    svelte(),
+    UnpluginIcons({
+      compiler: "svelte",
+    }),
+  ],
+  resolve: {
+    alias: {
+      "🍎": new URL("./src/", import.meta.url).pathname,
+      $lib: new URL("./src/lib/", import.meta.url).pathname,
+    },
+  },
+  server: {
+    port: 5173,
+    strictPort: true,
+  },
+  build: {
+    outDir: "build",
+    emptyOutDir: true,
+    cssMinify: "lightningcss",
+  },
+  css: {
+    transformer: "lightningcss",
+  },
 });

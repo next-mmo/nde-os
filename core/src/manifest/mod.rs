@@ -47,6 +47,24 @@ pub struct InstallRequest {
 }
 
 impl AppManifest {
+    pub fn sample_node_fullstack() -> Self {
+        Self {
+            id: "sample-node-fullstack".into(),
+            name: "Node.js Fullstack Counter".into(),
+            description: "A fullstack React + Express counter app to demonstrate Node.js support in AI Launcher".into(),
+            author: "ai-launcher".into(),
+            repo: None,
+            python_version: "3".into(),
+            needs_gpu: false,
+            pip_deps: vec![],
+            launch_cmd: "npm start".into(),
+            port: 3000,
+            env: vec![],
+            disk_size: "~100MB".into(),
+            tags: vec!["node".into(), "express".into(), "react".into(), "fullstack".into(), "demo".into()],
+        }
+    }
+
     pub fn sample_counter() -> Self {
         Self {
             id: "sample-gradio".into(),

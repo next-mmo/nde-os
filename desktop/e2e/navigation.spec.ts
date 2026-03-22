@@ -1,58 +1,26 @@
 import { test, expect } from "@playwright/test";
+import { dockButton, openLauncher } from "./helpers";
 
-test.describe("Navigation & Layout", () => {
-  test("should redirect root to /catalog", async ({ page }) => {
-    await page.goto("/");
-    await page.waitForURL("**/catalog");
-    expect(page.url()).toContain("/catalog");
+test.describe("Desktop shell", () => {
+  test("boots into the macOS shell with the launcher window", async ({ page }) => {
+    await openLauncher(page);
+
+    await expect(page.locator(".topbar")).toBeVisible();
+    await expect(page.getByRole("toolbar", { name: "Dock" })).toBeVisible();
+    await expect(page.locator('[data-window="ai-launcher"]')).toBeVisible();
   });
 
-  test("should render sidebar with brand and nav items", async ({ page }) => {
-    await page.goto("/catalog");
-    await expect(page.locator("text=Sample Counter")).toBeVisible({ timeout: 5000 });
-    await expect(page.locator("text=AI Launcher")).toBeVisible();
-    await expect(page.locator("text=v0.2.0")).toBeVisible();
-    await expect(page.getByRole("link", { name: /Catalog/ })).toBeVisible();
-    await expect(page.getByRole("link", { name: /Installed/ })).toBeVisible();
-    await expect(page.getByRole("link", { name: /Running/ })).toBeVisible();
-    await expect(page.getByRole("link", { name: /Logs/ })).toBeVisible();
-    await expect(page.getByRole("link", { name: /Settings/ })).toBeVisible();
-  });
+  test("dock opens utility windows and launchpad opens as an overlay", async ({ page }) => {
+    await openLauncher(page);
 
-  test("should highlight active nav item", async ({ page }) => {
-    await page.goto("/catalog");
-    await expect(page.locator("text=Sample Counter")).toBeVisible({ timeout: 5000 });
-    const catalogLink = page.getByRole("link", { name: /Catalog/ });
-    await expect(catalogLink).toHaveClass(/active/);
+    await dockButton(page, /logs/i).click();
+    await expect(page.locator('[data-window="logs"]')).toBeVisible();
 
-    await page.getByRole("link", { name: /Settings/ }).click();
-    await page.waitForURL("**/settings");
-    const settingsLink = page.getByRole("link", { name: /Settings/ });
-    await expect(settingsLink).toHaveClass(/active/);
-  });
+    await dockButton(page, /settings/i).click();
+    await expect(page.locator('[data-window="settings"]')).toBeVisible();
 
-  test("should navigate to all 5 routes", async ({ page }) => {
-    await page.goto("/catalog");
-    await expect(page.locator("text=Sample Counter")).toBeVisible({ timeout: 5000 });
-
-    for (const [name, path] of [
-      ["Installed", "/installed"],
-      ["Running", "/running"],
-      ["Logs", "/logs"],
-      ["Settings", "/settings"],
-      ["Catalog", "/catalog"],
-    ]) {
-      await page.getByRole("link", { name: new RegExp(name) }).click();
-      await page.waitForURL(`**${path}`);
-      expect(page.url()).toContain(path);
-    }
-  });
-
-  test("should show system info in sidebar footer", async ({ page }) => {
-    await page.goto("/catalog");
-    // Wait for mock data to load
-    await expect(page.locator("text=Sample Counter")).toBeVisible({ timeout: 5000 });
-    await expect(page.locator(".sys-value", { hasText: "windows/x86_64" })).toBeVisible({ timeout: 5000 });
-    await expect(page.locator(".sys-value", { hasText: "Python 3.12.0" })).toBeVisible();
+    await dockButton(page, /launchpad/i).click();
+    await expect(page.getByTestId("launchpad")).toBeVisible();
+    await expect(page.locator('[data-window="launchpad"]')).toHaveCount(0);
   });
 });

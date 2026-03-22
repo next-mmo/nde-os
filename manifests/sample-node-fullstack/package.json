@@ -1,0 +1,9 @@
+{
+  "name": "sample-node-fullstack",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "postinstall": "cd server && npm install && cd ../ui && npm install && npm run build",
+    "start": "node server/server.js"
+  }
+}

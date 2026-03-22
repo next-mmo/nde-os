@@ -7,6 +7,11 @@ node_modules
 .wrangler
 /.svelte-kit
 /build
+/playwright-report
+/test-results
+/.playwright-localappdata
+report.json
+vite_output.log
 
 # OS
 .DS_Store

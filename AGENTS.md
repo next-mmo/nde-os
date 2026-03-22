@@ -15,14 +15,14 @@ AI Launcher is a cross-platform (Mac, Linux + Windows native, no WSL, No docker)
 
 ## Desktop Frontend Rules — macOS Style (MANDATORY)
 
-**The desktop UI MUST use the macOS Ventura-style design from `macos-web-main/`.** This is the single source of truth for all visual patterns. Do NOT use shadcn, Tailwind, Material UI, or any other component library.
+**The desktop UI MUST use the macOS Ventura-style design implemented in `desktop/`.** `desktop/` is the single source of truth for all visual patterns. Do NOT use shadcn, Tailwind, Material UI, or any other component library.
 
-### Reference Project
+### Reference Architecture
 
-The `macos-web-main/` directory contains the reference implementation. Key architecture:
+The `desktop/src/` tree contains the active implementation. Key architecture:
 
 ```
-macos-web-main/src/
+desktop/src/
 ├── components/
 │   ├── Desktop/          # Desktop shell, bootup screen, context menu, Window system
 │   │   └── Window/       # Draggable windows with TrafficLights (@neodrag/svelte)
@@ -91,7 +91,7 @@ ai-launcher/
 │       ├── response.rs      # JSON/HTML helpers
 │       └── openapi.rs       # OpenAPI spec + Swagger UI
 ├── desktop/                # ai-launcher-desktop — Tauri 2 app
-│   ├── src/                 # SvelteKit frontend
+│   ├── src/                 # Svelte 5 + Vite frontend
 │   ├── src-tauri/src/       # Tauri commands (modular: commands/*.rs)
 │   └── e2e/                 # Playwright E2E tests
 ├── manifests/              # App manifest JSONs

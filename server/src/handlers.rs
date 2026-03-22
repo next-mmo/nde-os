@@ -95,7 +95,7 @@ pub fn launch_app(id: &str, mgr: &AppManager) -> Response<Cursor<Vec<u8>>> {
     match mgr.launch(id) {
         Ok((pid, port)) => ok(
             &format!("Launched PID:{} port:{}", pid, port),
-            mgr.get_app(id),
+            json!({ "pid": pid, "port": port }),
         ),
         Err(e) => {
             let msg = e.to_string();
@@ -103,6 +103,72 @@ pub fn launch_app(id: &str, mgr: &AppManager) -> Response<Cursor<Vec<u8>>> {
             else if msg.contains("already running") { err(409, &msg) }
             else { err(500, &msg) }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Read;
+    use std::path::PathBuf;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn temp_base_dir() -> PathBuf {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!("ai-launcher-server-test-{}", unique));
+        std::fs::create_dir_all(&path).unwrap();
+        path
+    }
+
+    fn test_manifest() -> AppManifest {
+        AppManifest {
+            id: "server-launch-test".into(),
+            name: "Server Launch Test".into(),
+            description: "Regression fixture for HTTP launch payloads".into(),
+            author: "tests".into(),
+            repo: None,
+            python_version: "3".into(),
+            needs_gpu: false,
+            pip_deps: vec![],
+            launch_cmd: if cfg!(windows) {
+                "ping 127.0.0.1 -n 30 > NUL".into()
+            } else {
+                "sleep 30".into()
+            },
+            port: 43123,
+            env: vec![],
+            disk_size: "1MB".into(),
+            tags: vec!["test".into()],
+        }
+    }
+
+    fn response_json(response: Response<Cursor<Vec<u8>>>) -> serde_json::Value {
+        let mut body = String::new();
+        response.into_reader().read_to_string(&mut body).unwrap();
+        serde_json::from_str(&body).unwrap()
+    }
+
+    #[test]
+    fn launch_app_returns_pid_and_port_payload() {
+        let base_dir = temp_base_dir();
+        let mgr = AppManager::new(&base_dir).unwrap();
+        let manifest = test_manifest();
+
+        mgr.install(&manifest).unwrap();
+        let response = launch_app(&manifest.id, &mgr);
+        let json = response_json(response);
+
+        assert_eq!(json["success"], true);
+        assert_eq!(json["data"]["port"].as_u64(), Some(manifest.port as u64));
+        assert!(json["data"]["pid"].as_u64().unwrap() > 0);
+        assert!(json["data"].get("manifest").is_none());
+
+        mgr.stop(&manifest.id).ok();
+        mgr.uninstall(&manifest.id).ok();
+        std::fs::remove_dir_all(base_dir).ok();
     }
 }
 

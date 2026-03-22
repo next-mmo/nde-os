@@ -45,19 +45,19 @@ chmod +x run.sh && ./run.sh
 .\run.bat
 ```
 
-#### Start the web desktop
+#### Start the desktop frontend
 
 ```bash
-cd macos-web-main
-pnpm install
-pnpm dev
+cd desktop
+npm install
+npm run dev
 ```
 
 ### Endpoints
 
 | URL | Description |
 |-----|-------------|
-| `http://localhost:5173` | Web Desktop UI |
+| `http://localhost:5173` | Desktop UI |
 | `http://localhost:8080/swagger-ui/` | Swagger API Explorer |
 | `http://localhost:8080/api-docs/openapi.json` | OpenAPI 3.0.3 Spec |
 
@@ -74,11 +74,12 @@ nde-os/
 │   ├── app_manager/mod.rs      # App lifecycle (install → launch → stop → uninstall)
 │   └── manifest/mod.rs         # App manifest types + built-in catalog
 │
-├── macos-web-main/             # Web desktop frontend (Svelte + Vite)
+├── desktop/                    # Desktop frontend (Svelte 5 + Vite + Tauri)
 │   ├── src/
-│   │   ├── components/         # Desktop shell — dock, menubar, windows, apps
-│   │   ├── state/              # Svelte 5 reactive stores (apps, dock, system)
+│   │   ├── components/         # Desktop shell — dock, top bar, windows, apps
+│   │   ├── state/              # Svelte 5 desktop/session state
 │   │   └── configs/            # App configs, themes, wallpapers
+│   ├── src-tauri/              # Tauri commands and desktop bridge
 │   └── public/                 # Static assets (app icons, wallpapers)
 │
 ├── apps/                       # App manifest repository

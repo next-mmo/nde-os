@@ -1,0 +1,9 @@
+{
+  "name": "sample-node-server",
+  "version": "1.0.0",
+  "private": true,
+  "dependencies": {
+    "express": "^4.19.0",
+    "cors": "^2.8.5"
+  }
+}

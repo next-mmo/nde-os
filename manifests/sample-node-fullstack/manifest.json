@@ -1,0 +1,14 @@
+{
+  "id": "sample-node-fullstack",
+  "name": "Node.js Fullstack Counter",
+  "description": "A fullstack React + Express counter app to demonstrate Node.js support in AI Launcher",
+  "author": "ai-launcher",
+  "python_version": "3",
+  "needs_gpu": false,
+  "pip_deps": [],
+  "launch_cmd": "npm start",
+  "port": 3000,
+  "env": [],
+  "disk_size": "~100MB",
+  "tags": ["node", "express", "react", "fullstack", "demo"]
+}

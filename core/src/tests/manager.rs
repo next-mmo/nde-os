@@ -18,12 +18,13 @@ fn empty_initially() {
 }
 
 #[test]
-fn catalog_has_3_apps() {
+fn catalog_has_4_apps() {
     let tmp = temp_base();
     let mgr = AppManager::new(tmp.path()).unwrap();
     let cat = mgr.catalog();
-    assert_eq!(cat.len(), 3);
+    assert_eq!(cat.len(), 4);
     let ids: Vec<&str> = cat.iter().map(|a| a.id.as_str()).collect();
+    assert!(ids.contains(&"sample-node-fullstack"));
     assert!(ids.contains(&"sample-gradio"));
     assert!(ids.contains(&"stable-diffusion-webui"));
     assert!(ids.contains(&"ollama"));

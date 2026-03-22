@@ -95,13 +95,25 @@ impl AppManager {
         println!("  [sandbox] Verified secure");
 
         // Copy app source files from manifests/ directory if available
-        let manifest_dir = self.base_dir.parent()
-            .unwrap_or(&self.base_dir)
-            .join("manifests")
-            .join(&manifest.id);
-        if manifest_dir.exists() {
-            println!("  [install] Copying app files from {:?}...", manifest_dir);
-            Self::copy_app_files(&manifest_dir, sandbox.root())?;
+        let current_dir = std::env::current_dir().unwrap_or_default();
+        let possible_dirs = vec![
+            current_dir.join("manifests").join(&manifest.id),
+            current_dir.join("..").join("manifests").join(&manifest.id),
+            current_dir.join("..").join("..").join("manifests").join(&manifest.id),
+        ];
+
+        let mut found = false;
+        for dir in possible_dirs {
+            if dir.exists() {
+                println!("  [install] Copying app files from {:?}...", dir);
+                Self::copy_app_files(&dir, sandbox.root())?;
+                found = true;
+                break;
+            }
+        }
+        
+        if !found {
+            println!("  [install] Warning: No local manifest directory found to copy files from.");
         }
 
         // 2. Setup uv + Python (best-effort — sandbox is the security layer)
@@ -121,18 +133,36 @@ impl AppManager {
             }
         };
 
-        // 4. Install deps
+        // 4. Install python deps
         if has_venv && !manifest.pip_deps.is_empty() {
-            println!("  [4/4] Installing dependencies via uv...");
+            println!("  [4/5] Installing dependencies via uv...");
             if let Err(e) = uv.install_deps(&manifest.pip_deps) {
                 println!("  [uv] Dep install issue: {} (app may need manual setup)", e);
             }
             let req_file = sandbox.root().join("requirements.txt");
             uv.install_requirements(&req_file).ok();
         } else if !manifest.pip_deps.is_empty() {
-            println!("  [4/4] Skipping deps (no venv) — install manually or re-run with network");
+            println!("  [4/5] Skipping deps (no venv) — install manually or re-run with network");
         } else {
-            println!("  [4/4] No dependencies needed");
+            println!("  [4/5] No Python dependencies needed");
+        }
+
+        // 5. Install Node.js deps if package.json exists
+        let package_json = sandbox.root().join("package.json");
+        if package_json.exists() {
+            println!("  [5/5] Found package.json, running npm install...");
+            let npm_cmd = if cfg!(windows) { "npm.cmd" } else { "npm" };
+            let npm_run = std::process::Command::new(npm_cmd)
+                .arg("install")
+                .current_dir(sandbox.root())
+                .status();
+            match npm_run {
+                Ok(status) if !status.success() => println!("  [npm] install exited with {}", status),
+                Err(e) => println!("  [npm] install failed: {}", e),
+                _ => println!("  [npm] installed successfully"),
+            }
+        } else {
+            println!("  [5/5] No package.json found");
         }
 
         let installed = InstalledApp {
@@ -234,7 +264,21 @@ impl AppManager {
         {
             let mut running = self.running.lock().unwrap();
             if let Some(mut child) = running.remove(app_id) {
-                child.kill().ok();
+                let pid = child.id();
+                
+                #[cfg(windows)]
+                {
+                    std::process::Command::new("taskkill")
+                        .args(&["/F", "/T", "/PID", &pid.to_string()])
+                        .output()
+                        .ok();
+                }
+                
+                #[cfg(not(windows))]
+                {
+                    child.kill().ok();
+                }
+                
                 child.wait().ok();
             } else {
                 return Err(anyhow!("App '{}' is not running", app_id));
@@ -273,7 +317,12 @@ impl AppManager {
     }
 
     pub fn catalog(&self) -> Vec<AppManifest> {
-        vec![AppManifest::sample_counter(), AppManifest::stable_diffusion(), AppManifest::ollama()]
+        vec![
+            AppManifest::sample_node_fullstack(),
+            AppManifest::sample_counter(),
+            AppManifest::stable_diffusion(),
+            AppManifest::ollama()
+        ]
     }
 
     pub fn disk_usage(&self, app_id: &str) -> Result<u64> {

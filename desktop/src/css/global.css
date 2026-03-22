@@ -1,0 +1,71 @@
+@import "@fontsource/inter/400.css";
+@import "@fontsource/inter/500.css";
+@import "@fontsource/inter/600.css";
+@import "./reset.css";
+@import "./theme.css";
+
+:root {
+  color: var(--system-color-text);
+  font-family: var(--system-font-family);
+}
+
+body {
+  overflow: hidden;
+  background:
+    radial-gradient(circle at top left, hsla(210 100% 78% / 0.42), transparent 30%),
+    radial-gradient(circle at top right, hsla(18 100% 72% / 0.28), transparent 26%),
+    #06131f;
+  color: var(--system-color-text);
+  cursor: var(--system-cursor-default), auto;
+  font-family: var(--system-font-family);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
+  cursor: var(--system-cursor-default), auto;
+}
+
+button,
+a {
+  cursor: var(--system-cursor-pointer), auto;
+}
+
+input,
+textarea {
+  cursor: var(--system-cursor-text-select), auto;
+}
+
+*:focus {
+  outline: none;
+}
+
+*:focus-visible {
+  box-shadow: var(--system-focus-outline);
+}
+
+button {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: hsla(220 10% 50% / 0.5);
+  border-radius: 999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: hsla(220 10% 42% / 0.7);
+}
