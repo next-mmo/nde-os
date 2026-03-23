@@ -66,51 +66,19 @@ pub fn add_provider(
 
     let name = config.name.clone();
     
-    // Verify provider connection before adding
-    if config.provider_type != "gguf" && !config.provider_type.starts_with("llama") {
-        let verify_res = rt.block_on(async {
-            tracing::info!("Verifying connection to AI API provider '{}'...", config.name);
-            let api_key = config.api_key.clone().or_else(|| {
-                config.api_key_env.as_ref().and_then(|env| std::env::var(env).ok())
-            });
+    // --- Verify provider is usable before adding ---
+    let verify_res = rt.block_on(async {
+        tracing::info!("Verifying provider '{}' (type={})...", config.name, config.provider_type);
+        ai_launcher_core::llm::verify_provider_config(&config).await
+    });
 
-            // create provider
-            let provider = match ai_launcher_core::llm::create_provider(
-                &config.provider_type,
-                &config.model,
-                config.base_url.as_deref(),
-                api_key.as_deref(),
-            ) {
-                Ok(p) => p,
-                Err(e) => return Err(anyhow::anyhow!("Configuration error: {}", e)),
-            };
-
-            // ping
-            let msg = vec![ai_launcher_core::llm::Message::user("ping")];
-            let tools = vec![];
-            match tokio::time::timeout(std::time::Duration::from_secs(5), provider.chat(&msg, &tools)).await {
-                Ok(Ok(_)) => Ok(()),
-                Ok(Err(e)) => {
-                    let err_str = e.to_string().to_lowercase();
-                    if err_str.contains("404") || err_str.contains("not found") {
-                        tracing::warn!("Provider ping succeeded but model might be missing: {}", e);
-                        Ok(())
-                    } else {
-                        Err(anyhow::anyhow!("API Error: {}", e))
-                    }
-                }
-                Err(_) => Err(anyhow::anyhow!("Connection timed out (5s)")),
-            }
-        });
-
-        if let Err(e) = verify_res {
-            return err(400, &format!("Connection verification failed: {}", e));
-        }
+    if let Err(e) = verify_res {
+        return err(400, &format!("Verification failed: {}", e));
     }
 
     match manager.lock() {
         Ok(mut m) => match m.add_from_config(config) {
-            Ok(()) => ok(&format!("Added provider '{}'", name), name),
+            Ok(()) => ok(&format!("Provider '{}' verified and added", name), name),
             Err(e) => err(400, &e.to_string()),
         },
         Err(_) => err(500, "LLM manager lock failed"),
@@ -274,4 +242,78 @@ pub fn recommend_gguf_models(mgr: &ai_launcher_core::app_manager::AppManager) ->
 
     let models = GgufModelRecommendation::recommend_models(ram_bytes, None);
     ok("Recommended GGUF models", models)
+}
+
+/// GET /api/models/local — list locally-available GGUF model files.
+pub fn list_local_models() -> Response<Cursor<Vec<u8>>> {
+    use ai_launcher_core::llm::gguf::GgufProvider;
+
+    let data_dir = std::env::var("AI_LAUNCHER_DATA_DIR")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|_| {
+            if cfg!(windows) {
+                std::env::var("LOCALAPPDATA")
+                    .map(|p| std::path::PathBuf::from(p).join("ai-launcher"))
+                    .unwrap_or_else(|_| std::path::PathBuf::from("C:\\ai-launcher-data"))
+            } else {
+                std::env::var("HOME")
+                    .map(std::path::PathBuf::from)
+                    .unwrap_or_else(|_| std::path::PathBuf::from("/tmp"))
+                    .join(".ai-launcher")
+            }
+        });
+
+    let models = GgufProvider::list_local_models(&data_dir);
+    ok("Local GGUF models", models)
+}
+
+/// POST /api/models/verify — verify a provider config can run without errors.
+pub fn verify_provider(
+    req: &mut Request,
+    rt: &tokio::runtime::Runtime,
+) -> Response<Cursor<Vec<u8>>> {
+    let body = match crate::response::read_body(req) {
+        Some(b) => b,
+        None => return err(400, "Missing request body"),
+    };
+
+    let config: ai_launcher_core::llm::manager::ProviderConfig = match serde_json::from_str(&body) {
+        Ok(c) => c,
+        Err(e) => return err(400, &format!("Invalid JSON: {}", e)),
+    };
+
+    match config.provider_type.as_str() {
+        "gguf" | "llama-cpp" | "llama.cpp" => {
+            let result = rt.block_on(async {
+                let data_dir = std::env::var("AI_LAUNCHER_DATA_DIR")
+                    .map(std::path::PathBuf::from)
+                    .unwrap_or_else(|_| {
+                        if cfg!(windows) {
+                            std::env::var("LOCALAPPDATA")
+                                .map(|p| std::path::PathBuf::from(p).join("ai-launcher"))
+                                .unwrap_or_else(|_| std::path::PathBuf::from("C:\\ai-launcher-data"))
+                        } else {
+                            std::env::var("HOME")
+                                .map(std::path::PathBuf::from)
+                                .unwrap_or_else(|_| std::path::PathBuf::from("/tmp"))
+                                .join(".ai-launcher")
+                        }
+                    });
+                let provider = ai_launcher_core::llm::gguf::GgufProvider::new(
+                    &data_dir,
+                    &config.model,
+                    config.base_url.as_deref(),
+                    None,
+                );
+                provider.verify().await
+            });
+            ok("GGUF verification result", result)
+        }
+        _ => {
+            // For non-GGUF, just report that config is parseable
+            #[derive(serde::Serialize)]
+            struct SimpleVerify { ok: bool, error: Option<String> }
+            ok("Provider config is valid", SimpleVerify { ok: true, error: None })
+        }
+    }
 }

@@ -218,3 +218,108 @@ pub fn create_provider(
         )),
     }
 }
+
+/// Verify that a provider config is usable before adding it.
+/// Returns Ok(()) if the provider can run, or an error describing why not.
+pub async fn verify_provider_config(config: &manager::ProviderConfig) -> anyhow::Result<()> {
+    match config.provider_type.as_str() {
+        // GGUF (local): verify model file + server binary
+        "gguf" | "llama-cpp" | "llama.cpp" => {
+            let data_dir = std::env::var("AI_LAUNCHER_DATA_DIR")
+                .map(std::path::PathBuf::from)
+                .unwrap_or_else(|_| {
+                    if cfg!(windows) {
+                        std::env::var("LOCALAPPDATA")
+                            .map(|p| std::path::PathBuf::from(p).join("ai-launcher"))
+                            .unwrap_or_else(|_| std::path::PathBuf::from("C:\\ai-launcher-data"))
+                    } else {
+                        std::env::var("HOME")
+                            .map(std::path::PathBuf::from)
+                            .unwrap_or_else(|_| std::path::PathBuf::from("/tmp"))
+                            .join(".ai-launcher")
+                    }
+                });
+            let provider = gguf::GgufProvider::new(
+                &data_dir,
+                &config.model,
+                config.base_url.as_deref(),
+                None,
+            );
+            let result = provider.verify().await;
+            if result.ok {
+                tracing::info!("GGUF verify OK: model_exists={}, server={}", result.model_exists, result.server_available);
+                Ok(())
+            } else {
+                Err(anyhow::anyhow!("{}", result.error.unwrap_or_else(|| "GGUF verification failed".into())))
+            }
+        }
+
+        // Ollama: verify server reachable + model available
+        "ollama" => {
+            let url = config.base_url.clone().unwrap_or_else(|| "http://localhost:11434".to_string());
+            let client = reqwest::Client::new();
+            match tokio::time::timeout(
+                std::time::Duration::from_secs(3),
+                client.get(format!("{}/api/tags", url)).send()
+            ).await {
+                Ok(Ok(resp)) if resp.status().is_success() => {
+                    if let Ok(body) = resp.text().await {
+                        let model_name = &config.model;
+                        if let Ok(json) = serde_json::from_str::<serde_json::Value>(&body) {
+                            let models = json["models"].as_array();
+                            let found = models.map(|arr| arr.iter().any(|m| {
+                                let n = m["name"].as_str().unwrap_or_default();
+                                n == model_name || n.starts_with(&format!("{}:", model_name))
+                            })).unwrap_or(false);
+                            if !found {
+                                let available: Vec<String> = models.map(|arr| {
+                                    arr.iter().filter_map(|m| m["name"].as_str().map(|s| s.to_string())).collect()
+                                }).unwrap_or_default();
+                                return Err(anyhow::anyhow!(
+                                    "Ollama is running but model '{}' is not pulled. Available: {}. Run: ollama pull {}",
+                                    model_name,
+                                    if available.is_empty() { "(none)".into() } else { available.join(", ") },
+                                    model_name
+                                ));
+                            }
+                        }
+                    }
+                    Ok(())
+                }
+                Ok(Ok(resp)) => Err(anyhow::anyhow!("Ollama server returned HTTP {}", resp.status())),
+                Ok(Err(e)) => Err(anyhow::anyhow!("Cannot connect to Ollama at {}: {}", url, e)),
+                Err(_) => Err(anyhow::anyhow!("Ollama connection timed out at {} — is Ollama running?", url)),
+            }
+        }
+
+        // All other API providers: test with a ping
+        _ => {
+            let api_key = config.api_key.clone().or_else(|| {
+                config.api_key_env.as_ref().and_then(|env| std::env::var(env).ok())
+            });
+
+            let provider = create_provider(
+                &config.provider_type,
+                &config.model,
+                config.base_url.as_deref(),
+                api_key.as_deref(),
+            ).map_err(|e| anyhow::anyhow!("Configuration error: {}", e))?;
+
+            let msg = vec![Message::user("ping")];
+            let tools = vec![];
+            match tokio::time::timeout(std::time::Duration::from_secs(5), provider.chat(&msg, &tools)).await {
+                Ok(Ok(_)) => Ok(()),
+                Ok(Err(e)) => {
+                    let err_str = e.to_string().to_lowercase();
+                    if err_str.contains("404") || err_str.contains("not found") {
+                        tracing::warn!("Provider ping: potential model issue (letting through): {}", e);
+                        Ok(())
+                    } else {
+                        Err(anyhow::anyhow!("API Error: {}", e))
+                    }
+                }
+                Err(_) => Err(anyhow::anyhow!("Connection timed out (5s)")),
+            }
+        }
+    }
+}

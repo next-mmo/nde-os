@@ -77,8 +77,10 @@ async function httpFallback<T>(command: string, args?: Record<string, unknown>):
     list_models:     { method: "GET",    url: `/api/models` },
     active_model:    { method: "GET",    url: `/api/models/active` },
     recommend_models:{ method: "GET",    url: `/api/models/recommendations` },
+    local_models:    { method: "GET",    url: `/api/models/local` },
     switch_model:    { method: "POST",   url: `/api/models/switch`, body: { name: args?.name } },
     add_provider:    { method: "POST",   url: `/api/models/providers`, body: args?.config },
+    verify_provider: { method: "POST",   url: `/api/models/verify`, body: args?.config },
     remove_provider: { method: "DELETE", url: `/api/models/providers/${args?.name}` },
     codex_oauth_start: { method: "POST", url: `/api/codex/oauth/start`, body: { model: args?.model } },
     codex_oauth_status: { method: "GET", url: `/api/codex/oauth/status` },
@@ -224,6 +226,30 @@ export interface GgufModelRecommendation {
 
 export async function recommendModels(): Promise<GgufModelRecommendation[]> {
   return smartInvoke<GgufModelRecommendation[]>("recommend_models");
+}
+
+export interface LocalGgufModel {
+  filename: string;
+  path: string;
+  size_bytes: number;
+  size_display: string;
+}
+
+export async function localModels(): Promise<LocalGgufModel[]> {
+  return smartInvoke<LocalGgufModel[]>("local_models");
+}
+
+export interface VerifyResult {
+  ok: boolean;
+  model_exists?: boolean;
+  model_path?: string;
+  server_available?: boolean;
+  server_path?: string | null;
+  error?: string | null;
+}
+
+export async function verifyProvider(config: ProviderConfig): Promise<VerifyResult> {
+  return smartInvoke<VerifyResult>("verify_provider", { config });
 }
 
 export async function listModels(): Promise<ProviderStatus[]> {

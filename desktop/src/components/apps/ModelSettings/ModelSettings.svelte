@@ -3,6 +3,7 @@
 <script lang="ts">
   import * as api from "$lib/api/backend";
   import type { ProviderStatus, ProviderConfig } from "$lib/api/types";
+  import type { LocalGgufModel, VerifyResult } from "$lib/api/backend";
 
   let providers = $state<ProviderStatus[]>([]);
   let activeProvider = $state("");
@@ -16,7 +17,10 @@
 
   // GGUF Recommendations
   let recommendations = $state<api.GgufModelRecommendation[]>([]);
+  let localModels = $state<LocalGgufModel[]>([]);
   let recLoading = $state(false);
+  let verifyResult = $state<VerifyResult | null>(null);
+  let verifying = $state(false);
 
   // Add provider form
   let formName = $state("");
@@ -99,7 +103,12 @@
     } else if (formType === "gguf" && recommendations.length === 0) {
       recLoading = true;
       try {
-        recommendations = await api.recommendModels();
+        const [recs, locals] = await Promise.all([
+          api.recommendModels(),
+          api.localModels(),
+        ]);
+        recommendations = recs;
+        localModels = locals;
       } catch (e: any) {
         console.error("Failed to load recommendations:", e);
       } finally {
@@ -111,6 +120,18 @@
   function useRecommendation(rec: api.GgufModelRecommendation) {
     formName = `local-${rec.id.split("/").pop() || rec.id}`;
     formModel = rec.id;
+    verifyResult = null;
+  }
+
+  function useLocalModel(model: LocalGgufModel) {
+    // Derive a clean name from the filename
+    const stem = model.filename.replace(/\.gguf$/i, "");
+    formName = `local-${stem}`;
+    formModel = stem;
+    // Set the base_url to the full path so the backend uses this file directly
+    formBaseUrl = model.path;
+    formMaxTokens = 4096;
+    verifyResult = null;
   }
 
   async function handleAdd() {
@@ -120,6 +141,7 @@
     }
     addLoading = true;
     addError = "";
+    verifyResult = null;
     try {
       const config: ProviderConfig = {
         name: formName.trim(),
@@ -159,6 +181,8 @@
     formApiKeyEnv = "";
     formMaxTokens = 4096;
     addError = "";
+    verifyResult = null;
+    verifying = false;
   }
 
   function getProviderIcon(type: string): string {
@@ -333,6 +357,23 @@
             <div class="rec-empty">No recommendations found or failed to load.</div>
           {/if}
 
+          {#if localModels.length > 0}
+            <div class="local-models-section">
+              <h4>📁 Already Downloaded ({localModels.length})</h4>
+              <div class="local-models-grid">
+                {#each localModels as model}
+                  <button type="button" class="local-model-card" class:selected={formBaseUrl === model.path} onclick={() => useLocalModel(model)}>
+                    <div class="local-model-header">
+                      <span class="local-model-check">{formBaseUrl === model.path ? '✓' : '○'}</span>
+                      <strong class="local-model-name">{model.filename}</strong>
+                    </div>
+                    <span class="local-model-size">{model.size_display}</span>
+                  </button>
+                {/each}
+              </div>
+            </div>
+          {/if}
+
           <div class="form-grid" style="margin-top: 1rem;">
             <label class="field">
               <span>Name</span>
@@ -350,9 +391,27 @@
           {#if addError}
             <p class="form-error">{addError}</p>
           {/if}
+          {#if verifyResult}
+            <div class="verify-result" class:verify-ok={verifyResult.ok} class:verify-fail={!verifyResult.ok}>
+              <span>{verifyResult.ok ? '✓' : '✕'}</span>
+              <div>
+                {#if verifyResult.ok}
+                  <strong>Ready</strong>
+                  {#if verifyResult.model_exists}
+                    <span class="verify-detail">Model file found locally</span>
+                  {:else}
+                    <span class="verify-detail">Model will be auto-downloaded on first use</span>
+                  {/if}
+                {:else}
+                  <strong>Not Ready</strong>
+                  <span class="verify-detail">{verifyResult.error}</span>
+                {/if}
+              </div>
+            </div>
+          {/if}
           <div class="form-actions">
             <button class="submit-btn" onclick={handleAdd} disabled={addLoading}>
-              {addLoading ? "Verifying Provider..." : "Add Provider"}
+              {addLoading ? "Verifying & Adding..." : "Add Provider"}
             </button>
           </div>
         </div>
@@ -384,14 +443,14 @@
             <input type="number" bind:value={formMaxTokens} min="256" max="128000" />
           </label>
         </div>
-        {#if addError}
-          <p class="form-error">{addError}</p>
-        {/if}
-        <div class="form-actions">
-          <button class="submit-btn" onclick={handleAdd} disabled={addLoading}>
-            {addLoading ? (formType === 'gguf' ? "Adding..." : "Verifying Connection...") : "Add Provider"}
-          </button>
-        </div>
+         {#if addError}
+           <p class="form-error">{addError}</p>
+         {/if}
+         <div class="form-actions">
+           <button class="submit-btn" onclick={handleAdd} disabled={addLoading}>
+             {addLoading ? "Verifying Connection..." : "Add Provider"}
+           </button>
+         </div>
       {/if}
     </div>
   {/if}
@@ -580,4 +639,41 @@
   .rec-card-size { font-size: 0.7rem; padding: 0.1rem 0.4rem; background: hsla(var(--system-color-text-hsl) / 0.1); border-radius: 999px; }
   .rec-card-desc { font-size: 0.75rem; color: var(--system-color-text-muted); margin: 0 0 0.5rem; line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
   .rec-card-footer { font-size: 0.7rem; font-weight: 500; color: hsla(var(--system-color-text-hsl) / 0.6); }
+
+  /* ── Local models ── */
+  .local-models-section { margin-top: 1rem; }
+  .local-models-section h4 { margin: 0 0 0.5rem; font-size: 0.88rem; font-weight: 600; }
+  .local-models-grid {
+    display: grid; grid-template-columns: 1fr; gap: 0.4rem;
+  }
+  .local-model-card {
+    display: flex; align-items: center; justify-content: space-between;
+    text-align: left; background: var(--system-color-panel); border: 1px solid var(--system-color-border);
+    padding: 0.55rem 0.8rem; border-radius: 0.6rem; cursor: pointer; transition: all 0.15s;
+    font-family: inherit; color: inherit;
+  }
+  .local-model-card:hover { border-color: hsla(160 60% 50% / 0.4); background: hsla(160 60% 50% / 0.04); }
+  .local-model-card.selected { border-color: hsl(160 60% 45%); background: hsla(160 60% 50% / 0.1); box-shadow: inset 0 0 0 1px hsl(160 60% 45%); }
+  .local-model-header { display: flex; align-items: center; gap: 0.5rem; min-width: 0; }
+  .local-model-check { font-size: 0.9rem; flex-shrink: 0; color: hsl(160 60% 45%); }
+  .local-model-name { font-size: 0.82rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .local-model-size { font-size: 0.72rem; padding: 0.1rem 0.45rem; background: hsla(var(--system-color-text-hsl) / 0.08); border-radius: 999px; flex-shrink: 0; }
+
+  /* ── Verify result ── */
+  .verify-result {
+    display: flex; gap: 0.6rem; align-items: flex-start;
+    padding: 0.65rem 0.85rem; border-radius: 0.7rem; margin-top: 0.5rem;
+    font-size: 0.82rem;
+  }
+  .verify-result > span { font-size: 1.1rem; flex-shrink: 0; line-height: 1; }
+  .verify-result strong { display: block; font-size: 0.85rem; margin-bottom: 0.1rem; }
+  .verify-detail { font-size: 0.78rem; color: var(--system-color-text-muted); }
+  .verify-ok {
+    background: hsla(160 60% 50% / 0.08); border: 1px solid hsla(160 60% 50% / 0.2);
+  }
+  .verify-ok > span { color: hsl(160 60% 45%); }
+  .verify-fail {
+    background: hsla(0 70% 55% / 0.08); border: 1px solid hsla(0 70% 55% / 0.2);
+  }
+  .verify-fail > span { color: hsl(0 70% 55%); }
 </style>

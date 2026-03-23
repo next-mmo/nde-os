@@ -83,8 +83,10 @@ fn route(
         (Method::Get, "/api/models") => return model_handler::list_models(&llm_manager),
         (Method::Get, "/api/models/active") => return model_handler::active_model(&llm_manager),
         (Method::Get, "/api/models/recommendations") => return model_handler::recommend_gguf_models(mgr),
+        (Method::Get, "/api/models/local") => return model_handler::list_local_models(),
         (Method::Post, "/api/models/switch") => return model_handler::switch_model(req, &llm_manager),
         (Method::Post, "/api/models/providers") => return model_handler::add_provider(req, &llm_manager, rt),
+        (Method::Post, "/api/models/verify") => return model_handler::verify_provider(req, rt),
         // Codex OAuth
         (Method::Post, "/api/codex/oauth/start") => return model_handler::codex_oauth_start(req, llm_manager.clone(), rt, data_dir),
         (Method::Get, "/api/codex/oauth/status") => return model_handler::codex_oauth_status(data_dir),
@@ -292,8 +294,10 @@ fn main() {
     println!("    GET    /api/models");
     println!("    GET    /api/models/active");
     println!("    GET    /api/models/recommendations");
+    println!("    GET    /api/models/local");
     println!("    POST   /api/models/switch");
     println!("    POST   /api/models/providers");
+    println!("    POST   /api/models/verify");
     println!("    DELETE /api/models/providers/{{name}}");
     println!();
     println!("  Codex OAuth:");

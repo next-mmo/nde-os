@@ -79,3 +79,66 @@ To definitively know when the API (`server/`) and Desktop (`desktop/`) are compl
 - **Release Build Success:** Executing `pnpm tauri build` successfully generates a standalone executable (`.exe`/`.dmg`/`.AppImage`) that boots instantly without requiring `npm run dev` or active terminal watchers.
 - **Fluid Performance:** Svelte 5 + `shadcn-svelte` components deliver a smooth, glitch-free macOS Ventura-style experience (no blinking blurs or layout shifts).
 - **Accurate Top-Bar Realities:** RAM, Disk, and GPU indicators correspond accurately to the host system's Task Manager without lagging the UI thread.
+
+---
+
+## 🧪 Demo User Test Scenarios
+
+Concrete, real-world test scenarios that a default/demo user performs to verify the product works end-to-end. Scenarios requiring external API keys or tokens are marked 🔑 and can be **skipped** during a keyless demo run.
+
+### Desktop & Navigation (No Key Required)
+
+| # | Scenario | Expected Result | Status |
+|---|----------|-----------------|--------|
+| 1 | Launch the app (`.exe` or `pnpm dev`) | macOS-style desktop loads with dock, top bar, and wallpaper | ⬜ |
+| 2 | Check top-bar system metrics | RAM %, Disk %, GPU indicator display real-time values | ⬜ |
+| 3 | Click dock icons | Windows open/close/minimize with smooth animations | ⬜ |
+| 4 | Open Settings panel | Settings UI renders, theme/wallpaper options work | ⬜ |
+| 5 | Resize and drag windows | Windows respond fluidly with no layout shifts | ⬜ |
+
+### App Catalog & Installation (No Key Required)
+
+| # | Scenario | Expected Result | Status |
+|---|----------|-----------------|--------|
+| 6 | Open App Catalog from dock | Full catalog of available AI apps renders with icons and descriptions | ⬜ |
+| 7 | Install a lightweight app (e.g., `gradio-demo`) | `uv` silently bootstraps a `.venv`, installs pip deps, shows progress | ⬜ |
+| 8 | Launch the installed app | App subprocess starts, port opens, app iframe/window loads in desktop | ⬜ |
+| 9 | Stop the running app | Process terminates cleanly, port released, status updated | ⬜ |
+| 10 | Uninstall the app | Workspace directory cleaned up, app removed from installed list | ⬜ |
+| 11 | Verify sandbox isolation | `GET /api/sandbox/{id}/verify` → all attack vectors blocked ✅ | ⬜ |
+
+### Agent Chat via UI (Default: GGUF only)
+
+> **Default test model:** `core/models/Qwen3.5-9B-Q4_K_M.gguf` (bundled, no download needed)
+
+| # | Scenario | Key? | Expected Result | Status |
+|---|----------|------|-----------------|--------|
+| 12 | Open Agent Chat window from dock | ❌ | Chat UI renders with input box and message history | ⬜ |
+| 13 | Chat using bundled GGUF model (`Qwen3.5-9B-Q4_K_M.gguf`) | ❌ | Agent responds via embedded `llama.cpp`, fully offline, no internet | ⬜ |
+| 14 | Agent uses built-in tools (e.g., `file_write`, `list_dir`) | ❌ | Agent autonomously writes files or lists directories inside sandbox | ⬜ |
+| 15 | Agent uses `memory_store` / `memory_recall` | ❌ | Agent persists and retrieves facts from SQLite memory | ⬜ |
+| 16 | Chat using Ollama provider | 🔑 Skip | Requires local Ollama install — streams responses | ⬜ |
+| 17 | Chat using OpenAI provider | 🔑 Skip | Requires `OPENAI_API_KEY` — streams GPT response | ⬜ |
+| 18 | Chat using Anthropic provider | 🔑 Skip | Requires `ANTHROPIC_API_KEY` — streams Claude response | ⬜ |
+| 19 | Chat using Groq provider | 🔑 Skip | Requires `GROQ_API_KEY` — fast Llama inference | ⬜ |
+| 20 | Chat using Codex provider | 🔑 Skip | Requires OAuth flow — code-oriented responses | ⬜ |
+
+### System & API Health (No Key Required)
+
+| # | Scenario | Expected Result | Status |
+|---|----------|-----------------|--------|
+| 21 | `GET /api/health` | Returns `200 OK` with uptime | ⬜ |
+| 22 | `GET /api/system` | Returns OS, Python version, GPU info, uv version | ⬜ |
+| 23 | `GET /api/catalog` | Returns full list of available app manifests | ⬜ |
+| 24 | `GET /api/apps` | Returns currently installed apps with statuses | ⬜ |
+| 25 | Open Swagger UI (`/swagger-ui/`) | Interactive API docs render and all endpoints are testable | ⬜ |
+
+### Advanced / Automation (No Key Required)
+
+| # | Scenario | Expected Result | Status |
+|---|----------|-----------------|--------|
+| 26 | Agent runs a multi-step tool chain | Agent chains `web_fetch` → `file_write` → `memory_store` autonomously | ⬜ |
+| 27 | Disk usage check per app | `GET /api/sandbox/{id}/disk` returns accurate byte counts | ⬜ |
+| 28 | Install + Launch + Stop via API only (headless) | Full lifecycle via `curl` commands without touching the UI | ⬜ |
+
+> **Rule:** If a scenario is marked 🔑 Skip, the E2E test should gracefully skip it (not fail) when no key/token is present in the environment.

@@ -11,6 +11,26 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
+/// Info about a locally-available GGUF model file.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocalGgufModel {
+    pub filename: String,
+    pub path: String,
+    pub size_bytes: u64,
+    pub size_display: String,
+}
+
+/// Result of verifying a GGUF provider can actually run.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GgufVerifyResult {
+    pub ok: bool,
+    pub model_exists: bool,
+    pub model_path: String,
+    pub server_available: bool,
+    pub server_path: Option<String>,
+    pub error: Option<String>,
+}
+
 /// Default small model for first-run.
 const DEFAULT_MODEL_URL: &str =
     "https://huggingface.co/TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF/resolve/main/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf";
@@ -70,6 +90,95 @@ impl GgufProvider {
             model_name,
             port,
             server_process: Arc::new(Mutex::new(None)),
+        }
+    }
+
+    /// List all .gguf model files found in the standard models directory.
+    pub fn list_local_models(data_dir: &Path) -> Vec<LocalGgufModel> {
+        let models_dir = data_dir.join("models");
+        let mut models = Vec::new();
+
+        if let Ok(entries) = std::fs::read_dir(&models_dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.extension().and_then(|e| e.to_str()) == Some("gguf") {
+                    if let Ok(meta) = std::fs::metadata(&path) {
+                        let size = meta.len();
+                        let size_display = if size >= 1_073_741_824 {
+                            format!("{:.1} GB", size as f64 / 1_073_741_824.0)
+                        } else {
+                            format!("{:.0} MB", size as f64 / 1_048_576.0)
+                        };
+                        models.push(LocalGgufModel {
+                            filename: path.file_name().unwrap_or_default().to_string_lossy().to_string(),
+                            path: path.to_string_lossy().to_string(),
+                            size_bytes: size,
+                            size_display,
+                        });
+                    }
+                }
+            }
+        }
+
+        // Sort by size ascending
+        models.sort_by_key(|m| m.size_bytes);
+        models
+    }
+
+    /// Verify this provider is usable: model file exists and server binary is available.
+    pub async fn verify(&self) -> GgufVerifyResult {
+        let model_exists = self.model_path.exists();
+        let model_path = self.model_path.to_string_lossy().to_string();
+
+        // Check server binary
+        let server_bin = self.server_bin_path();
+        let has_local_bin = server_bin.exists();
+        let has_system_bin = Self::find_in_path().is_some();
+        let server_available = has_local_bin || has_system_bin;
+        let server_path = if has_local_bin {
+            Some(server_bin.to_string_lossy().to_string())
+        } else {
+            Self::find_in_path().map(|p| p.to_string_lossy().to_string())
+        };
+
+        let mut errors = Vec::new();
+        if !model_exists {
+            // Check if the download URL looks valid
+            if self.download_url.starts_with("http") {
+                // Model will be auto-downloaded — not a blocking error but note it
+                // Let's do a HEAD request to verify the URL is reachable
+                match self.client.head(&self.download_url)
+                    .timeout(std::time::Duration::from_secs(10))
+                    .send().await
+                {
+                    Ok(resp) if resp.status().is_success() || resp.status().is_redirection() => {
+                        // URL is valid, model will be downloaded on first use
+                    }
+                    Ok(resp) => {
+                        errors.push(format!("Model not found locally and download URL returned HTTP {}", resp.status()));
+                    }
+                    Err(e) => {
+                        errors.push(format!("Model not found locally and download URL unreachable: {}", e));
+                    }
+                }
+            } else {
+                errors.push(format!("Model file not found: {}", model_path));
+            }
+        }
+        if !server_available {
+            errors.push("llama-server binary not found (will auto-download on first use)".to_string());
+        }
+
+        let error = if errors.is_empty() { None } else { Some(errors.join("; ")) };
+        let ok = model_exists || (self.download_url.starts_with("http") && error.is_none());
+
+        GgufVerifyResult {
+            ok,
+            model_exists,
+            model_path,
+            server_available,
+            server_path,
+            error,
         }
     }
 
