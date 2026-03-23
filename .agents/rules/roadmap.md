@@ -1,8 +1,12 @@
+---
+trigger: always_on
+---
+
 # Future Plan: Agent OS, Gateway & Licensing
 
 > **Status**: Planned (post-desktop)  
 > **Codename**: FangFlow  
-> **Timeframe**: 3–6 months after desktop release
+> **Timeframe**: 1–2 days done
 
 ---
 
@@ -18,16 +22,16 @@ IDLE → THINK → EXECUTE (tool call) → OBSERVE → THINK → ... → REPLY �
 
 ### Core Components
 
-| Module | Purpose |
-|--------|---------|
-| `runtime/` | Agent loop state machine, config, conversation state |
-| `llm/` | Multi-provider LLM drivers (Anthropic, OpenAI, Ollama, Groq) |
-| `tools/` | 20+ built-in tools + MCP client for external tool servers |
-| `memory/` | SQLite-backed persistent memory, key-value store, vector embeddings |
-| `workflow/` | DAG execution engine — parallel, conditional, fan-out |
-| `agents/` | Agent manifests, supervisor pattern, sub-agent spawning |
-| `channels/` | Telegram, Discord, Slack, webhooks |
-| `skills/` | OpenFang/DeerFlow-compatible skill format, marketplace |
+| Module      | Purpose                                                             |
+| ----------- | ------------------------------------------------------------------- |
+| `runtime/`  | Agent loop state machine, config, conversation state                |
+| `llm/`      | Multi-provider LLM drivers (Anthropic, OpenAI, Ollama, Groq)        |
+| `tools/`    | 20+ built-in tools + MCP client for external tool servers           |
+| `memory/`   | SQLite-backed persistent memory, key-value store, vector embeddings |
+| `workflow/` | DAG execution engine — parallel, conditional, fan-out               |
+| `agents/`   | Agent manifests, supervisor pattern, sub-agent spawning             |
+| `channels/` | Telegram, Discord, Slack, webhooks                                  |
+| `skills/`   | OpenFang/DeerFlow-compatible skill format, marketplace              |
 
 ### Agent Manifest (TOML)
 
@@ -79,13 +83,13 @@ A standalone Rust server that handles auth, licensing, feature gating, and app c
 
 ### Server Tech Stack
 
-| Component | Choice |
-|-----------|--------|
-| Language | Rust (Axum) |
-| Database | SQLite → Postgres |
-| Auth | JWT (ES256) |
-| License signing | Ed25519 |
-| Deploy | Single binary, any VPS ($5/mo) |
+| Component       | Choice                         |
+| --------------- | ------------------------------ |
+| Language        | Rust (Axum)                    |
+| Database        | SQLite → Postgres              |
+| Auth            | JWT (ES256)                    |
+| License signing | Ed25519                        |
+| Deploy          | Single binary, any VPS ($5/mo) |
 
 ### Server API Surface
 
@@ -111,6 +115,7 @@ POST /api/admin/licenses
 ### Challenge-Response Protocol
 
 Every sensitive action (install, launch, download) requires a server round-trip:
+
 1. Client sends signed `ACTION_REQUEST` (action + hardware ID + HMAC)
 2. Server validates license/tier → returns encrypted `ACTION_RESPONSE` with manifest, deps, signed download URL
 3. Client executes locally with one-time-use token
@@ -121,16 +126,16 @@ Every sensitive action (install, launch, download) requires a server round-trip:
 
 ### Feature Matrix
 
-| Feature | Free | Pro | Enterprise |
-|---------|------|-----|------------|
-| Max installed apps | 2 | 10 | Unlimited |
-| Concurrent running | 1 | 3 | Unlimited |
-| App catalog | Basic | Full | Full + Custom |
-| GPU priority mode | ❌ | ✅ | ✅ |
-| Config sync | ❌ | ✅ | ✅ |
-| Custom models | ❌ | ✅ | ✅ |
-| Agent runtime | 1 agent | 5 agents | Unlimited |
-| License devices | 1 | 3 | 10 |
+| Feature            | Free    | Pro      | Enterprise    |
+| ------------------ | ------- | -------- | ------------- |
+| Max installed apps | 2       | 10       | Unlimited     |
+| Concurrent running | 1       | 3        | Unlimited     |
+| App catalog        | Basic   | Full     | Full + Custom |
+| GPU priority mode  | ❌      | ✅       | ✅            |
+| Config sync        | ❌      | ✅       | ✅            |
+| Custom models      | ❌      | ✅       | ✅            |
+| Agent runtime      | 1 agent | 5 agents | Unlimited     |
+| License devices    | 1       | 3        | 10            |
 
 ### License Token (Ed25519 Signed)
 
@@ -151,14 +156,14 @@ Every sensitive action (install, launch, download) requires a server round-trip:
 
 ### Client Hardening
 
-| Layer | Technique |
-|-------|-----------|
+| Layer     | Technique                     |
+| --------- | ----------------------------- |
 | Transport | TLS 1.3 + certificate pinning |
-| Binary | SHA256 integrity self-check |
-| Strings | Compile-time encryption |
-| Debug | Anti-debug detection |
-| Protocol | Rotating session keys |
-| Updates | Forced update channel |
+| Binary    | SHA256 integrity self-check   |
+| Strings   | Compile-time encryption       |
+| Debug     | Anti-debug detection          |
+| Protocol  | Rotating session keys         |
+| Updates   | Forced update channel         |
 
 ---
 

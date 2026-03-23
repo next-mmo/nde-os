@@ -14,6 +14,10 @@
   let codexOAuthLoading = $state(false);
   let codexOAuthStatus = $state<api.CodexOAuthStatus | null>(null);
 
+  // GGUF Recommendations
+  let recommendations = $state<api.GgufModelRecommendation[]>([]);
+  let recLoading = $state(false);
+
   // Add provider form
   let formName = $state("");
   let formType = $state("ollama");
@@ -27,6 +31,7 @@
     { value: "gguf", label: "GGUF (Local, No Setup)", icon: "📦" },
     { value: "ollama", label: "Ollama (Local)", icon: "🦙" },
     { value: "openai", label: "OpenAI", icon: "🤖" },
+    { value: "openai_compat", label: "OpenAI Compatible", icon: "🔌" },
     { value: "anthropic", label: "Anthropic", icon: "🧠" },
     { value: "groq", label: "Groq", icon: "⚡" },
     { value: "together", label: "Together AI", icon: "🤝" },
@@ -34,13 +39,14 @@
   ];
 
   const PROVIDER_DEFAULTS: Record<string, { model: string; baseUrl: string }> = {
-    gguf: { model: "tinyllama-1.1b-chat-v1.0", baseUrl: "" },
+    gguf: { model: "", baseUrl: "" },
     ollama: { model: "llama3.2", baseUrl: "http://localhost:11434" },
     openai: { model: "gpt-4o", baseUrl: "https://api.openai.com" },
+    openai_compat: { model: "", baseUrl: "" },
     anthropic: { model: "claude-sonnet-4-20250514", baseUrl: "https://api.anthropic.com" },
     groq: { model: "llama-3.3-70b-versatile", baseUrl: "https://api.groq.com" },
     together: { model: "meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo", baseUrl: "https://api.together.xyz" },
-    codex: { model: "codex-mini-latest", baseUrl: "https://api.openai.com" },
+    codex: { model: "gpt-4o-mini", baseUrl: "https://api.openai.com" },
   };
 
   $effect(() => {
@@ -79,12 +85,32 @@
     }
   }
 
-  function handleTypeChange() {
+  async function handleTypeChange() {
     const defs = PROVIDER_DEFAULTS[formType];
     if (defs) {
       formModel = defs.model;
       formBaseUrl = defs.baseUrl;
     }
+    // Auto-check Codex CLI auth status when switching to Codex
+    if (formType === "codex") {
+      try {
+        codexOAuthStatus = await api.codexOAuthStatus();
+      } catch { /* ignore */ }
+    } else if (formType === "gguf" && recommendations.length === 0) {
+      recLoading = true;
+      try {
+        recommendations = await api.recommendModels();
+      } catch (e: any) {
+        console.error("Failed to load recommendations:", e);
+      } finally {
+        recLoading = false;
+      }
+    }
+  }
+
+  function useRecommendation(rec: api.GgufModelRecommendation) {
+    formName = `local-${rec.id.split("/").pop() || rec.id}`;
+    formModel = rec.id;
   }
 
   async function handleAdd() {
@@ -143,10 +169,22 @@
     codexOAuthLoading = true;
     addError = "";
     try {
-      const result = await api.codexOAuthStart();
-      // Open auth URL in a new browser tab (works in both browser and Tauri)
-      window.open(result.auth_url, "_blank", "noopener,noreferrer");
-      // Poll for completion
+      const result = await api.codexOAuthStart(formModel);
+
+      // If already authenticated via Codex CLI, just refresh
+      if (result.already_authenticated) {
+        codexOAuthLoading = false;
+        codexOAuthStatus = await api.codexOAuthStatus();
+        showAddForm = false;
+        await refresh();
+        return;
+      }
+
+      // Not authenticated — show message
+      // Note: The backend Rust server will automatically open the auth_url in the system's default browser
+      addError = result.message || "Complete the login flow in your browser to authenticate.";
+
+      // Poll for completion (user may run `codex login` in terminal)
       let attempts = 0;
       const poll = setInterval(async () => {
         attempts++;
@@ -156,14 +194,16 @@
             clearInterval(poll);
             codexOAuthLoading = false;
             codexOAuthStatus = status;
+            addError = "";
             showAddForm = false;
+            await api.codexOAuthStart(formModel);
             await refresh();
           }
         } catch { /* keep polling */ }
         if (attempts > 120) {
           clearInterval(poll);
           codexOAuthLoading = false;
-          addError = "OAuth timed out — try again";
+          addError = "OAuth timed out — run `codex login` in your terminal";
         }
       }, 2000);
     } catch (e: any) {
@@ -192,11 +232,9 @@
   {#if showAddForm}
     <div class="add-form">
       <h3>Add New Provider</h3>
-      <div class="form-grid">
-        <label class="field">
-          <span>Name</span>
-          <input type="text" bind:value={formName} placeholder="e.g. my-openai" />
-        </label>
+
+      <!-- Provider type selector — always shown -->
+      <div class="form-grid" style="margin-bottom: 0.75rem">
         <label class="field">
           <span>Provider Type</span>
           <select bind:value={formType} onchange={handleTypeChange}>
@@ -205,52 +243,156 @@
             {/each}
           </select>
         </label>
-        <label class="field">
-          <span>Model</span>
-          <input type="text" bind:value={formModel} placeholder="e.g. gpt-4o" />
-        </label>
-        <label class="field">
-          <span>Base URL</span>
-          <input type="text" bind:value={formBaseUrl} placeholder="Optional" />
-        </label>
-        <label class="field">
-          <span>API Key</span>
-          <input type="password" bind:value={formApiKey} placeholder="Direct key (optional)" />
-        </label>
-        <label class="field">
-          <span>API Key Env Var</span>
-          <input type="text" bind:value={formApiKeyEnv} placeholder="e.g. OPENAI_API_KEY" />
-        </label>
-        <label class="field">
-          <span>Max Tokens</span>
-          <input type="number" bind:value={formMaxTokens} min="256" max="128000" />
-        </label>
       </div>
-      {#if addError}
-        <p class="form-error">{addError}</p>
-      {/if}
-      <div class="form-actions">
-        <button class="submit-btn" onclick={handleAdd} disabled={addLoading}>
-          {addLoading ? "Adding..." : "Add Provider"}
-        </button>
-        {#if formType === "codex"}
-          <button
-            class="submit-btn oauth-btn"
-            onclick={handleCodexLogin}
-            disabled={codexOAuthLoading}
-          >
-            {codexOAuthLoading ? "⏳ Waiting for login..." : "🔑 Sign in with ChatGPT"}
+
+      {#if formType === "codex"}
+        <!-- ── Codex-specific panel ── -->
+        <div class="codex-panel">
+          <div class="codex-info">
+            <div class="codex-icon">💻</div>
+            <div>
+              <strong>Codex (ChatGPT Plus/Pro)</strong>
+              <p>Use your ChatGPT Plus or Pro subscription — no API key needed.</p>
+            </div>
+          </div>
+
+          <div class="form-grid" style="margin: 1rem 0;">
+            <label class="field">
+              <span>Model Name</span>
+              <input type="text" bind:value={formModel} placeholder="e.g. gpt-4o-mini" />
+            </label>
+          </div>
+
+          {#if codexOAuthStatus?.authenticated}
+            <div class="codex-auth-status">
+              <span class="codex-check">✓</span>
+              <div>
+                <strong>{codexOAuthStatus.email || "Authenticated"}</strong>
+                {#if codexOAuthStatus.plan_type}
+                  <span class="codex-plan">{codexOAuthStatus.plan_type}</span>
+                {/if}
+              </div>
+            </div>
+            <button
+              class="submit-btn oauth-btn"
+              onclick={handleCodexLogin}
+              disabled={codexOAuthLoading}
+            >
+              {codexOAuthLoading ? "⏳ Adding..." : "✨ Add Codex Provider"}
+            </button>
+          {:else}
+            <div class="codex-auth-status codex-unauth">
+              <span class="codex-lock">🔒</span>
+              <div>
+                <strong>Not authenticated</strong>
+                <span class="codex-hint">Click below to sign in with your ChatGPT account</span>
+              </div>
+            </div>
+            <button
+              class="submit-btn oauth-btn"
+              onclick={handleCodexLogin}
+              disabled={codexOAuthLoading}
+            >
+              {codexOAuthLoading ? "⏳ Waiting for login..." : "🔑 Sign in with ChatGPT"}
+            </button>
+          {/if}
+
+          {#if addError}
+            <p class="form-error">{addError}</p>
+          {/if}
+        </div>
+      {:else if formType === "gguf"}
+        <!-- ── GGUF panel ── -->
+        <div class="gguf-panel">
+          <div class="gguf-info">
+            <div class="gguf-icon">📦</div>
+            <div>
+              <strong>GGUF (Local Inference)</strong>
+              <p>Runs directly on your machine. We recommend these models based on your {recommendations.length > 0 ? `${recommendations[0]?.recommended_ram_gb}GB+ RAM` : 'system RAM'}.</p>
+            </div>
+          </div>
+
+          {#if recLoading}
+            <div class="rec-loading">Analyzing system and finding models...</div>
+          {:else if recommendations.length > 0}
+            <div class="recommendations-grid">
+              {#each recommendations as rec}
+                <button type="button" class="rec-card" class:selected={formModel === rec.id} onclick={() => useRecommendation(rec)}>
+                  <div class="rec-card-header">
+                    <strong>{rec.name}</strong>
+                    <span class="rec-card-size">{rec.size_gb.toFixed(1)} GB</span>
+                  </div>
+                  <p class="rec-card-desc">{rec.description}</p>
+                  <div class="rec-card-footer">
+                    <span>RAM: {rec.recommended_ram_gb} GB+</span>
+                  </div>
+                </button>
+              {/each}
+            </div>
+          {:else}
+            <div class="rec-empty">No recommendations found or failed to load.</div>
+          {/if}
+
+          <div class="form-grid" style="margin-top: 1rem;">
+            <label class="field">
+              <span>Name</span>
+              <input type="text" bind:value={formName} placeholder="e.g. local-llama3" />
+            </label>
+            <label class="field">
+              <span>Model ID</span>
+              <input type="text" bind:value={formModel} placeholder="e.g. TheBloke/Llama-2-7b-Chat-GGUF" />
+            </label>
+            <label class="field">
+              <span>Max Tokens</span>
+              <input type="number" bind:value={formMaxTokens} min="256" max="128000" />
+            </label>
+          </div>
+          {#if addError}
+            <p class="form-error">{addError}</p>
+          {/if}
+          <div class="form-actions">
+            <button class="submit-btn" onclick={handleAdd} disabled={addLoading}>
+              {addLoading ? "Verifying Provider..." : "Add Provider"}
+            </button>
+          </div>
+        </div>
+      {:else}
+        <!-- ── Standard provider form ── -->
+        <div class="form-grid">
+          <label class="field">
+            <span>Name</span>
+            <input type="text" bind:value={formName} placeholder="e.g. my-openai" />
+          </label>
+          <label class="field">
+            <span>Model</span>
+            <input type="text" bind:value={formModel} placeholder="e.g. gpt-4o" />
+          </label>
+          <label class="field">
+            <span>Base URL</span>
+            <input type="text" bind:value={formBaseUrl} placeholder="Optional" />
+          </label>
+          <label class="field">
+            <span>API Key</span>
+            <input type="password" bind:value={formApiKey} placeholder="Direct key (optional)" />
+          </label>
+          <label class="field">
+            <span>API Key Env Var</span>
+            <input type="text" bind:value={formApiKeyEnv} placeholder="e.g. OPENAI_API_KEY" />
+          </label>
+          <label class="field">
+            <span>Max Tokens</span>
+            <input type="number" bind:value={formMaxTokens} min="256" max="128000" />
+          </label>
+        </div>
+        {#if addError}
+          <p class="form-error">{addError}</p>
+        {/if}
+        <div class="form-actions">
+          <button class="submit-btn" onclick={handleAdd} disabled={addLoading}>
+            {addLoading ? (formType === 'gguf' ? "Adding..." : "Verifying Connection...") : "Add Provider"}
           </button>
-        {/if}
-        {#if codexOAuthStatus?.authenticated}
-          <span class="oauth-badge">
-            ✓ {codexOAuthStatus.email || "Authenticated"}
-            {#if codexOAuthStatus.plan_type}
-              · {codexOAuthStatus.plan_type}
-            {/if}
-          </span>
-        {/if}
-      </div>
+        </div>
+      {/if}
     </div>
   {/if}
 
@@ -377,11 +519,65 @@
     background: hsl(160 60% 42%); color: white;
   }
   .oauth-btn:hover:not(:disabled) { background: hsl(160 60% 36%); }
-  .oauth-badge {
-    font-size: 0.78rem; font-weight: 600;
-    color: hsl(160 60% 45%);
-    padding: 0.35rem 0.75rem;
-    border-radius: 999px;
-    background: hsla(160 60% 50% / 0.12);
+
+  /* ── Codex panel ── */
+  .codex-panel {
+    display: flex; flex-direction: column; gap: 0.85rem;
   }
+  .codex-info {
+    display: flex; gap: 0.85rem; align-items: flex-start;
+    padding: 0.9rem; border-radius: 0.8rem;
+    background: hsla(var(--system-color-primary-hsl) / 0.06);
+    border: 1px solid hsla(var(--system-color-primary-hsl) / 0.15);
+  }
+  .codex-icon { font-size: 1.8rem; flex-shrink: 0; }
+  .codex-info strong { display: block; font-size: 0.92rem; margin-bottom: 0.15rem; }
+  .codex-info p { margin: 0; font-size: 0.8rem; color: var(--system-color-text-muted); }
+  .codex-auth-status {
+    display: flex; gap: 0.65rem; align-items: center;
+    padding: 0.7rem 0.9rem; border-radius: 0.7rem;
+    background: hsla(160 60% 50% / 0.08); border: 1px solid hsla(160 60% 50% / 0.2);
+  }
+  .codex-auth-status.codex-unauth {
+    background: hsla(40 80% 50% / 0.08); border-color: hsla(40 80% 50% / 0.2);
+  }
+  .codex-check { font-size: 1.2rem; color: hsl(160 60% 45%); }
+  .codex-lock { font-size: 1.2rem; }
+  .codex-auth-status strong { display: block; font-size: 0.85rem; }
+  .codex-plan {
+    font-size: 0.72rem; color: hsl(160 60% 45%); font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.05em;
+  }
+  .codex-hint {
+    display: block; font-size: 0.78rem; color: var(--system-color-text-muted); margin-top: 0.1rem;
+  }
+
+  /* ── GGUF panel ── */
+  .gguf-panel {
+    display: flex; flex-direction: column; gap: 0.85rem;
+  }
+  .gguf-info {
+    display: flex; gap: 0.85rem; align-items: flex-start;
+    padding: 0.9rem; border-radius: 0.8rem;
+    background: hsla(220 80% 50% / 0.06);
+    border: 1px solid hsla(220 80% 50% / 0.15);
+  }
+  .gguf-icon { font-size: 1.8rem; flex-shrink: 0; }
+  .gguf-info strong { display: block; font-size: 0.92rem; margin-bottom: 0.15rem; }
+  .gguf-info p { margin: 0; font-size: 0.8rem; color: var(--system-color-text-muted); }
+  .rec-loading, .rec-empty { font-size: 0.85rem; color: var(--system-color-text-muted); padding: 1rem; text-align: center; }
+  .recommendations-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr)); gap: 0.75rem; margin-top: 0.5rem;
+  }
+  .rec-card {
+    text-align: left; background: var(--system-color-panel); border: 1px solid var(--system-color-border);
+    padding: 0.8rem; border-radius: 0.75rem; cursor: pointer; transition: all 0.15s; font-family: inherit; color: inherit;
+  }
+  .rec-card:hover { border-color: hsla(var(--system-color-primary-hsl) / 0.4); background: hsla(var(--system-color-primary-hsl) / 0.03); }
+  .rec-card.selected { border-color: var(--system-color-primary); background: hsla(var(--system-color-primary-hsl) / 0.1); box-shadow: inset 0 0 0 1px var(--system-color-primary); }
+  .rec-card-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.4rem; }
+  .rec-card-header strong { font-size: 0.85rem; display: block; max-width: 70%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .rec-card-size { font-size: 0.7rem; padding: 0.1rem 0.4rem; background: hsla(var(--system-color-text-hsl) / 0.1); border-radius: 999px; }
+  .rec-card-desc { font-size: 0.75rem; color: var(--system-color-text-muted); margin: 0 0 0.5rem; line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .rec-card-footer { font-size: 0.7rem; font-weight: 500; color: hsla(var(--system-color-text-hsl) / 0.6); }
 </style>

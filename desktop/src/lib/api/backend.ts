@@ -24,13 +24,22 @@ import type { StoreUploadRequest, StoreUploadResult } from "./types";
 
 const API_BASE = "http://localhost:8080";
 
+// List of commands natively registered in the Tauri backend (`desktop/src-tauri/src/lib.rs`)
+// All other commands (Phase 2: agents, models, plugins, etc) will intelligently fall back to the HTTP server!
+const TAURI_COMMANDS = new Set([
+  "health_check", "get_system_info", "get_resource_usage", "get_catalog",
+  "list_apps", "get_app", "install_app", "uninstall_app", "upload_app",
+  "launch_app", "stop_app", "open_app_browser",
+  "verify_sandbox", "get_disk_usage"
+]);
+
 /**
- * Smart invoke: uses Tauri IPC when running inside the Tauri webview,
+ * Smart invoke: uses Tauri IPC when running inside the Tauri webview AND the command is registered,
  * falls back to the real HTTP API server otherwise.
  */
 async function smartInvoke<T>(command: string, args?: Record<string, unknown>): Promise<T> {
   // Use Tauri IPC when available
-  if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
+  if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window && TAURI_COMMANDS.has(command)) {
     const { invoke } = await import("@tauri-apps/api/core");
     return invoke<T>(command, args);
   }
@@ -67,10 +76,11 @@ async function httpFallback<T>(command: string, args?: Record<string, unknown>):
     // Models / LLM
     list_models:     { method: "GET",    url: `/api/models` },
     active_model:    { method: "GET",    url: `/api/models/active` },
+    recommend_models:{ method: "GET",    url: `/api/models/recommendations` },
     switch_model:    { method: "POST",   url: `/api/models/switch`, body: { name: args?.name } },
     add_provider:    { method: "POST",   url: `/api/models/providers`, body: args?.config },
     remove_provider: { method: "DELETE", url: `/api/models/providers/${args?.name}` },
-    codex_oauth_start: { method: "POST", url: `/api/codex/oauth/start` },
+    codex_oauth_start: { method: "POST", url: `/api/codex/oauth/start`, body: { model: args?.model } },
     codex_oauth_status: { method: "GET", url: `/api/codex/oauth/status` },
     // Plugins
     list_plugins:    { method: "GET",    url: `/api/plugins` },
@@ -203,6 +213,19 @@ export async function agentConfig(): Promise<AgentConfigInfo> {
 
 // ── Models / LLM ──
 
+export interface GgufModelRecommendation {
+  id: string;
+  name: string;
+  url: string;
+  description: string;
+  size_gb: number;
+  recommended_ram_gb: number;
+}
+
+export async function recommendModels(): Promise<GgufModelRecommendation[]> {
+  return smartInvoke<GgufModelRecommendation[]>("recommend_models");
+}
+
 export async function listModels(): Promise<ProviderStatus[]> {
   return smartInvoke<ProviderStatus[]>("list_models");
 }
@@ -227,6 +250,8 @@ export async function removeProvider(name: string): Promise<string> {
 
 export interface CodexOAuthStartResult {
   auth_url: string;
+  already_authenticated?: boolean;
+  message?: string;
 }
 
 export interface CodexOAuthStatus {
@@ -235,8 +260,8 @@ export interface CodexOAuthStatus {
   plan_type?: string;
 }
 
-export async function codexOAuthStart(): Promise<CodexOAuthStartResult> {
-  return smartInvoke<CodexOAuthStartResult>("codex_oauth_start");
+export async function codexOAuthStart(model?: string): Promise<CodexOAuthStartResult> {
+  return smartInvoke<CodexOAuthStartResult>("codex_oauth_start", { model });
 }
 
 export async function codexOAuthStatus(): Promise<CodexOAuthStatus> {

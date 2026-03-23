@@ -13,7 +13,7 @@
     position,
   } from "@neodrag/svelte";
   import { toggleFullscreen as toggleFullscreenState } from "🍎/state/desktop.svelte";
-  import { activeWindow, currentBrowserUrl, focusWindow, type DesktopWindow } from "🍎/state/desktop.svelte";
+  import { activeWindow, currentBrowserUrl, focusWindow, loadWindowGeometry, saveWindowGeometry, type DesktopWindow } from "🍎/state/desktop.svelte";
   import TrafficLights from "🍎/components/Desktop/Window/TrafficLights.svelte";
   import AppNexus from "🍎/components/apps/AppNexus.svelte";
 
@@ -79,6 +79,7 @@
 
     const onUp = () => {
       isResizing = false;
+      persistGeometry();
       document.removeEventListener("pointermove", onMove);
       document.removeEventListener("pointerup", onUp);
     };
@@ -97,7 +98,17 @@
 
   const dragDisabled = Compartment.of(() => disabled(window.fullscreen || !draggingEnabled));
   const isActive = $derived(activeWindow()?.id === window.id);
+
+  const savedGeo = loadWindowGeometry(window.app_id);
+  if (savedGeo) {
+    window.width = savedGeo.width;
+    window.height = savedGeo.height;
+  }
+
   const defaultPosition = () => {
+    if (savedGeo) {
+      return { x: savedGeo.x, y: savedGeo.y };
+    }
     const vw = globalThis.innerWidth ?? 1280;
     const offsetX = ((window.id.length * 53) % 120) - 60;
     const offsetY = ((window.id.length * 37) % 30);
@@ -106,6 +117,19 @@
       y: 10 + offsetY,
     };
   };
+
+  function persistGeometry() {
+    if (!windowEl) return;
+    const transform = windowEl.style.transform ?? "";
+    const match = transform.match(/translate\((-?[\d.]+)px,\s*(-?[\d.]+)px\)/);
+    const x = match ? parseFloat(match[1]) : 0;
+    const y = match ? parseFloat(match[2]) : 0;
+    saveWindowGeometry(window.app_id, {
+      x, y,
+      width: window.width,
+      height: window.height,
+    });
+  }
 
   $effect(() => {
     if (!windowEl) return;
@@ -146,7 +170,7 @@
     dragDisabled,
     events({
       onDragStart: () => { isDragging = true; },
-      onDragEnd: () => { isDragging = false; },
+      onDragEnd: () => { isDragging = false; persistGeometry(); },
     }),
   ])}
 >

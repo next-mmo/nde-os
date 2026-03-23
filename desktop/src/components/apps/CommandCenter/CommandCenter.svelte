@@ -4,7 +4,7 @@
   import * as api from "$lib/api/backend";
   import type { ProviderStatus, PluginStatus, ChannelStatus } from "$lib/api/types";
   import { healthStatus, runningCount, catalogCount, resourceUsage, systemInfo } from "$lib/stores/state";
-  import { openStaticApp } from "🍎/state/desktop.svelte";
+  import { selectLauncherSection } from "🍎/state/desktop.svelte";
 
   let providers = $state<ProviderStatus[]>([]);
   let plugins = $state<PluginStatus[]>([]);
@@ -64,21 +64,21 @@
         <span>localhost:8080</span>
       </div>
     </div>
-    <button class="status-card clickable" onclick={() => openStaticApp("model-settings")}>
+    <button class="status-card clickable" onclick={() => selectLauncherSection("model-settings")}>
       <span class="s-icon">🤖</span>
       <div>
         <strong>{activeModel || "No Model"}</strong>
         <span>{providers.length} provider{providers.length !== 1 ? "s" : ""}</span>
       </div>
     </button>
-    <button class="status-card clickable" onclick={() => openStaticApp("plugins")}>
+    <button class="status-card clickable" onclick={() => selectLauncherSection("plugins")}>
       <span class="s-icon">🧩</span>
       <div>
         <strong>{runningPlugins} Running</strong>
         <span>{plugins.length} plugin{plugins.length !== 1 ? "s" : ""}</span>
       </div>
     </button>
-    <button class="status-card clickable" onclick={() => openStaticApp("channels")}>
+    <button class="status-card clickable" onclick={() => selectLauncherSection("channels")}>
       <span class="s-icon">📡</span>
       <div>
         <strong>{activeChannels} Active</strong>
@@ -133,28 +133,28 @@
   <div class="actions-section">
     <h3>Quick Actions</h3>
     <div class="actions-grid">
-      <button class="action-card" onclick={() => openStaticApp("chat")}>
+      <button class="action-card" onclick={() => selectLauncherSection("chat")}>
         <span>💬</span><strong>Chat</strong><span class="act-desc">Talk to the agent</span>
       </button>
-      <button class="action-card" onclick={() => openStaticApp("model-settings")}>
+      <button class="action-card" onclick={() => selectLauncherSection("model-settings")}>
         <span>🤖</span><strong>Models</strong><span class="act-desc">Configure LLM</span>
       </button>
-      <button class="action-card" onclick={() => openStaticApp("plugins")}>
+      <button class="action-card" onclick={() => selectLauncherSection("plugins")}>
         <span>🧩</span><strong>Plugins</strong><span class="act-desc">Manage extensions</span>
       </button>
-      <button class="action-card" onclick={() => openStaticApp("channels")}>
+      <button class="action-card" onclick={() => selectLauncherSection("channels")}>
         <span>📡</span><strong>Channels</strong><span class="act-desc">Gateway status</span>
       </button>
-      <button class="action-card" onclick={() => openStaticApp("mcp-tools")}>
+      <button class="action-card" onclick={() => selectLauncherSection("mcp-tools")}>
         <span>🔧</span><strong>MCP Tools</strong><span class="act-desc">Browse tools</span>
       </button>
-      <button class="action-card" onclick={() => openStaticApp("skills")}>
+      <button class="action-card" onclick={() => selectLauncherSection("skills")}>
         <span>📘</span><strong>Skills</strong><span class="act-desc">Skill library</span>
       </button>
-      <button class="action-card" onclick={() => openStaticApp("knowledge")}>
+      <button class="action-card" onclick={() => selectLauncherSection("knowledge")}>
         <span>🧠</span><strong>Knowledge</strong><span class="act-desc">Agent memory</span>
       </button>
-      <button class="action-card" onclick={() => openStaticApp("code-editor")}>
+      <button class="action-card" onclick={() => selectLauncherSection("code-editor")}>
         <span>💻</span><strong>IDE</strong><span class="act-desc">Code editor</span>
       </button>
     </div>

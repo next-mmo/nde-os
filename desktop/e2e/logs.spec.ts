@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures";
 import { APP_NAME, dockButton, ensureCleanApp, installSampleCounter, openLauncher } from "./helpers";
 
 test.describe("Logs window", () => {

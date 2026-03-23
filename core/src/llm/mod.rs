@@ -144,6 +144,7 @@ pub fn create_provider(
                 });
             Ok(Box::new(gguf::GgufProvider::new(
                 &data_dir,
+                model,
                 base_url, // Reuse base_url as optional model path
                 None,     // Default port
             )))

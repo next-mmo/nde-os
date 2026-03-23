@@ -98,6 +98,7 @@ dependencies = [
  "serde_json",
  "tiny_http",
  "tokio",
+ "tracing",
  "urlencoding",
 ]
 

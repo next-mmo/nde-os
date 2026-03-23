@@ -38,7 +38,7 @@ fn route(
     agent: &Mutex<AgentState>,
     rt: &tokio::runtime::Runtime,
     plugin_engine: &Mutex<PluginEngine>,
-    llm_manager: &Mutex<LlmManager>,
+    llm_manager: Arc<Mutex<LlmManager>>,
     data_dir: &std::path::Path,
 ) -> tiny_http::Response<std::io::Cursor<Vec<u8>>> {
     let method = req.method().clone();
@@ -69,23 +69,24 @@ fn route(
         (Method::Post, "/api/apps") => return handlers::install_app(req, mgr),
         (Method::Post, "/api/store/upload") => return handlers::store_upload(req, mgr),
         // Agent chat API
-        (Method::Post, "/api/agent/chat") => return agent_handler::agent_chat(req, agent),
+        (Method::Post, "/api/agent/chat") => return agent_handler::agent_chat(req, agent, &llm_manager),
         (Method::Post, "/api/agent/chat/stream") => {
             let agent_state = agent.lock().unwrap();
-            return stream_handler::handle_stream_chat(req, rt, &agent_state);
+            return stream_handler::handle_stream_chat(req, rt, &agent_state, &llm_manager);
         }
         (Method::Get, "/api/agent/conversations") => return agent_handler::list_conversations(agent),
-        (Method::Get, "/api/agent/config") => return agent_handler::agent_config(agent),
+        (Method::Get, "/api/agent/config") => return agent_handler::agent_config(agent, &llm_manager),
         // Plugin API
         (Method::Get, "/api/plugins") => return plugin_handler::list_plugins(plugin_engine),
         (Method::Post, "/api/plugins/discover") => return plugin_handler::discover_plugins(rt, plugin_engine),
         // Model/Provider API
-        (Method::Get, "/api/models") => return model_handler::list_models(llm_manager),
-        (Method::Get, "/api/models/active") => return model_handler::active_model(llm_manager),
-        (Method::Post, "/api/models/switch") => return model_handler::switch_model(req, llm_manager),
-        (Method::Post, "/api/models/providers") => return model_handler::add_provider(req, llm_manager),
+        (Method::Get, "/api/models") => return model_handler::list_models(&llm_manager),
+        (Method::Get, "/api/models/active") => return model_handler::active_model(&llm_manager),
+        (Method::Get, "/api/models/recommendations") => return model_handler::recommend_gguf_models(mgr),
+        (Method::Post, "/api/models/switch") => return model_handler::switch_model(req, &llm_manager),
+        (Method::Post, "/api/models/providers") => return model_handler::add_provider(req, &llm_manager, rt),
         // Codex OAuth
-        (Method::Post, "/api/codex/oauth/start") => return model_handler::codex_oauth_start(llm_manager, rt, data_dir),
+        (Method::Post, "/api/codex/oauth/start") => return model_handler::codex_oauth_start(req, llm_manager.clone(), rt, data_dir),
         (Method::Get, "/api/codex/oauth/status") => return model_handler::codex_oauth_status(data_dir),
         // Channels
         (Method::Get, "/api/channels") => return subsystem_handler::list_channels(),
@@ -135,7 +136,7 @@ fn route(
         let parts: Vec<&str> = path.trim_start_matches('/').split('/').collect();
         return match (method.clone(), parts.as_slice()) {
             (Method::Delete, ["api", "models", "providers", name]) => {
-                model_handler::remove_provider(name, llm_manager)
+                model_handler::remove_provider(name, &llm_manager)
             }
             _ => err(404, &format!("Not found: {}", path)),
         };
@@ -209,10 +210,16 @@ fn main() {
     }
 
     // Phase 2: LLM Manager
-    let llm_manager = Arc::new(Mutex::new(LlmManager::new()));
-    // Auto-add default GGUF provider (zero-config local inference)
-    if let Ok(mut mgr) = llm_manager.lock() {
-        let _ = mgr.add_from_config(ai_launcher_core::llm::manager::ProviderConfig {
+    let llm_config_path = base_dir.join("llm_providers.json");
+    let mut llm_mgr = LlmManager::load_from_disk(&llm_config_path).unwrap_or_else(|_| {
+        let mut new_mgr = LlmManager::new();
+        new_mgr.set_persistence_path(llm_config_path);
+        new_mgr
+    });
+
+    // Auto-add default GGUF and Ollama provider if none exist (zero-config local inference)
+    if llm_mgr.configs().is_empty() {
+        let _ = llm_mgr.add_from_config(ai_launcher_core::llm::manager::ProviderConfig {
             name: "local-gguf".into(),
             provider_type: "gguf".into(),
             model: "tinyllama-1.1b".into(),
@@ -221,8 +228,7 @@ fn main() {
             api_key_env: None,
             max_tokens: 2048,
         });
-        // Also add Ollama as a secondary provider
-        let _ = mgr.add_from_config(ai_launcher_core::llm::manager::ProviderConfig {
+        let _ = llm_mgr.add_from_config(ai_launcher_core::llm::manager::ProviderConfig {
             name: "local-ollama".into(),
             provider_type: "ollama".into(),
             model: "llama3.2".into(),
@@ -232,6 +238,8 @@ fn main() {
             max_tokens: 4096,
         });
     }
+
+    let llm_manager = Arc::new(Mutex::new(llm_mgr));
 
     let server = Server::http("0.0.0.0:8080").expect("Failed to bind :8080");
 
@@ -283,6 +291,7 @@ fn main() {
     println!("  Models:");
     println!("    GET    /api/models");
     println!("    GET    /api/models/active");
+    println!("    GET    /api/models/recommendations");
     println!("    POST   /api/models/switch");
     println!("    POST   /api/models/providers");
     println!("    DELETE /api/models/providers/{{name}}");
@@ -313,18 +322,27 @@ fn main() {
     loop {
         match server.recv() {
             Ok(mut request) => {
-                let response = route(
-                    &mut request,
-                    &mgr,
-                    &agent,
-                    &rt,
-                    &plugin_engine,
-                    &llm_manager,
-                    &base_dir,
-                );
-                if let Err(e) = request.respond(response) {
-                    eprintln!("Response error: {}", e);
-                }
+                let mgr = mgr.clone();
+                let agent = agent.clone();
+                let rt = rt.clone();
+                let plugin_engine = plugin_engine.clone();
+                let llm_manager = llm_manager.clone();
+                let base_dir = base_dir.clone();
+
+                std::thread::spawn(move || {
+                    let response = route(
+                        &mut request,
+                        &mgr,
+                        &agent,
+                        &rt,
+                        &plugin_engine,
+                        llm_manager,
+                        &base_dir,
+                    );
+                    if let Err(e) = request.respond(response) {
+                        eprintln!("Response error: {}", e);
+                    }
+                });
             }
             Err(e) => {
                 eprintln!("Recv error: {}", e);

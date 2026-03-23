@@ -1,0 +1,40 @@
+Loading svelte-check in workspace: c:\Users\dila\Downloads\ai-launcher-v0.2\ai-launcher\desktop
+Getting Svelte diagnostics...
+
+c:\Users\dila\Downloads\ai-launcher-v0.2\ai-launcher\desktop\[32msrc\components\Desktop\Launchpad.svelte[39m:217:3
+[33mWarn[39m: Unused CSS selector ".tile-fallback.visible"
+https://svelte.dev/e/css_unused_selector (svelte)
+[36m
+  [35m.tile-fallback.visible[36m {
+    display: grid;[39m
+
+c:\Users\dila\Downloads\ai-launcher-v0.2\ai-launcher\desktop\[32msrc\components\Desktop\Window\Window.svelte[39m:102:39
+[33mWarn[39m: This reference only captures the initial value of `window`. Did you mean to reference it inside a closure instead?
+https://svelte.dev/e/state_referenced_locally (svelte)
+[36m
+  const savedGeo = loadWindowGeometry([35mwindow[36m.app_id);
+  if (savedGeo) {[39m
+
+c:\Users\dila\Downloads\ai-launcher-v0.2\ai-launcher\desktop\[32msrc\components\Desktop\Window\Window.svelte[39m:104:5
+[33mWarn[39m: This reference only captures the initial value of `window`. Did you mean to reference it inside a closure instead?
+https://svelte.dev/e/state_referenced_locally (svelte)
+[36m  if (savedGeo) {
+    [35mwindow[36m.width = savedGeo.width;
+    window.height = savedGeo.height;[39m
+
+c:\Users\dila\Downloads\ai-launcher-v0.2\ai-launcher\desktop\[32msrc\components\Desktop\Window\Window.svelte[39m:105:5
+[33mWarn[39m: This reference only captures the initial value of `window`. Did you mean to reference it inside a closure instead?
+https://svelte.dev/e/state_referenced_locally (svelte)
+[36m    window.width = savedGeo.width;
+    [35mwindow[36m.height = savedGeo.height;
+  }[39m
+
+c:\Users\dila\Downloads\ai-launcher-v0.2\ai-launcher\desktop\[32msrc\components\TopBar\TopBarMetrics.svelte[39m:77:64
+[31mError[39m: Argument of type '"system-info-panel"' is not assignable to parameter of type '"wallpaper" | "topbar" | "dock" | "launchpad" | "window_traffic_lights" | "menubar-menu-parent" | "action-center-panel"'. (ts)
+[36m  {#if expanded}
+    <div class="info-panel" class:dark={isDark} use:elevation={[35m"system-info-panel"[36m}>
+      <div class="panel-title">System Info</div>[39m
+
+====================================
+[31msvelte-check found 1 error and 4 warnings in 3 files
+[39m

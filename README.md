@@ -98,9 +98,8 @@ nde-os/
 │   ├── model-downloader/plugin.json
 │   └── ...
 │
-└── docs/
-    ├── current-plan.md         # Desktop migration roadmap (Tauri 2)
-    └── future-plan.md          # Agent OS & licensing roadmap
+├── .agents/                    # Agent planning and specs
+│   └── rules/                  # Active specifications, rules, and roadmaps
 ```
 
 ---
@@ -178,7 +177,7 @@ Apps are defined by JSON manifests in the `apps/` directory:
 }
 ```
 
-See [`docs/app-manifest-spec.md`](docs/app-manifest-spec.md) for the full spec.
+See [`.agents/rules/app-manifest-spec.md`](.agents/rules/app-manifest-spec.md) for the full spec.
 
 ---
 
@@ -192,7 +191,7 @@ See [`docs/app-manifest-spec.md`](docs/app-manifest-spec.md) for the full spec.
 | `middleware` | API request interceptors                    | Auth, rate limiting |
 | `ui`         | Dashboard panels                            | System stats        |
 
-See [`docs/plugin-spec.md`](docs/plugin-spec.md) for the full spec.
+See [`.agents/rules/plugin-spec.md`](.agents/rules/plugin-spec.md) for the full spec.
 
 ---
 
@@ -201,14 +200,16 @@ See [`docs/plugin-spec.md`](docs/plugin-spec.md) for the full spec.
 | Phase | Status     | Description                                            |
 | ----- | ---------- | ------------------------------------------------------ |
 | 0     | ✅ Done    | Sandbox + uv + REST API + plugins                      |
-| 0.5   | 🔄 partial | Desktop migration (Tauri 2 + Svelte 5 + shadcn-svelte) |
+| 0.5   | 🔄 Pause   | Desktop migration (Tauri 2 + Svelte 5 + shadcn-svelte) |
 | 0.6   | 📋 Planned | License server (Axum + Ed25519)                        |
-| 1     | 📋 current | Agent runtime (loop, LLM drivers, tools)               |
-| 2     | 📋 current | Memory & tools (SQLite, MCP, 20+ built-in)             |
-| 3     | 📋 current | Workflows & orchestration (DAG, sub-agents)            |
-| 4     | 📋 current | Channels & autonomy (Telegram, Discord, cron)          |
+| 0.7   | 📋 Planned | Server-side logic split + client hardening             |
+| 1     | ✅ Done    | Agent runtime (loop, LLM drivers, tools)               |
+| 2     | ✅ Done    | Memory & tools (SQLite, MCP, 20+ built-in)             |
+| 3     | 📋 Planned | Workflows & orchestration (DAG, sub-agents)            |
+| 4     | 📋 Planned | Channels & autonomy (Telegram, Discord, cron)          |
+| 5     | 📋 Planned | Compatibility & ecosystem (OpenFang/DeerFlow skills)   |
 
-See [`docs/current-plan.md`](docs/current-plan.md) and [`docs/future-plan.md`](docs/future-plan.md) for details.
+See [`.agents/rules/roadmap.md`](.agents/rules/roadmap.md) and [`.agents/rules/architecture.md`](.agents/rules/architecture.md) for details.
 
 ---
 

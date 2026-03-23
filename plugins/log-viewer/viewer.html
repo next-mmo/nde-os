@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Log Viewer</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    background: #0d1117; color: #c9d1d9; height: 100vh; display: flex; flex-direction: column;
+  }
+  .toolbar {
+    display: flex; gap: 8px; padding: 10px 14px; background: #161b22;
+    border-bottom: 1px solid #30363d; align-items: center; flex-shrink: 0;
+  }
+  .toolbar input {
+    flex: 1; padding: 6px 10px; border-radius: 6px; border: 1px solid #30363d;
+    background: #0d1117; color: #c9d1d9; font-size: 13px; outline: none;
+  }
+  .toolbar input:focus { border-color: #58a6ff; }
+  .toolbar select {
+    padding: 6px 8px; border-radius: 6px; border: 1px solid #30363d;
+    background: #0d1117; color: #c9d1d9; font-size: 13px;
+  }
+  .toolbar button {
+    padding: 6px 14px; border-radius: 6px; border: 1px solid #30363d;
+    background: #21262d; color: #c9d1d9; font-size: 13px; cursor: pointer;
+  }
+  .toolbar button:hover { background: #30363d; }
+  .toolbar button.active { background: #1f6feb; border-color: #1f6feb; color: #fff; }
+  .log-container {
+    flex: 1; overflow-y: auto; padding: 8px 14px; font-family: 'Cascadia Code', 'Fira Code', monospace;
+    font-size: 12px; line-height: 1.6;
+  }
+  .log-line { display: flex; gap: 10px; padding: 1px 0; }
+  .log-line:hover { background: #161b22; }
+  .log-ts { color: #484f58; flex-shrink: 0; min-width: 85px; }
+  .log-app { color: #58a6ff; flex-shrink: 0; min-width: 100px; font-weight: 600; }
+  .log-msg { white-space: pre-wrap; word-break: break-all; flex: 1; }
+  .log-line.stderr .log-msg { color: #f85149; }
+  .log-line.warn .log-msg { color: #d29922; }
+  .status-bar {
+    padding: 4px 14px; background: #161b22; border-top: 1px solid #30363d;
+    font-size: 11px; color: #484f58; display: flex; justify-content: space-between;
+  }
+  .empty { text-align: center; padding: 40px; color: #484f58; }
+</style>
+</head>
+<body>
+  <div class="toolbar">
+    <input id="search" type="text" placeholder="Filter logs..." />
+    <select id="level-filter">
+      <option value="all">All levels</option>
+      <option value="stdout">stdout</option>
+      <option value="stderr">stderr</option>
+    </select>
+    <select id="app-filter">
+      <option value="all">All apps</option>
+    </select>
+    <button id="auto-scroll" class="active" onclick="toggleAutoScroll()">Auto-scroll</button>
+    <button onclick="clearLogs()">Clear</button>
+  </div>
+  <div class="log-container" id="logs">
+    <div class="empty">Waiting for log data...</div>
+  </div>
+  <div class="status-bar">
+    <span id="line-count">0 lines</span>
+    <span id="connection-status">Connecting...</span>
+  </div>
+
+  <script>
+    const logsEl = document.getElementById('logs');
+    const searchEl = document.getElementById('search');
+    const levelEl = document.getElementById('level-filter');
+    const appEl = document.getElementById('app-filter');
+    const lineCountEl = document.getElementById('line-count');
+    const connStatusEl = document.getElementById('connection-status');
+
+    let allLogs = [];
+    let autoScroll = true;
+    let knownApps = new Set();
+
+    function toggleAutoScroll() {
+      autoScroll = !autoScroll;
+      document.getElementById('auto-scroll').classList.toggle('active', autoScroll);
+      if (autoScroll) scrollToBottom();
+    }
+
+    function clearLogs() {
+      allLogs = [];
+      renderLogs();
+    }
+
+    function scrollToBottom() {
+      logsEl.scrollTop = logsEl.scrollHeight;
+    }
+
+    function formatTime(ts) {
+      const d = new Date(ts * 1000);
+      return d.toLocaleTimeString('en-US', { hour12: false }) + '.' + String(d.getMilliseconds()).padStart(3, '0');
+    }
+
+    function renderLogs() {
+      const query = searchEl.value.toLowerCase();
+      const level = levelEl.value;
+      const app = appEl.value;
+
+      const filtered = allLogs.filter(l => {
+        if (query && !l.message.toLowerCase().includes(query) && !l.app_id.toLowerCase().includes(query)) return false;
+        if (level !== 'all' && l.stream !== level) return false;
+        if (app !== 'all' && l.app_id !== app) return false;
+        return true;
+      });
+
+      if (filtered.length === 0) {
+        logsEl.innerHTML = '<div class="empty">No matching logs</div>';
+      } else {
+        logsEl.innerHTML = filtered.map(l => {
+          const cls = l.stream === 'stderr' ? 'stderr' : (l.message.toLowerCase().includes('warn') ? 'warn' : '');
+          return `<div class="log-line ${cls}"><span class="log-ts">${formatTime(l.timestamp)}</span><span class="log-app">${l.app_id}</span><span class="log-msg">${escapeHtml(l.message)}</span></div>`;
+        }).join('');
+      }
+
+      lineCountEl.textContent = `${filtered.length} / ${allLogs.length} lines`;
+      if (autoScroll) scrollToBottom();
+    }
+
+    function escapeHtml(s) {
+      return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    function addLog(entry) {
+      allLogs.push(entry);
+      if (allLogs.length > 5000) allLogs = allLogs.slice(-4000);
+      if (!knownApps.has(entry.app_id)) {
+        knownApps.add(entry.app_id);
+        const opt = document.createElement('option');
+        opt.value = entry.app_id;
+        opt.textContent = entry.app_id;
+        appEl.appendChild(opt);
+      }
+    }
+
+    // Poll for logs from the backend
+    const API_BASE = window.location.origin || 'http://127.0.0.1:8080';
+    let pollTimer = null;
+
+    async function pollLogs() {
+      try {
+        const resp = await fetch(`${API_BASE}/api/plugins/log-viewer/stream`);
+        if (resp.ok) {
+          const data = await resp.json();
+          const lines = Array.isArray(data) ? data : (data.lines || []);
+          lines.forEach(addLog);
+          renderLogs();
+          connStatusEl.textContent = 'Connected';
+        }
+      } catch {
+        connStatusEl.textContent = 'Disconnected';
+      }
+    }
+
+    searchEl.addEventListener('input', renderLogs);
+    levelEl.addEventListener('change', renderLogs);
+    appEl.addEventListener('change', renderLogs);
+
+    // Start polling every 2 seconds
+    pollLogs();
+    pollTimer = setInterval(pollLogs, 2000);
+  </script>
+</body>
+</html>

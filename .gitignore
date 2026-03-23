@@ -9,5 +9,12 @@ desktop/check-errors.txt
 target-codex-build/
 target-codex-build-serial
 target-buildcheck
-models/*.gguf
+*.gguf
 .env
+workspace/.sandbox_info
+err.log
+error.json
+b4679.json
+assets.txt
+nul
+output.txt

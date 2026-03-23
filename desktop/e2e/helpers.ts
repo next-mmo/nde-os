@@ -12,7 +12,6 @@ export async function ensureCleanApp() {
 }
 
 export async function openLauncher(page: Page) {
-  await page.goto("/");
   await expect(page.locator('[data-window="ai-launcher"]')).toBeVisible({ timeout: 15000 });
   await expect(page.getByText("AI Launcher").first()).toBeVisible();
 }

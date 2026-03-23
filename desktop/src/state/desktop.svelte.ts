@@ -3,7 +3,7 @@ import type { InstalledApp } from "$lib/api/types";
 
 export type WindowAppID = Exclude<StaticAppID, "launchpad">;
 export type ThemeScheme = "light" | "dark";
-export type LauncherSection = "overview" | "catalog" | "installed" | "running" | "server";
+export type LauncherSection = "overview" | "catalog" | "installed" | "running" | "server" | "command-center" | "chat" | "model-settings" | "plugins" | "channels" | "mcp-tools" | "skills" | "knowledge" | "code-editor";
 export type SessionMode = "embedded" | "windowed";
 
 export type RunningSession = {
@@ -48,6 +48,31 @@ type WorkspaceView =
 const makeWindowId = (prefix: string) =>
   `${prefix}-${Math.random().toString(36).slice(2, 9)}-${Date.now().toString(36)}`;
 
+type SavedWindowGeometry = { x: number; y: number; width: number; height: number };
+
+const GEOMETRY_STORAGE_KEY = "ai-launcher:window-geometry";
+
+function loadAllGeometry(): Record<string, SavedWindowGeometry> {
+  try {
+    const raw = localStorage.getItem(GEOMETRY_STORAGE_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch {}
+  return {};
+}
+
+export function loadWindowGeometry(app_id: string): SavedWindowGeometry | null {
+  const all = loadAllGeometry();
+  return all[app_id] ?? null;
+}
+
+export function saveWindowGeometry(app_id: string, geo: SavedWindowGeometry) {
+  try {
+    const all = loadAllGeometry();
+    all[app_id] = geo;
+    localStorage.setItem(GEOMETRY_STORAGE_KEY, JSON.stringify(all));
+  } catch {}
+}
+
 function getSavedSessionMode(): SessionMode {
   try {
     const saved = localStorage.getItem("ai-launcher:default-mode");
@@ -72,7 +97,8 @@ function getSavedTheme(): ThemeScheme {
 function getSavedLauncherSection(): LauncherSection {
   try {
     const saved = localStorage.getItem("ai-launcher:launcher-section");
-    if (saved === "overview" || saved === "catalog" || saved === "installed" || saved === "running" || saved === "server") {
+    const validSections: LauncherSection[] = ["overview", "catalog", "installed", "running", "server", "command-center", "chat", "model-settings", "plugins", "channels", "mcp-tools", "skills", "knowledge", "code-editor"];
+    if (validSections.includes(saved as LauncherSection)) {
       return saved as LauncherSection;
     }
   } catch {}
@@ -154,6 +180,7 @@ export function bootDesktop() {
   launcher.resizable = launcherConfig.resizable!;
   launcher.expandable = launcherConfig.expandable!;
   launcher.closable = false;
+  launcher.fullscreen = true;
   assignWindowFocus(launcher);
   desktop.windows.push(launcher);
 }

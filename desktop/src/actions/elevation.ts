@@ -6,6 +6,7 @@ const z_index_config = {
   window_traffic_lights: 12,
   "menubar-menu-parent": 200,
   "action-center-panel": 210,
+  "system-info-panel": 220,
 };
 
 if (typeof document !== "undefined") {

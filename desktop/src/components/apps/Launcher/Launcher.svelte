@@ -25,6 +25,15 @@
     uninstallApp,
   } from "$lib/stores/state";
   import SessionSurface from "🍎/components/apps/Launcher/SessionSurface.svelte";
+  import CommandCenter from "🍎/components/apps/CommandCenter/CommandCenter.svelte";
+  import Chat from "🍎/components/apps/Chat/Chat.svelte";
+  import ModelSettings from "🍎/components/apps/ModelSettings/ModelSettings.svelte";
+  import Plugins from "🍎/components/apps/Plugins/Plugins.svelte";
+  import Channels from "🍎/components/apps/Channels/Channels.svelte";
+  import McpTools from "🍎/components/apps/McpTools/McpTools.svelte";
+  import Skills from "🍎/components/apps/Skills/Skills.svelte";
+  import Knowledge from "🍎/components/apps/Knowledge/Knowledge.svelte";
+  import CodeEditor from "🍎/components/apps/CodeEditor/CodeEditor.svelte";
   import {
     desktop,
     focusSessionDetails,
@@ -66,12 +75,24 @@
     "linear-gradient(160deg, hsl(148 68% 44%), hsl(191 87% 43%) 58%, hsl(214 100% 55%))",
   ];
 
-  const sections: { id: LauncherSection; label: string }[] = [
+  const sections: { id: LauncherSection; label: string; group?: string }[] = [
     { id: "overview", label: "Overview" },
+    { id: "command-center", label: "Command Center" },
     { id: "catalog", label: "Catalog" },
     { id: "installed", label: "Installed" },
     { id: "running", label: "Running" },
     { id: "server", label: "Server & System" },
+  ];
+
+  const appSections: { id: LauncherSection; label: string }[] = [
+    { id: "chat", label: "Chat" },
+    { id: "model-settings", label: "LLM Providers" },
+    { id: "plugins", label: "Plugins" },
+    { id: "channels", label: "Channels" },
+    { id: "mcp-tools", label: "MCP Tools" },
+    { id: "skills", label: "Skills" },
+    { id: "knowledge", label: "Knowledge" },
+    { id: "code-editor", label: "Code Editor" },
   ];
 
   type PendingAction =
@@ -358,6 +379,17 @@
           {/if}
         </button>
       {/each}
+
+      <span class="rail-divider">Apps</span>
+      {#each appSections as section}
+        <button
+          class="rail-link"
+          class:active={desktop.launcher_section === section.id && desktop.workspace_view.kind === "dashboard"}
+          onclick={() => selectSection(section.id)}
+        >
+          <span>{section.label}</span>
+        </button>
+      {/each}
     </nav>
 
     <div class="rail-card">
@@ -507,6 +539,24 @@
               </div>
             </article>
           </div>
+        {:else if desktop.launcher_section === "command-center"}
+          <CommandCenter />
+        {:else if desktop.launcher_section === "chat"}
+          <div class="embedded-app"><Chat /></div>
+        {:else if desktop.launcher_section === "model-settings"}
+          <div class="embedded-app"><ModelSettings /></div>
+        {:else if desktop.launcher_section === "plugins"}
+          <div class="embedded-app"><Plugins /></div>
+        {:else if desktop.launcher_section === "channels"}
+          <div class="embedded-app"><Channels /></div>
+        {:else if desktop.launcher_section === "mcp-tools"}
+          <div class="embedded-app"><McpTools /></div>
+        {:else if desktop.launcher_section === "skills"}
+          <div class="embedded-app"><Skills /></div>
+        {:else if desktop.launcher_section === "knowledge"}
+          <div class="embedded-app"><Knowledge /></div>
+        {:else if desktop.launcher_section === "code-editor"}
+          <div class="embedded-app"><CodeEditor /></div>
         {:else if desktop.launcher_section === "catalog"}
           <div class="panel catalog-panel">
             <div class="panel-header catalog-header">
@@ -819,8 +869,9 @@
     border-right: 1px solid var(--system-color-border);
     background: linear-gradient(180deg, hsla(var(--system-color-light-hsl) / 0.56), hsla(var(--system-color-light-hsl) / 0.72));
     display: grid;
-    grid-template-rows: auto auto 1fr;
+    grid-template-rows: auto 1fr auto;
     gap: 1rem;
+    overflow: hidden;
   }
 
   :global(body.dark) .rail {
@@ -851,6 +902,8 @@
   nav {
     display: grid;
     gap: 0.35rem;
+    overflow-y: auto;
+    align-content: start;
   }
 
   .rail-link {
@@ -873,6 +926,25 @@
     border-radius: 999px;
     background: var(--system-color-chip);
     color: inherit;
+  }
+
+  .rail-divider {
+    display: block;
+    margin-top: 0.6rem;
+    padding: 0.4rem 0.85rem 0.25rem;
+    font-size: 0.68rem;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    color: var(--system-color-text-muted);
+  }
+
+  .embedded-app {
+    height: 100%;
+    min-height: 0;
+    overflow: auto;
+    border-radius: 1.15rem;
+    border: 1px solid var(--system-color-border);
+    background: var(--system-color-panel);
   }
 
   .rail-card,

@@ -20,6 +20,7 @@ pub fn handle_stream_chat(
     req: &mut Request,
     runtime: &tokio::runtime::Runtime,
     agent_state: &crate::AgentState,
+    llm_manager: &std::sync::Arc<std::sync::Mutex<ai_launcher_core::llm::manager::LlmManager>>,
 ) -> Response<Cursor<Vec<u8>>> {
     let body = match read_body(req) {
         Some(b) => b,
@@ -31,12 +32,16 @@ pub fn handle_stream_chat(
         Err(e) => return err(400, &format!("Invalid JSON: {}", e)),
     };
 
-    let config = agent_state.config.clone();
+    let mut config = agent_state.config.clone();
+    crate::agent_handler::sync_model_config(&mut config, llm_manager);
+
     let message = chat_req.message.clone();
 
     let result: Result<String, anyhow::Error> = runtime.block_on(async {
-        let mut agent = AgentRuntime::from_config(config)?;
-        agent.run(&message).await
+        match AgentRuntime::from_config(config) {
+            Ok(mut agent) => agent.run(&message).await,
+            Err(e) => Err(anyhow::anyhow!("Init error: {}", e)),
+        }
     });
 
     match result {

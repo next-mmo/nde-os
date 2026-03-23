@@ -3,7 +3,7 @@
 /// Downloads pre-built llama-server binary + default model on first use.
 /// Lifecycle: bootstrap binary -> download model -> launch server -> OpenAI-compat API.
 
-use super::{LlmProvider, LlmResponse, Message, StopReason, ToolCall, ToolDef, Usage};
+use super::{LlmProvider, LlmResponse, Message, StopReason, ToolCall, ToolDef, Usage, streaming, ChunkStream};
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -20,9 +20,11 @@ const DEFAULT_MODEL_FILENAME: &str = "tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf";
 const LLAMA_CPP_VERSION: &str = "b4679";
 const DEFAULT_PORT: u16 = 8090;
 
+#[derive(Clone)]
 pub struct GgufProvider {
     client: reqwest::Client,
     base_url: String,
+    download_url: String,
     data_dir: PathBuf,
     model_path: PathBuf,
     model_name: String,
@@ -31,12 +33,26 @@ pub struct GgufProvider {
 }
 
 impl GgufProvider {
-    pub fn new(data_dir: &Path, model_path: Option<&str>, port: Option<u16>) -> Self {
+    pub fn new(data_dir: &Path, model_id: &str, model_path: Option<&str>, port: Option<u16>) -> Self {
         let port = port.unwrap_or(DEFAULT_PORT);
+        
+        let mut download_url = DEFAULT_MODEL_URL.to_string();
+        let mut default_filename = DEFAULT_MODEL_FILENAME.to_string();
+
+        let recs = GgufModelRecommendation::recommend_models(u64::MAX, None);
+        if let Some(rec) = recs.iter().find(|r| r.id == model_id) {
+            download_url = rec.url.clone();
+            default_filename = download_url.split('/').last().unwrap_or(DEFAULT_MODEL_FILENAME).to_string();
+        } else if model_id.starts_with("http") {
+            download_url = model_id.to_string();
+            default_filename = download_url.split('/').last().unwrap_or(DEFAULT_MODEL_FILENAME).to_string();
+        }
+
         let model_path = match model_path {
-            Some(p) => PathBuf::from(p),
-            None => data_dir.join("models").join(DEFAULT_MODEL_FILENAME),
+            Some(p) if !p.is_empty() => PathBuf::from(p),
+            _ => data_dir.join("models").join(default_filename),
         };
+        
         let model_name = model_path
             .file_stem()
             .map(|s| s.to_string_lossy().to_string())
@@ -48,6 +64,7 @@ impl GgufProvider {
                 .build()
                 .unwrap_or_else(|_| reqwest::Client::new()),
             base_url: format!("http://127.0.0.1:{}", port),
+            download_url,
             data_dir: data_dir.to_path_buf(),
             model_path,
             model_name,
@@ -144,18 +161,23 @@ impl GgufProvider {
         let tag = LLAMA_CPP_VERSION;
         let (suffix, archive) = if cfg!(target_os = "windows") {
             if cfg!(target_arch = "x86_64") {
-                ("win-avx2-x64.zip", "zip")
+                ("bin-win-avx2-x64.zip", "zip")
             } else {
-                ("win-arm64.zip", "zip")
+                ("bin-win-msvc-arm64.zip", "zip")
             }
         } else if cfg!(target_os = "macos") {
-            ("macos-arm64.zip", "zip")
+            if cfg!(target_arch = "x86_64") {
+                ("bin-macos-x64.zip", "zip")
+            } else {
+                ("bin-macos-arm64.zip", "zip")
+            }
         } else {
             // Linux
             if cfg!(target_arch = "x86_64") {
-                ("ubuntu-x64.zip", "zip")
+                ("bin-ubuntu-x64.zip", "zip")
             } else {
-                ("ubuntu-arm64.zip", "zip")
+                // Warning: b4679 doesn't have an official ubuntu-arm64 bin release according to my listing, but we will leave a placeholder
+                ("bin-ubuntu-arm64.zip", "zip")
             }
         };
         let url = format!(
@@ -228,12 +250,12 @@ impl GgufProvider {
         }
 
         tracing::info!(
-            url = DEFAULT_MODEL_URL,
+            url = %self.download_url,
             path = %self.model_path.display(),
-            "Downloading GGUF model (~670MB, first run)..."
+            "Downloading GGUF model (first run)..."
         );
 
-        let resp = self.client.get(DEFAULT_MODEL_URL).send().await
+        let resp = self.client.get(&self.download_url).send().await
             .context("Failed to download GGUF model")?;
         if !resp.status().is_success() {
             return Err(anyhow::anyhow!("Model download failed: HTTP {}", resp.status()));
@@ -491,6 +513,48 @@ impl LlmProvider for GgufProvider {
     }
 
     fn name(&self) -> &str { "gguf" }
+
+    async fn chat_stream(
+        &self,
+        messages: &[Message],
+        tools: &[ToolDef],
+    ) -> Result<ChunkStream> {
+        let messages = messages.to_vec();
+        let tools = tools.to_vec();
+        let provider = self.clone();
+        
+        let needs_download = !self.model_path.exists();
+        
+        let stream = async_stream::stream! {
+            if needs_download {
+                yield Ok(streaming::StreamChunk::TextDelta {
+                    content: "\n*(Downloading GGUF model and starting server in the background... This may take a few minutes depending on your internet connection and the model size, please wait!)*\n\n".to_string()
+                });
+            } else if !provider.health_check().await {
+                yield Ok(streaming::StreamChunk::TextDelta {
+                    content: "\n*(Starting local GGUF inference server...)*\n\n".to_string()
+                });
+            }
+            
+            if let Err(e) = provider.ensure_server().await {
+                yield Ok(streaming::StreamChunk::Error { message: format!("\n**Error starting GGUF server:** {}", e) });
+                return;
+            }
+            
+            match provider.chat(&messages, &tools).await {
+                Ok(resp) => {
+                    if let Some(content) = &resp.content {
+                        yield Ok(streaming::StreamChunk::TextDelta { content: content.clone() });
+                    }
+                    yield Ok(streaming::StreamChunk::Done { content: None, usage: resp.usage });
+                }
+                Err(e) => {
+                    yield Ok(streaming::StreamChunk::Error { message: format!("\n**Error during inference:** {}", e) });
+                }
+            }
+        };
+        Ok(Box::pin(stream))
+    }
 }
 
 impl Drop for GgufProvider {
@@ -509,5 +573,82 @@ impl Drop for GgufProvider {
                 });
             }
         });
+    }
+}
+
+// -- Recommendation -------------------------------------------------------------
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GgufModelRecommendation {
+    pub id: String,
+    pub name: String,
+    pub url: String,
+    pub description: String,
+    pub size_gb: f64,
+    pub recommended_ram_gb: u32,
+}
+
+impl GgufModelRecommendation {
+    pub fn recommend_models(ram_bytes: u64, _gpu_vram_bytes: Option<u64>) -> Vec<Self> {
+        let ram_gb = ram_bytes.saturating_mul(10).checked_div(1024 * 1024 * 1024).unwrap_or(0) as f64 / 10.0;
+        let mut models = vec![];
+
+        // 1. TinyLlama 1.1B - extremely light, for minimum spec
+        models.push(GgufModelRecommendation {
+            id: "tinyllama-1.1b".to_string(),
+            name: "TinyLlama 1.1B Chat".to_string(),
+            url: "https://huggingface.co/TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF/resolve/main/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf".to_string(),
+            description: "Ultra-fast, small model. Good for low RAM devices or basic tasks.".to_string(),
+            size_gb: 0.67,
+            recommended_ram_gb: 2,
+        });
+
+        // 2. Qwen2.5 1.5B
+        models.push(GgufModelRecommendation {
+            id: "qwen2.5-1.5b".to_string(),
+            name: "Qwen 2.5 1.5B Instruct".to_string(),
+            url: "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/qwen2.5-1.5b-instruct-q4_k_m.gguf".to_string(),
+            description: "Smart, capable small model for coding and multilingual text.".to_string(),
+            size_gb: 1.12,
+            recommended_ram_gb: 4,
+        });
+
+        // 3. Llama-3.2 3B
+        if ram_gb >= 3.5 {
+            models.push(GgufModelRecommendation {
+                id: "llama-3.2-3b".to_string(),
+                name: "Llama 3.2 3B Instruct".to_string(),
+                url: "https://huggingface.co/hugging-quants/Llama-3.2-3B-Instruct-Q4_K_M-GGUF/resolve/main/llama-3.2-3b-instruct-q4_k_m.gguf".to_string(),
+                description: "Capable mid-sized model from Meta, good balance of speed and logic.".to_string(),
+                size_gb: 2.02,
+                recommended_ram_gb: 4,
+            });
+        }
+
+        // 4. Llama-3 8B
+        if ram_gb >= 6.5 {
+            models.push(GgufModelRecommendation {
+                id: "llama-3-8b".to_string(),
+                name: "Llama 3 8B Instruct".to_string(),
+                url: "https://huggingface.co/QuantFactory/Meta-Llama-3-8B-Instruct-GGUF/resolve/main/Meta-Llama-3-8B-Instruct.Q4_K_M.gguf".to_string(),
+                description: "Heavyweight 8B model. High intelligence for complex chat.".to_string(),
+                size_gb: 4.92,
+                recommended_ram_gb: 8,
+            });
+        }
+        
+        // 5. Mixtral 8x7B (very large)
+        if ram_gb >= 24.0 {
+            models.push(GgufModelRecommendation {
+                id: "mixtral-8x7b".to_string(),
+                name: "Mixtral 8x7B Instruct".to_string(),
+                url: "https://huggingface.co/TheBloke/Mixtral-8x7B-Instruct-v0.1-GGUF/resolve/main/mixtral-8x7b-instruct-v0.1.Q4_K_M.gguf".to_string(),
+                description: "Massive MoE model. Excellent performance matching GPT-3.5.".to_string(),
+                size_gb: 26.44,
+                recommended_ram_gb: 32,
+            });
+        }
+
+        models
     }
 }

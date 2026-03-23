@@ -57,8 +57,20 @@ pub struct CreateConversationRequest {
 
 // ── Handlers ─────────────────────────────────────────────────────────────────
 
+pub fn sync_model_config(config: &mut AgentConfig, manager: &std::sync::Arc<Mutex<ai_launcher_core::llm::manager::LlmManager>>) {
+    if let Ok(m) = manager.lock() {
+        let active_name = m.status().into_iter().find(|s| s.is_active).map(|s| s.name);
+        if let Some(active) = active_name {
+            if let Some(c) = m.configs().iter().find(|c| c.name == active) {
+                config.model_provider = c.provider_type.clone();
+                config.model_name = c.model.clone();
+            }
+        }
+    }
+}
+
 /// POST /api/agent/chat — send message, get response
-pub fn agent_chat(req: &mut Request, state: &Mutex<AgentState>) -> Response<Cursor<Vec<u8>>> {
+pub fn agent_chat(req: &mut Request, state: &Mutex<AgentState>, llm_manager: &std::sync::Arc<Mutex<ai_launcher_core::llm::manager::LlmManager>>) -> Response<Cursor<Vec<u8>>> {
     let body = match crate::response::read_body(req) {
         Some(b) => b,
         None => return err(400, "Missing request body"),
@@ -69,7 +81,7 @@ pub fn agent_chat(req: &mut Request, state: &Mutex<AgentState>) -> Response<Curs
         Err(e) => return err(400, &format!("Invalid JSON: {}", e)),
     };
 
-    let mut state = state.lock().unwrap();
+    let state = state.lock().unwrap();
 
     // Get or create conversation
     let conv_id = match chat_req.conversation_id {
@@ -94,7 +106,8 @@ pub fn agent_chat(req: &mut Request, state: &Mutex<AgentState>) -> Response<Curs
 
     // Build agent runtime and run
     let response_text = {
-        let config = state.config.clone();
+        let mut config = state.config.clone();
+        sync_model_config(&mut config, llm_manager);
         state.runtime.block_on(async {
             match agent::AgentRuntime::from_config(config) {
                 Ok(mut runtime) => runtime.run(&chat_req.message).await,
@@ -149,14 +162,17 @@ pub fn get_conversation_messages(id: &str, state: &Mutex<AgentState>) -> Respons
 }
 
 /// GET /api/agent/config — get current agent config
-pub fn agent_config(state: &Mutex<AgentState>) -> Response<Cursor<Vec<u8>>> {
+pub fn agent_config(state: &Mutex<AgentState>, llm_manager: &std::sync::Arc<Mutex<ai_launcher_core::llm::manager::LlmManager>>) -> Response<Cursor<Vec<u8>>> {
     let state = state.lock().unwrap();
+    let mut config = state.config.clone();
+    sync_model_config(&mut config, llm_manager);
+
     ok("Agent configuration", json!({
-        "name": state.config.name,
-        "provider": state.config.model_provider,
-        "model": state.config.model_name,
-        "max_iterations": state.config.max_iterations,
-        "tools": state.config.enabled_tools,
-        "workspace": state.config.workspace,
+        "name": config.name,
+        "provider": config.model_provider,
+        "model": config.model_name,
+        "max_iterations": config.max_iterations,
+        "tools": config.enabled_tools,
+        "workspace": config.workspace,
     }))
 }

@@ -1,4 +1,3 @@
-use super::streaming::ModelInfo;
 use super::LlmProvider;
 use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
@@ -26,6 +25,7 @@ pub struct LlmManager {
     providers: HashMap<String, Box<dyn LlmProvider>>,
     configs: Vec<ProviderConfig>,
     active: String,
+    config_path: Option<std::path::PathBuf>,
 }
 
 impl LlmManager {
@@ -35,6 +35,53 @@ impl LlmManager {
             providers: HashMap::new(),
             configs: Vec::new(),
             active: String::new(),
+            config_path: None,
+        }
+    }
+
+    /// Load manager state from a JSON file.
+    pub fn load_from_disk(path: &std::path::Path) -> Result<Self> {
+        let data = std::fs::read_to_string(path)?;
+        #[derive(Deserialize)]
+        struct State {
+            configs: Vec<ProviderConfig>,
+            active: String,
+        }
+        let state: State = serde_json::from_str(&data)?;
+
+        // Build manager
+        let mut mgr = Self::new();
+        for config in state.configs {
+            let _ = mgr.add_from_config(config);
+        }
+        if !state.active.is_empty() {
+            let _ = mgr.switch(&state.active);
+        }
+        // Save the path so future operations auto-save
+        mgr.set_persistence_path(path.to_path_buf());
+        Ok(mgr)
+    }
+
+    /// Set a path to automatically save state to on mutation.
+    pub fn set_persistence_path(&mut self, path: std::path::PathBuf) {
+        self.config_path = Some(path);
+        // Do an initial save
+        self.save_to_disk();
+    }
+
+    fn save_to_disk(&self) {
+        if let Some(path) = &self.config_path {
+            #[derive(Serialize)]
+            struct State<'a> {
+                configs: &'a [ProviderConfig],
+                active: &'a str,
+            }
+            if let Ok(data) = serde_json::to_string_pretty(&State {
+                configs: &self.configs,
+                active: &self.active,
+            }) {
+                let _ = std::fs::write(path, data);
+            }
         }
     }
 
@@ -70,8 +117,13 @@ impl LlmManager {
         if self.active.is_empty() {
             self.active = name.clone();
         }
+        
+        // Remove old config with same name if it exists, to support updates
+        self.configs.retain(|c| c.name != name);
         self.providers.insert(name, provider);
         self.configs.push(config);
+        
+        self.save_to_disk();
         Ok(())
     }
 
@@ -81,6 +133,7 @@ impl LlmManager {
             self.active = name.to_string();
         }
         self.providers.insert(name.to_string(), provider);
+        self.save_to_disk();
     }
 
     /// Get the active provider.
@@ -102,6 +155,7 @@ impl LlmManager {
         }
         self.active = name.to_string();
         tracing::info!(provider = name, "Switched active LLM provider");
+        self.save_to_disk();
         Ok(())
     }
 
@@ -137,6 +191,9 @@ impl LlmManager {
                 .unwrap_or_default();
         }
         self.configs.retain(|c| c.name != name);
+        if removed {
+            self.save_to_disk();
+        }
         removed
     }
 
