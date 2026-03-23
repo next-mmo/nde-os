@@ -11,6 +11,8 @@
   let showAddForm = $state(false);
   let addError = $state("");
   let addLoading = $state(false);
+  let codexOAuthLoading = $state(false);
+  let codexOAuthStatus = $state<api.CodexOAuthStatus | null>(null);
 
   // Add provider form
   let formName = $state("");
@@ -48,9 +50,14 @@
   async function refresh() {
     loading = true;
     try {
-      const [provs, active] = await Promise.all([api.listModels(), api.activeModel()]);
+      const [provs, active, oauthStatus] = await Promise.all([
+        api.listModels(),
+        api.activeModel(),
+        api.codexOAuthStatus().catch(() => null),
+      ]);
       providers = provs;
       activeProvider = active;
+      codexOAuthStatus = oauthStatus;
     } catch {
       providers = [];
     } finally {
@@ -131,6 +138,39 @@
   function getProviderIcon(type: string): string {
     return PROVIDER_TYPES.find(p => p.value === type)?.icon ?? "🔌";
   }
+
+  async function handleCodexLogin() {
+    codexOAuthLoading = true;
+    addError = "";
+    try {
+      const result = await api.codexOAuthStart();
+      // Open auth URL in a new browser tab (works in both browser and Tauri)
+      window.open(result.auth_url, "_blank", "noopener,noreferrer");
+      // Poll for completion
+      let attempts = 0;
+      const poll = setInterval(async () => {
+        attempts++;
+        try {
+          const status = await api.codexOAuthStatus();
+          if (status.authenticated) {
+            clearInterval(poll);
+            codexOAuthLoading = false;
+            codexOAuthStatus = status;
+            showAddForm = false;
+            await refresh();
+          }
+        } catch { /* keep polling */ }
+        if (attempts > 120) {
+          clearInterval(poll);
+          codexOAuthLoading = false;
+          addError = "OAuth timed out — try again";
+        }
+      }, 2000);
+    } catch (e: any) {
+      addError = e.message || "Failed to start OAuth flow";
+      codexOAuthLoading = false;
+    }
+  }
 </script>
 
 <section class="model-settings">
@@ -189,9 +229,28 @@
       {#if addError}
         <p class="form-error">{addError}</p>
       {/if}
-      <button class="submit-btn" onclick={handleAdd} disabled={addLoading}>
-        {addLoading ? "Adding..." : "Add Provider"}
-      </button>
+      <div class="form-actions">
+        <button class="submit-btn" onclick={handleAdd} disabled={addLoading}>
+          {addLoading ? "Adding..." : "Add Provider"}
+        </button>
+        {#if formType === "codex"}
+          <button
+            class="submit-btn oauth-btn"
+            onclick={handleCodexLogin}
+            disabled={codexOAuthLoading}
+          >
+            {codexOAuthLoading ? "⏳ Waiting for login..." : "🔑 Sign in with ChatGPT"}
+          </button>
+        {/if}
+        {#if codexOAuthStatus?.authenticated}
+          <span class="oauth-badge">
+            ✓ {codexOAuthStatus.email || "Authenticated"}
+            {#if codexOAuthStatus.plan_type}
+              · {codexOAuthStatus.plan_type}
+            {/if}
+          </span>
+        {/if}
+      </div>
     </div>
   {/if}
 
@@ -311,4 +370,18 @@
   .empty-icon { font-size: 3rem; }
   .empty-state h3 { margin: 0; color: var(--system-color-text); }
   .empty-state p { margin: 0; max-width: 320px; font-size: 0.85rem; }
+
+  .form-actions { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; margin-top: 0.85rem; }
+  .form-actions .submit-btn { margin-top: 0; }
+  .oauth-btn {
+    background: hsl(160 60% 42%); color: white;
+  }
+  .oauth-btn:hover:not(:disabled) { background: hsl(160 60% 36%); }
+  .oauth-badge {
+    font-size: 0.78rem; font-weight: 600;
+    color: hsl(160 60% 45%);
+    padding: 0.35rem 0.75rem;
+    border-radius: 999px;
+    background: hsla(160 60% 50% / 0.12);
+  }
 </style>

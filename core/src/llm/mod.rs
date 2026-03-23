@@ -1,4 +1,5 @@
 pub mod anthropic;
+pub mod codex_oauth;
 pub mod gguf;
 pub mod manager;
 pub mod ollama;
@@ -193,8 +194,25 @@ pub fn create_provider(
             let key = api_key.ok_or_else(|| anyhow::anyhow!("api_key required for openai_compat provider"))?;
             Ok(Box::new(openai_compat::OpenAiCompatProvider::new(url, model, key)))
         }
+        "codex_oauth" | "codex-oauth" => {
+            let data_dir = std::env::var("AI_LAUNCHER_DATA_DIR")
+                .map(std::path::PathBuf::from)
+                .unwrap_or_else(|_| {
+                    if cfg!(windows) {
+                        std::env::var("LOCALAPPDATA")
+                            .map(|p| std::path::PathBuf::from(p).join("ai-launcher"))
+                            .unwrap_or_else(|_| std::path::PathBuf::from("C:\\ai-launcher-data"))
+                    } else {
+                        std::env::var("HOME")
+                            .map(std::path::PathBuf::from)
+                            .unwrap_or_else(|_| std::path::PathBuf::from("/tmp"))
+                            .join(".ai-launcher")
+                    }
+                });
+            Ok(Box::new(codex_oauth::CodexOAuthProvider::new(model, &data_dir)?))
+        }
         other => Err(anyhow::anyhow!(
-            "Unknown LLM provider: '{}'. Supported: gguf, ollama, openai, anthropic, codex, groq, together, openai_compat",
+            "Unknown LLM provider: '{}'. Supported: gguf, ollama, openai, anthropic, codex, codex_oauth, groq, together, openai_compat",
             other
         )),
     }

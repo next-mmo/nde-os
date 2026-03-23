@@ -39,6 +39,7 @@ fn route(
     rt: &tokio::runtime::Runtime,
     plugin_engine: &Mutex<PluginEngine>,
     llm_manager: &Mutex<LlmManager>,
+    data_dir: &std::path::Path,
 ) -> tiny_http::Response<std::io::Cursor<Vec<u8>>> {
     let method = req.method().clone();
     let url = req.url().to_string();
@@ -82,6 +83,10 @@ fn route(
         (Method::Get, "/api/models") => return model_handler::list_models(llm_manager),
         (Method::Get, "/api/models/active") => return model_handler::active_model(llm_manager),
         (Method::Post, "/api/models/switch") => return model_handler::switch_model(req, llm_manager),
+        (Method::Post, "/api/models/providers") => return model_handler::add_provider(req, llm_manager),
+        // Codex OAuth
+        (Method::Post, "/api/codex/oauth/start") => return model_handler::codex_oauth_start(llm_manager, rt, data_dir),
+        (Method::Get, "/api/codex/oauth/status") => return model_handler::codex_oauth_status(data_dir),
         // Channels
         (Method::Get, "/api/channels") => return subsystem_handler::list_channels(),
         // MCP
@@ -120,6 +125,17 @@ fn route(
             }
             (Method::Post, ["api", "plugins", id, "stop"]) => {
                 plugin_handler::stop_plugin(id, rt, plugin_engine)
+            }
+            _ => err(404, &format!("Not found: {}", path)),
+        };
+    }
+
+    // Dynamic provider routes: /api/models/providers/{name}
+    if path.starts_with("/api/models/providers/") {
+        let parts: Vec<&str> = path.trim_start_matches('/').split('/').collect();
+        return match (method.clone(), parts.as_slice()) {
+            (Method::Delete, ["api", "models", "providers", name]) => {
+                model_handler::remove_provider(name, llm_manager)
             }
             _ => err(404, &format!("Not found: {}", path)),
         };
@@ -268,6 +284,12 @@ fn main() {
     println!("    GET    /api/models");
     println!("    GET    /api/models/active");
     println!("    POST   /api/models/switch");
+    println!("    POST   /api/models/providers");
+    println!("    DELETE /api/models/providers/{{name}}");
+    println!();
+    println!("  Codex OAuth:");
+    println!("    POST   /api/codex/oauth/start");
+    println!("    GET    /api/codex/oauth/status");
     println!();
     println!("  Channels:");
     println!("    GET    /api/channels");
@@ -298,6 +320,7 @@ fn main() {
                     &rt,
                     &plugin_engine,
                     &llm_manager,
+                    &base_dir,
                 );
                 if let Err(e) = request.respond(response) {
                     eprintln!("Response error: {}", e);

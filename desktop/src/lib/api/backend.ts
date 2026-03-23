@@ -70,6 +70,8 @@ async function httpFallback<T>(command: string, args?: Record<string, unknown>):
     switch_model:    { method: "POST",   url: `/api/models/switch`, body: { name: args?.name } },
     add_provider:    { method: "POST",   url: `/api/models/providers`, body: args?.config },
     remove_provider: { method: "DELETE", url: `/api/models/providers/${args?.name}` },
+    codex_oauth_start: { method: "POST", url: `/api/codex/oauth/start` },
+    codex_oauth_status: { method: "GET", url: `/api/codex/oauth/status` },
     // Plugins
     list_plugins:    { method: "GET",    url: `/api/plugins` },
     get_plugin:      { method: "GET",    url: `/api/plugins/${args?.pluginId}` },
@@ -219,6 +221,26 @@ export async function addProvider(config: ProviderConfig): Promise<string> {
 
 export async function removeProvider(name: string): Promise<string> {
   return smartInvoke<string>("remove_provider", { name });
+}
+
+// ── Codex OAuth ──
+
+export interface CodexOAuthStartResult {
+  auth_url: string;
+}
+
+export interface CodexOAuthStatus {
+  authenticated: boolean;
+  email?: string;
+  plan_type?: string;
+}
+
+export async function codexOAuthStart(): Promise<CodexOAuthStartResult> {
+  return smartInvoke<CodexOAuthStartResult>("codex_oauth_start");
+}
+
+export async function codexOAuthStatus(): Promise<CodexOAuthStatus> {
+  return smartInvoke<CodexOAuthStatus>("codex_oauth_status");
 }
 
 // ── Plugins ──
