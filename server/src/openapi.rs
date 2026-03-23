@@ -16,7 +16,8 @@ pub fn openapi_spec() -> serde_json::Value {
             {"name":"catalog","description":"Browse available AI apps"},
             {"name":"sandbox","description":"Sandbox security & disk usage"},
             {"name":"store","description":"Store: upload apps via folder, zip, or git URL"},
-            {"name":"system","description":"Health & system info"}
+            {"name":"system","description":"Health & system info"},
+            {"name":"agent","description":"Agent chat, conversations, and config"}
         ],
         "paths":{
             "/api/health":{"get":{"tags":["system"],"summary":"Health check","operationId":"healthCheck","responses":{"200":{"description":"Healthy"}}}},
@@ -44,6 +45,21 @@ pub fn openapi_spec() -> serde_json::Value {
                     "400":{"description":"Validation or install failed","content":{"application/json":{"schema":{"$ref":"#/components/schemas/StoreUploadResult"}}}},
                     "500":{"description":"Internal error"}
                 }}},
+            "/api/agent/chat":{"post":{"tags":["agent"],"summary":"Send message to agent","operationId":"agentChat",
+                "description":"Send a user message to the agent and get a response. Creates or continues a conversation.",
+                "requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/ChatRequest"},
+                    "example":{"message":"What tools do you have?"}}}},
+                "responses":{
+                    "200":{"description":"Agent response","content":{"application/json":{"schema":{"$ref":"#/components/schemas/ChatResponse"}}}},
+                    "502":{"description":"LLM provider error"}
+                }}},
+            "/api/agent/conversations":{"get":{"tags":["agent"],"summary":"List conversations","operationId":"agentConversations",
+                "responses":{"200":{"description":"List of conversations","content":{"application/json":{"schema":{"type":"array","items":{"$ref":"#/components/schemas/ConversationSummary"}}}}}}}},
+            "/api/agent/conversations/{conv_id}/messages":{"get":{"tags":["agent"],"summary":"Get conversation messages","operationId":"agentMessages",
+                "parameters":[{"name":"conv_id","in":"path","required":true,"schema":{"type":"string"}}],
+                "responses":{"200":{"description":"Messages in conversation","content":{"application/json":{"schema":{"type":"array","items":{"$ref":"#/components/schemas/StoredMessage"}}}}}}}},
+            "/api/agent/config":{"get":{"tags":["agent"],"summary":"Get agent configuration","operationId":"agentConfig",
+                "responses":{"200":{"description":"Current agent config","content":{"application/json":{"schema":{"$ref":"#/components/schemas/AgentConfigInfo"}}}}}}},
             "/api/apps/{app_id}":{
                 "get":{"tags":["apps"],"summary":"Get app details","operationId":"getApp","parameters":[{"name":"app_id","in":"path","required":true,"schema":{"type":"string"}}],"responses":{"200":{"description":"App details"},"404":{"description":"Not found"}}},
                 "delete":{"tags":["apps"],"summary":"Uninstall app and remove workspace","operationId":"uninstallApp","parameters":[{"name":"app_id","in":"path","required":true,"schema":{"type":"string"}}],"responses":{"200":{"description":"Uninstalled"},"404":{"description":"Not found"}}}
@@ -79,7 +95,12 @@ pub fn openapi_spec() -> serde_json::Value {
             "SystemInfo":{"type":"object","properties":{"os":{"type":"string"},"arch":{"type":"string"},"python_version":{"type":"string"},"gpu_detected":{"type":"boolean"},"base_dir":{"type":"string"},"total_apps":{"type":"integer"},"running_apps":{"type":"integer"}}},
             "ResourceUsage":{"type":"object","properties":{"memory_used_bytes":{"type":"integer"},"memory_total_bytes":{"type":"integer"},"memory_percent":{"type":"integer"},"disk_used_bytes":{"type":"integer"},"disk_total_bytes":{"type":"integer"},"disk_percent":{"type":"integer"},"disk_mount_point":{"type":"string"}}},
             "ApiResponse":{"type":"object","properties":{"success":{"type":"boolean"},"message":{"type":"string"},"data":{}}},
-            "DiskUsage":{"type":"object","properties":{"app_id":{"type":"string"},"bytes":{"type":"integer"},"human_readable":{"type":"string"}}}
+            "DiskUsage":{"type":"object","properties":{"app_id":{"type":"string"},"bytes":{"type":"integer"},"human_readable":{"type":"string"}}},
+            "ChatRequest":{"type":"object","required":["message"],"properties":{"message":{"type":"string","description":"User message to send to the agent"},"conversation_id":{"type":"string","description":"Optional conversation ID to continue"}}},
+            "ChatResponse":{"type":"object","properties":{"response":{"type":"string","description":"Agent's response text"},"conversation_id":{"type":"string","description":"Conversation ID for follow-up messages"}}},
+            "ConversationSummary":{"type":"object","properties":{"id":{"type":"string"},"title":{"type":"string"},"channel":{"type":"string"},"created_at":{"type":"string"},"updated_at":{"type":"string"}}},
+            "StoredMessage":{"type":"object","properties":{"id":{"type":"integer"},"role":{"type":"string"},"content":{"type":"string","nullable":true},"tool_calls":{"type":"string","nullable":true},"tool_call_id":{"type":"string","nullable":true},"created_at":{"type":"string"}}},
+            "AgentConfigInfo":{"type":"object","properties":{"name":{"type":"string"},"provider":{"type":"string"},"model":{"type":"string"},"max_iterations":{"type":"integer"},"tools":{"type":"array","items":{"type":"string"}},"workspace":{"type":"string"}}}
         }}
     })
 }

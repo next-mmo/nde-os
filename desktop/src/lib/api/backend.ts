@@ -6,6 +6,10 @@ import type {
   SandboxVerifyResult,
   DiskUsage,
   LaunchResult,
+  ChatResponse,
+  ConversationSummary,
+  StoredMessage,
+  AgentConfigInfo,
 } from "./types";
 import type { StoreUploadRequest, StoreUploadResult } from "./types";
 
@@ -46,6 +50,11 @@ async function httpFallback<T>(command: string, args?: Record<string, unknown>):
     verify_sandbox:  { method: "GET",    url: `/api/sandbox/${appId}/verify` },
     get_disk_usage:  { method: "GET",    url: `/api/sandbox/${appId}/disk` },
     upload_app:      { method: "POST",   url: `/api/store/upload`, body: args?.req },
+    // Agent chat
+    agent_chat:      { method: "POST",   url: `/api/agent/chat`, body: { message: args?.message, conversation_id: args?.conversationId } },
+    agent_conversations: { method: "GET", url: `/api/agent/conversations` },
+    agent_messages:  { method: "GET",    url: `/api/agent/conversations/${args?.conversationId}/messages` },
+    agent_config:    { method: "GET",    url: `/api/agent/config` },
   };
 
   const route = routeMap[command];
@@ -135,4 +144,22 @@ export async function getDiskUsage(appId: string): Promise<DiskUsage> {
 
 export async function uploadApp(req: StoreUploadRequest): Promise<StoreUploadResult> {
   return smartInvoke<StoreUploadResult>("upload_app", { req });
+}
+
+// ── Agent Chat ──
+
+export async function agentChat(message: string, conversationId?: string): Promise<ChatResponse> {
+  return smartInvoke<ChatResponse>("agent_chat", { message, conversationId });
+}
+
+export async function agentConversations(): Promise<ConversationSummary[]> {
+  return smartInvoke<ConversationSummary[]>("agent_conversations");
+}
+
+export async function agentMessages(conversationId: string): Promise<StoredMessage[]> {
+  return smartInvoke<StoredMessage[]>("agent_messages", { conversationId });
+}
+
+export async function agentConfig(): Promise<AgentConfigInfo> {
+  return smartInvoke<AgentConfigInfo>("agent_config");
 }

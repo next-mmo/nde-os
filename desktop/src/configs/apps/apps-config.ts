@@ -22,6 +22,11 @@ export const apps_config = {
     width: 820,
     height: 620,
   }),
+  chat: create_app_config({
+    title: "NDE Chat",
+    width: 900,
+    height: 680,
+  }),
   "app-store": create_app_config({
     title: "App Store",
     width: 860,
@@ -31,6 +36,11 @@ export const apps_config = {
     title: "Terminal",
     width: 840,
     height: 540,
+  }),
+  "code-editor": create_app_config({
+    title: "Code Editor",
+    width: 1200,
+    height: 800,
   }),
   launchpad: create_app_config({
     title: "Launchpad",

@@ -103,3 +103,41 @@ export interface LogEntry {
   message: string;
   app_id?: string;
 }
+
+// ── Agent Chat API types ─────────────────────────────────────────────────────
+
+export interface ChatRequest {
+  message: string;
+  conversation_id?: string;
+}
+
+export interface ChatResponse {
+  response: string;
+  conversation_id: string;
+}
+
+export interface ConversationSummary {
+  id: string;
+  title: string;
+  channel: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface StoredMessage {
+  id: number;
+  role: string;
+  content: string | null;
+  tool_calls: string | null;
+  tool_call_id: string | null;
+  created_at: string;
+}
+
+export interface AgentConfigInfo {
+  name: string;
+  provider: string;
+  model: string;
+  max_iterations: number;
+  tools: string[];
+  workspace: string;
+}

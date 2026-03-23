@@ -1,10 +1,17 @@
+mod agent_handler;
 mod handlers;
+mod model_handler;
 mod openapi;
+mod plugin_handler;
 mod response;
+mod stream_handler;
 
+use agent_handler::AgentState;
 use ai_launcher_core::app_manager::AppManager;
+use ai_launcher_core::llm::manager::LlmManager;
+use ai_launcher_core::plugins::PluginEngine;
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use tiny_http::{Method, Request, Server};
 
 use response::*;
@@ -24,7 +31,14 @@ fn get_base_dir() -> PathBuf {
 }
 
 /// Route a request to the appropriate handler
-fn route(req: &mut Request, mgr: &AppManager) -> tiny_http::Response<std::io::Cursor<Vec<u8>>> {
+fn route(
+    req: &mut Request,
+    mgr: &AppManager,
+    agent: &Mutex<AgentState>,
+    rt: &tokio::runtime::Runtime,
+    plugin_engine: &Mutex<PluginEngine>,
+    llm_manager: &Mutex<LlmManager>,
+) -> tiny_http::Response<std::io::Cursor<Vec<u8>>> {
     let method = req.method().clone();
     let url = req.url().to_string();
     let path = url.split('?').next().unwrap_or(&url);
@@ -52,7 +66,51 @@ fn route(req: &mut Request, mgr: &AppManager) -> tiny_http::Response<std::io::Cu
         (Method::Get, "/api/apps") => return handlers::list_apps(mgr),
         (Method::Post, "/api/apps") => return handlers::install_app(req, mgr),
         (Method::Post, "/api/store/upload") => return handlers::store_upload(req, mgr),
+        // Agent chat API
+        (Method::Post, "/api/agent/chat") => return agent_handler::agent_chat(req, agent),
+        (Method::Post, "/api/agent/chat/stream") => {
+            let agent_state = agent.lock().unwrap();
+            return stream_handler::handle_stream_chat(req, rt, &agent_state);
+        }
+        (Method::Get, "/api/agent/conversations") => return agent_handler::list_conversations(agent),
+        (Method::Get, "/api/agent/config") => return agent_handler::agent_config(agent),
+        // Plugin API
+        (Method::Get, "/api/plugins") => return plugin_handler::list_plugins(plugin_engine),
+        (Method::Post, "/api/plugins/discover") => return plugin_handler::discover_plugins(rt, plugin_engine),
+        // Model/Provider API
+        (Method::Get, "/api/models") => return model_handler::list_models(llm_manager),
+        (Method::Get, "/api/models/active") => return model_handler::active_model(llm_manager),
+        (Method::Post, "/api/models/switch") => return model_handler::switch_model(req, llm_manager),
         _ => {}
+    }
+
+    // Agent conversation messages: /api/agent/conversations/{id}/messages
+    if path.starts_with("/api/agent/conversations/") {
+        let parts: Vec<&str> = path.trim_start_matches('/').split('/').collect();
+        return match (method.clone(), parts.as_slice()) {
+            (Method::Get, ["api", "agent", "conversations", id, "messages"]) => {
+                agent_handler::get_conversation_messages(id, agent)
+            }
+            _ => err(404, &format!("Not found: {}", path)),
+        };
+    }
+
+    // Plugin dynamic routes: /api/plugins/{id}/...
+    if path.starts_with("/api/plugins/") {
+        let parts: Vec<&str> = path.trim_start_matches('/').split('/').collect();
+        return match (method.clone(), parts.as_slice()) {
+            (Method::Get, ["api", "plugins", id]) => plugin_handler::get_plugin(id, plugin_engine),
+            (Method::Post, ["api", "plugins", id, "install"]) => {
+                plugin_handler::install_plugin(id, rt, plugin_engine)
+            }
+            (Method::Post, ["api", "plugins", id, "start"]) => {
+                plugin_handler::start_plugin(id, rt, plugin_engine)
+            }
+            (Method::Post, ["api", "plugins", id, "stop"]) => {
+                plugin_handler::stop_plugin(id, rt, plugin_engine)
+            }
+            _ => err(404, &format!("Not found: {}", path)),
+        };
     }
 
     // Dynamic routes: /api/apps/{id}/... and /api/sandbox/{id}/...
@@ -81,6 +139,47 @@ fn main() {
     std::fs::create_dir_all(&base_dir).ok();
 
     let mgr = Arc::new(AppManager::new(&base_dir).expect("Failed to init AppManager"));
+    let agent = Arc::new(Mutex::new(
+        AgentState::new(&base_dir).expect("Failed to init AgentState")
+    ));
+
+    // Phase 2: Tokio runtime for async operations
+    let rt = Arc::new(
+        tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime"),
+    );
+
+    // Phase 2: Plugin engine
+    let plugins_dir = base_dir.join("plugins");
+    std::fs::create_dir_all(&plugins_dir).ok();
+    let plugin_engine = Arc::new(Mutex::new(PluginEngine::new(&plugins_dir)));
+
+    // Auto-discover plugins on startup
+    if let Ok(mut engine) = plugin_engine.lock() {
+        match engine.discover() {
+            Ok(manifests) => {
+                if !manifests.is_empty() {
+                    println!("  Plugins:     {} discovered", manifests.len());
+                }
+            }
+            Err(e) => eprintln!("  Plugin discovery error: {}", e),
+        }
+    }
+
+    // Phase 2: LLM Manager
+    let llm_manager = Arc::new(Mutex::new(LlmManager::new()));
+    // Auto-add default Ollama provider
+    if let Ok(mut mgr) = llm_manager.lock() {
+        let _ = mgr.add_from_config(ai_launcher_core::llm::manager::ProviderConfig {
+            name: "local-ollama".into(),
+            provider_type: "ollama".into(),
+            model: "llama3.2".into(),
+            base_url: None,
+            api_key: None,
+            api_key_env: None,
+            max_tokens: 4096,
+        });
+    }
+
     let server = Server::http("0.0.0.0:8080").expect("Failed to bind :8080");
 
     let os = std::env::consts::OS;
@@ -88,17 +187,17 @@ fn main() {
 
     println!();
     println!("  +=============================================+");
-    println!("  |  AI Launcher API v0.2.0                     |");
-    println!("  |  Cross-Platform Sandboxed App Manager       |");
+    println!("  |  NDE-OS AI Operating System v0.2.0          |");
+    println!("  |  Phase 2 — Gateway + LLM + Plugins + MCP   |");
     println!("  +=============================================+");
     println!();
     println!("  Platform:    {}/{}", os, arch);
     println!("  Data dir:    {}", base_dir.display());
     println!("  Server:      http://localhost:8080");
     println!("  Swagger UI:  http://localhost:8080/swagger-ui/");
-    println!("  OpenAPI:     http://localhost:8080/api-docs/openapi.json");
+    println!("  CLI:         nde --help");
     println!();
-    println!("  Endpoints:");
+    println!("  Core:");
     println!("    GET    /api/health");
     println!("    GET    /api/system");
     println!("    GET    /api/system/resources");
@@ -111,13 +210,40 @@ fn main() {
     println!("    POST   /api/apps/{{id}}/stop");
     println!("    GET    /api/sandbox/{{id}}/verify");
     println!("    GET    /api/sandbox/{{id}}/disk");
-    println!("    POST   /api/store/upload          ← NEW: folder/zip/git");
+    println!("    POST   /api/store/upload");
+    println!();
+    println!("  Agent:");
+    println!("    POST   /api/agent/chat");
+    println!("    POST   /api/agent/chat/stream          ← Phase 2: SSE streaming");
+    println!("    GET    /api/agent/conversations");
+    println!("    GET    /api/agent/conversations/{{id}}/messages");
+    println!("    GET    /api/agent/config");
+    println!();
+    println!("  Plugins:");
+    println!("    GET    /api/plugins");
+    println!("    GET    /api/plugins/{{id}}");
+    println!("    POST   /api/plugins/discover");
+    println!("    POST   /api/plugins/{{id}}/install");
+    println!("    POST   /api/plugins/{{id}}/start");
+    println!("    POST   /api/plugins/{{id}}/stop");
+    println!();
+    println!("  Models:");
+    println!("    GET    /api/models");
+    println!("    GET    /api/models/active");
+    println!("    POST   /api/models/switch");
     println!();
 
     loop {
         match server.recv() {
             Ok(mut request) => {
-                let response = route(&mut request, &mgr);
+                let response = route(
+                    &mut request,
+                    &mgr,
+                    &agent,
+                    &rt,
+                    &plugin_engine,
+                    &llm_manager,
+                );
                 if let Err(e) = request.respond(response) {
                     eprintln!("Response error: {}", e);
                 }

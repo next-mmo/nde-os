@@ -22,9 +22,17 @@
   {#await import("🍎/components/apps/Logs/Logs.svelte") then { default: Logs }}
     <Logs />
   {/await}
+{:else if window.app_id === "chat"}
+  {#await import("🍎/components/apps/Chat/Chat.svelte") then { default: Chat }}
+    <Chat />
+  {/await}
 {:else if window.app_id === "settings"}
   {#await import("🍎/components/apps/Settings/Settings.svelte") then { default: Settings }}
     <Settings />
+  {/await}
+{:else if window.app_id === "code-editor"}
+  {#await import("🍎/components/apps/CodeEditor/CodeEditor.svelte") then { default: CodeEditor }}
+    <CodeEditor />
   {/await}
 {:else}
   {#await import("🍎/components/apps/Placeholder/Placeholder.svelte") then { default: Placeholder }}
