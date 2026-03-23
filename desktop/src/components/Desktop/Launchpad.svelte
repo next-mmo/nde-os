@@ -72,7 +72,10 @@
         </button>
         {#each systemApps as [app_id, app_config]}
           <button class="tile" onclick={() => openShellApp(app_id)}>
-            <img src="/app-icons/{app_id}/256.webp" alt="" />
+            <img src="/app-icons/{app_id}/256.webp" alt=""
+              onerror={(e) => { const t = e.currentTarget; if (t instanceof HTMLImageElement) { t.style.display = 'none'; t.nextElementSibling?.classList.add('visible'); } }}
+            />
+            <div class="tile-fallback">{(app_config.title || String(app_id)).slice(0, 2).toUpperCase()}</div>
             <span>{app_config.title}</span>
           </button>
         {/each}
@@ -195,6 +198,24 @@
   .tile img {
     width: 4.6rem;
     height: 4.6rem;
+  }
+
+  .tile-fallback {
+    display: none;
+    width: 4.6rem;
+    height: 4.6rem;
+    border-radius: 22%;
+    background: linear-gradient(135deg, hsla(var(--system-color-primary-hsl) / 0.75), hsla(206 72% 44% / 0.75));
+    place-items: center;
+    color: white;
+    font-weight: 700;
+    font-size: 1.4rem;
+    box-shadow: 0 4px 16px hsla(0 0% 0% / 0.2);
+    border: 1px solid hsla(0 0% 100% / 0.2);
+  }
+
+  .tile-fallback.visible {
+    display: grid;
   }
 
   .tile span {

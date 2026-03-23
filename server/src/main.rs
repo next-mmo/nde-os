@@ -5,6 +5,7 @@ mod openapi;
 mod plugin_handler;
 mod response;
 mod stream_handler;
+mod subsystem_handler;
 
 use agent_handler::AgentState;
 use ai_launcher_core::app_manager::AppManager;
@@ -81,6 +82,17 @@ fn route(
         (Method::Get, "/api/models") => return model_handler::list_models(llm_manager),
         (Method::Get, "/api/models/active") => return model_handler::active_model(llm_manager),
         (Method::Post, "/api/models/switch") => return model_handler::switch_model(req, llm_manager),
+        // Channels
+        (Method::Get, "/api/channels") => return subsystem_handler::list_channels(),
+        // MCP
+        (Method::Get, "/api/mcp/tools") => return subsystem_handler::list_mcp_tools(),
+        (Method::Get, "/api/mcp/servers") => return subsystem_handler::list_mcp_servers(),
+        // Skills
+        (Method::Get, "/api/skills") => return subsystem_handler::list_skills(),
+        // Knowledge
+        (Method::Get, "/api/knowledge") => return subsystem_handler::list_knowledge(),
+        // Memory
+        (Method::Get, "/api/memory") => return subsystem_handler::list_memory(),
         _ => {}
     }
 
@@ -129,6 +141,21 @@ fn route(
 
     if path.starts_with("/api/store/") {
         return err(404, &format!("Not found: {}", path));
+    }
+
+    // Knowledge search: /api/knowledge/search?q=...
+    if path.starts_with("/api/knowledge/search") {
+        let query = url.split("q=").nth(1).unwrap_or("");
+        let decoded = urlencoding::decode(query).unwrap_or_default();
+        return subsystem_handler::search_knowledge(&decoded);
+    }
+
+    // Memory by key: /api/memory/{key}
+    if path.starts_with("/api/memory/") {
+        let parts: Vec<&str> = path.trim_start_matches('/').split('/').collect();
+        if let ["api", "memory", key] = parts.as_slice() {
+            return subsystem_handler::get_memory(key);
+        }
     }
 
     err(404, &format!("Not found: {}", path))
@@ -231,6 +258,24 @@ fn main() {
     println!("    GET    /api/models");
     println!("    GET    /api/models/active");
     println!("    POST   /api/models/switch");
+    println!();
+    println!("  Channels:");
+    println!("    GET    /api/channels");
+    println!();
+    println!("  MCP:");
+    println!("    GET    /api/mcp/tools");
+    println!("    GET    /api/mcp/servers");
+    println!();
+    println!("  Skills:");
+    println!("    GET    /api/skills");
+    println!();
+    println!("  Knowledge:");
+    println!("    GET    /api/knowledge");
+    println!("    GET    /api/knowledge/search?q={{query}}");
+    println!();
+    println!("  Memory:");
+    println!("    GET    /api/memory");
+    println!("    GET    /api/memory/{{key}}");
     println!();
 
     loop {
