@@ -36,8 +36,8 @@ pub struct AgentConfig {
 
 fn default_name() -> String { "assistant".into() }
 fn default_max_iterations() -> usize { 25 }
-fn default_provider() -> String { "ollama".into() }
-fn default_model() -> String { "llama3.2".into() }
+fn default_provider() -> String { "gguf".into() }
+fn default_model() -> String { "tinyllama-1.1b".into() }
 fn default_workspace() -> String { "./workspace".into() }
 fn default_tools() -> Vec<String> {
     vec![
@@ -160,7 +160,7 @@ mod tests {
     fn test_default_config() {
         let config = AgentConfig::default();
         assert_eq!(config.max_iterations, 25);
-        assert_eq!(config.model_provider, "ollama");
+        assert_eq!(config.model_provider, "gguf");
         assert_eq!(config.enabled_tools.len(), 23);
     }
 

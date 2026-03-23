@@ -9,6 +9,7 @@
     role: "user" | "assistant" | "system";
     content: string;
     timestamp: string;
+    streaming?: boolean;
   };
 
   let messages = $state<ChatMessage[]>([]);
@@ -20,6 +21,7 @@
   let agentInfo = $state<{ provider: string; model: string; name: string } | null>(null);
   let messagesEl: HTMLDivElement | undefined = $state();
   let msgCounter = $state(0);
+  let streamingContent = $state("");
 
   // Load agent config on mount
   $effect(() => {
@@ -32,10 +34,10 @@
     }).catch(() => {});
   });
 
-  // Auto-scroll
+  // Auto-scroll when messages change or streaming content updates
   $effect(() => {
-    // Access messages.length to create dependency
     const _len = messages.length;
+    const _stream = streamingContent;
     if (messagesEl) {
       requestAnimationFrame(() => {
         messagesEl!.scrollTop = messagesEl!.scrollHeight;
@@ -56,30 +58,155 @@
     });
     input = "";
     loading = true;
+    streamingContent = "";
+
+    // Add a placeholder assistant message for streaming
+    msgCounter++;
+    const assistantMsgId = msgCounter;
+    messages.push({
+      id: assistantMsgId,
+      role: "assistant",
+      content: "",
+      timestamp: new Date().toISOString(),
+      streaming: true,
+    });
 
     try {
-      const resp = await api.agentChat(text, conversationId ?? undefined);
-      conversationId = resp.conversation_id;
-      msgCounter++;
-      messages.push({
-        id: msgCounter,
-        role: "assistant",
-        content: resp.response,
-        timestamp: new Date().toISOString(),
-      });
+      // Try streaming first, fall back to regular
+      const success = await streamChat(text, assistantMsgId);
+      if (!success) {
+        // Remove the streaming placeholder
+        messages = messages.filter(m => m.id !== assistantMsgId);
+        msgCounter--;
+        // Fall back to non-streaming
+        await regularChat(text);
+      }
+    } catch (e: any) {
+      // Update the streaming message with the error, or add error message
+      const idx = messages.findIndex(m => m.id === assistantMsgId);
+      if (idx >= 0) {
+        messages[idx] = {
+          ...messages[idx],
+          role: "system",
+          content: `Error: ${e.message || e}`,
+          streaming: false,
+        };
+      } else {
+        msgCounter++;
+        messages.push({
+          id: msgCounter,
+          role: "system",
+          content: `Error: ${e.message || e}`,
+          timestamp: new Date().toISOString(),
+        });
+      }
+    } finally {
+      loading = false;
+      streamingContent = "";
 
       // Refresh conversation list
       api.agentConversations().then((convs) => { conversations = convs; }).catch(() => {});
-    } catch (e: any) {
-      msgCounter++;
-      messages.push({
-        id: msgCounter,
-        role: "system",
-        content: `Error: ${e.message || e}`,
-        timestamp: new Date().toISOString(),
+    }
+  }
+
+  /** Stream chat via SSE endpoint */
+  async function streamChat(text: string, assistantMsgId: number): Promise<boolean> {
+    try {
+      const resp = await fetch("http://localhost:8080/api/agent/chat/stream", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message: text,
+          conversation_id: conversationId,
+        }),
       });
-    } finally {
-      loading = false;
+
+      if (!resp.ok || !resp.body) return false;
+
+      const contentType = resp.headers.get("content-type") ?? "";
+      if (!contentType.includes("text/event-stream")) {
+        // Not a stream response — try to read as JSON fallback
+        const json = await resp.json();
+        if (json.data?.response) {
+          updateAssistantMessage(assistantMsgId, json.data.response);
+          if (json.data?.conversation_id) conversationId = json.data.conversation_id;
+          return true;
+        }
+        return false;
+      }
+
+      const reader = resp.body.getReader();
+      const decoder = new TextDecoder();
+      let accumulated = "";
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? ""; // Keep incomplete line in buffer
+
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed || trimmed.startsWith(":")) continue;
+          if (trimmed === "data: [DONE]") continue;
+
+          const dataPrefix = "data: ";
+          if (!trimmed.startsWith(dataPrefix)) continue;
+
+          const jsonStr = trimmed.slice(dataPrefix.length);
+          try {
+            const chunk = JSON.parse(jsonStr);
+
+            if (chunk.type === "text_delta" && chunk.content) {
+              accumulated += chunk.content;
+              streamingContent = accumulated;
+              updateAssistantMessage(assistantMsgId, accumulated);
+            } else if (chunk.type === "done") {
+              const finalContent = chunk.content || accumulated;
+              updateAssistantMessage(assistantMsgId, finalContent, false);
+              if (chunk.conversation_id) conversationId = chunk.conversation_id;
+            } else if (chunk.type === "error") {
+              updateAssistantMessage(assistantMsgId, `Error: ${chunk.message}`, false);
+              const idx = messages.findIndex(m => m.id === assistantMsgId);
+              if (idx >= 0) messages[idx].role = "system";
+            }
+          } catch {
+            // Skip malformed JSON
+          }
+        }
+      }
+
+      // Finalize
+      if (accumulated) {
+        updateAssistantMessage(assistantMsgId, accumulated, false);
+      }
+
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /** Regular non-streaming chat */
+  async function regularChat(text: string) {
+    const resp = await api.agentChat(text, conversationId ?? undefined);
+    conversationId = resp.conversation_id;
+    msgCounter++;
+    messages.push({
+      id: msgCounter,
+      role: "assistant",
+      content: resp.response,
+      timestamp: new Date().toISOString(),
+    });
+  }
+
+  function updateAssistantMessage(id: number, content: string, streaming = true) {
+    const idx = messages.findIndex(m => m.id === id);
+    if (idx >= 0) {
+      messages[idx] = { ...messages[idx], content, streaming };
     }
   }
 
@@ -117,6 +244,21 @@
       e.preventDefault();
       sendMessage();
     }
+  }
+
+  /** Simple markdown-like rendering for assistant messages */
+  function renderMarkdown(text: string): string {
+    return text
+      // Code blocks (triple backtick)
+      .replace(/```(\w*)\n([\s\S]*?)```/g, '<pre class="code-block"><code>$2</code></pre>')
+      // Inline code
+      .replace(/`([^`]+)`/g, '<code class="inline-code">$1</code>')
+      // Bold
+      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+      // Italic
+      .replace(/\*(.+?)\*/g, '<em>$1</em>')
+      // Line breaks
+      .replace(/\n/g, '<br/>');
   }
 </script>
 
@@ -167,16 +309,19 @@
         <div class="empty-state">
           <div class="empty-icon">🤖</div>
           <h3>NDE-OS Agent</h3>
-          <p>Ask me anything. I can read/write files and run commands in the sandbox.</p>
+          <p>Ask me anything. I can read/write files, run commands in the sandbox, search knowledge, and manage apps.</p>
           <div class="suggestions">
             <button class="suggestion" onclick={() => { input = "What tools do you have?"; sendMessage(); }}>
-              What tools do you have?
+              🔧 What tools do you have?
             </button>
             <button class="suggestion" onclick={() => { input = "List files in the workspace"; sendMessage(); }}>
-              List files in workspace
+              📁 List files in workspace
             </button>
             <button class="suggestion" onclick={() => { input = "Hello! Tell me about NDE-OS."; sendMessage(); }}>
-              Tell me about NDE-OS
+              💡 Tell me about NDE-OS
+            </button>
+            <button class="suggestion" onclick={() => { input = "What AI apps are available?"; sendMessage(); }}>
+              🚀 Available AI apps
             </button>
           </div>
         </div>
@@ -187,13 +332,22 @@
               {#if msg.role === "user"}👤{:else if msg.role === "assistant"}🤖{:else}⚠️{/if}
             </div>
             <div class="msg-content">
-              <div class="msg-role">{msg.role === "user" ? "You" : msg.role === "assistant" ? "Agent" : "System"}</div>
-              <div class="msg-text">{msg.content}</div>
+              <div class="msg-role">
+                {msg.role === "user" ? "You" : msg.role === "assistant" ? "Agent" : "System"}
+                {#if msg.streaming}
+                  <span class="streaming-badge">streaming</span>
+                {/if}
+              </div>
+              {#if msg.role === "assistant" && msg.content}
+                <div class="msg-text">{@html renderMarkdown(msg.content)}{#if msg.streaming}<span class="cursor-blink">▊</span>{/if}</div>
+              {:else}
+                <div class="msg-text">{msg.content}</div>
+              {/if}
             </div>
           </div>
         {/each}
 
-        {#if loading}
+        {#if loading && !messages.some(m => m.streaming)}
           <div class="msg assistant">
             <div class="msg-avatar">🤖</div>
             <div class="msg-content">
@@ -396,7 +550,8 @@
     margin: 0;
     text-align: center;
     font-size: 0.85rem;
-    max-width: 360px;
+    max-width: 400px;
+    line-height: 1.5;
   }
 
   .suggestions {
@@ -405,6 +560,7 @@
     gap: 0.5rem;
     margin-top: 1rem;
     justify-content: center;
+    max-width: 500px;
   }
 
   .suggestion {
@@ -415,12 +571,13 @@
     color: var(--system-color-text, #c0c0cc);
     font-size: 0.8rem;
     cursor: pointer;
-    transition: background 0.15s;
+    transition: all 0.15s;
   }
 
   .suggestion:hover {
     background: hsla(220 80% 55% / 0.15);
     border-color: hsla(220 80% 55% / 0.3);
+    transform: translateY(-1px);
   }
 
   .msg {
@@ -457,14 +614,61 @@
     letter-spacing: 0.06em;
     color: var(--system-color-text-muted, hsla(0 0% 100% / 0.5));
     margin-bottom: 0.25rem;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+
+  .streaming-badge {
+    font-size: 0.6rem;
+    padding: 0.1rem 0.35rem;
+    border-radius: 999px;
+    background: hsla(160 60% 50% / 0.15);
+    color: hsl(160 60% 60%);
+    text-transform: lowercase;
+    letter-spacing: 0;
+    animation: pulse 1.5s ease-in-out infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
   }
 
   .msg-text {
     font-size: 0.88rem;
     line-height: 1.55;
     color: var(--system-color-text, #e0e0e8);
-    white-space: pre-wrap;
     word-break: break-word;
+  }
+
+  .msg-text :global(.code-block) {
+    background: hsla(220 20% 8% / 0.8);
+    border: 1px solid hsla(0 0% 100% / 0.08);
+    border-radius: 8px;
+    padding: 0.75rem 1rem;
+    overflow-x: auto;
+    font-family: ui-monospace, 'SF Mono', monospace;
+    font-size: 0.82rem;
+    margin: 0.5rem 0;
+  }
+
+  .msg-text :global(.inline-code) {
+    background: hsla(0 0% 100% / 0.08);
+    padding: 0.12rem 0.4rem;
+    border-radius: 4px;
+    font-family: ui-monospace, 'SF Mono', monospace;
+    font-size: 0.84rem;
+  }
+
+  .cursor-blink {
+    animation: blink-cursor 0.7s step-end infinite;
+    color: hsl(220 80% 60%);
+  }
+
+  @keyframes blink-cursor {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0; }
   }
 
   .system-msg .msg-text {
@@ -485,13 +689,13 @@
     height: 6px;
     border-radius: 50%;
     background: hsla(0 0% 100% / 0.4);
-    animation: blink 1.4s infinite;
+    animation: dot-blink 1.4s infinite;
   }
 
   .dot:nth-child(2) { animation-delay: 0.2s; }
   .dot:nth-child(3) { animation-delay: 0.4s; }
 
-  @keyframes blink {
+  @keyframes dot-blink {
     0%, 100% { opacity: 0.3; }
     50% { opacity: 1; }
   }

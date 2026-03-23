@@ -11,7 +11,7 @@ anyhow = "1.0.81"
 chrono = { version = "0.4.35", features = ["serde"] }
 sysinfo = { version = "0.30.13", default-features = false }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "process", "io-util", "io-std"] }
-reqwest = { version = "0.12", features = ["json", "stream"] }
+reqwest = { version = "0.12", features = ["json", "stream", "blocking"] }
 async-trait = "0.1"
 uuid = { version = "1", features = ["v4"] }
 toml = "0.8"
@@ -24,6 +24,7 @@ futures = "0.3"
 tokio-stream = "0.1"
 async-stream = "0.3"
 pin-project-lite = "0.2"
+zip = { version = "2", default-features = false, features = ["deflate"] }
 
 [dev-dependencies]
 tempfile = "3"

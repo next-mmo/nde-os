@@ -22,6 +22,7 @@
   let formMaxTokens = $state(4096);
 
   const PROVIDER_TYPES = [
+    { value: "gguf", label: "GGUF (Local, No Setup)", icon: "📦" },
     { value: "ollama", label: "Ollama (Local)", icon: "🦙" },
     { value: "openai", label: "OpenAI", icon: "🤖" },
     { value: "anthropic", label: "Anthropic", icon: "🧠" },
@@ -31,6 +32,7 @@
   ];
 
   const PROVIDER_DEFAULTS: Record<string, { model: string; baseUrl: string }> = {
+    gguf: { model: "tinyllama-1.1b-chat-v1.0", baseUrl: "" },
     ollama: { model: "llama3.2", baseUrl: "http://localhost:11434" },
     openai: { model: "gpt-4o", baseUrl: "https://api.openai.com" },
     anthropic: { model: "claude-sonnet-4-20250514", baseUrl: "https://api.anthropic.com" },

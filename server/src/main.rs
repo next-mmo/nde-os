@@ -194,8 +194,18 @@ fn main() {
 
     // Phase 2: LLM Manager
     let llm_manager = Arc::new(Mutex::new(LlmManager::new()));
-    // Auto-add default Ollama provider
+    // Auto-add default GGUF provider (zero-config local inference)
     if let Ok(mut mgr) = llm_manager.lock() {
+        let _ = mgr.add_from_config(ai_launcher_core::llm::manager::ProviderConfig {
+            name: "local-gguf".into(),
+            provider_type: "gguf".into(),
+            model: "tinyllama-1.1b".into(),
+            base_url: None,
+            api_key: None,
+            api_key_env: None,
+            max_tokens: 2048,
+        });
+        // Also add Ollama as a secondary provider
         let _ = mgr.add_from_config(ai_launcher_core::llm::manager::ProviderConfig {
             name: "local-ollama".into(),
             provider_type: "ollama".into(),

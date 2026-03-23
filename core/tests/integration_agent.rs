@@ -365,8 +365,8 @@ fn config_defaults_are_sane() {
     let config = AgentConfig::default();
     assert_eq!(config.name, "assistant");
     assert_eq!(config.max_iterations, 25);
-    assert_eq!(config.model_provider, "ollama");
-    assert_eq!(config.model_name, "llama3.2");
+    assert_eq!(config.model_provider, "gguf");
+    assert_eq!(config.model_name, "tinyllama-1.1b");
     assert_eq!(config.enabled_tools, vec![
         "file_read", "file_write", "file_delete", "file_list", "file_search", "file_patch",
         "shell_exec",
@@ -385,7 +385,7 @@ fn config_defaults_are_sane() {
 fn config_partial_toml_fills_defaults() {
     let config = AgentConfig::from_str("[agent]\nname = \"custom\"\n").unwrap();
     assert_eq!(config.name, "custom");
-    assert_eq!(config.model_provider, "ollama");
+    assert_eq!(config.model_provider, "gguf");
     assert_eq!(config.max_iterations, 25);
 }
 
@@ -423,7 +423,7 @@ workspace = "/data/workspace"
 fn config_empty_toml_uses_all_defaults() {
     let config = AgentConfig::from_str("").unwrap();
     assert_eq!(config.name, "assistant");
-    assert_eq!(config.model_provider, "ollama");
+    assert_eq!(config.model_provider, "gguf");
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -545,6 +545,15 @@ fn skills_loader_empty_dir() {
 // ═══════════════════════════════════════════════════════════════════
 // LLM provider creation (factory smoke tests)
 // ═══════════════════════════════════════════════════════════════════
+
+#[test]
+fn llm_factory_creates_gguf() {
+    let provider = ai_launcher_core::llm::create_provider("gguf", "model", None, None);
+    assert!(provider.is_ok(), "GGUF provider should be creatable");
+    // Also test aliases
+    let provider2 = ai_launcher_core::llm::create_provider("llama-cpp", "model", None, None);
+    assert!(provider2.is_ok(), "llama-cpp alias should work");
+}
 
 #[test]
 fn llm_factory_creates_ollama() {

@@ -1,4 +1,5 @@
 pub mod anthropic;
+pub mod gguf;
 pub mod manager;
 pub mod ollama;
 pub mod openai_compat;
@@ -123,6 +124,29 @@ pub fn create_provider(
     api_key: Option<&str>,
 ) -> Result<Box<dyn LlmProvider>> {
     match provider {
+        "gguf" | "llama-cpp" | "llama.cpp" => {
+            // GGUF provider: local llama.cpp server with auto-download.
+            // base_url can point to an explicit .gguf file path, or None for default TinyLlama.
+            let data_dir = std::env::var("AI_LAUNCHER_DATA_DIR")
+                .map(std::path::PathBuf::from)
+                .unwrap_or_else(|_| {
+                    if cfg!(windows) {
+                        std::env::var("LOCALAPPDATA")
+                            .map(|p| std::path::PathBuf::from(p).join("ai-launcher"))
+                            .unwrap_or_else(|_| std::path::PathBuf::from("C:\\ai-launcher-data"))
+                    } else {
+                        std::env::var("HOME")
+                            .map(std::path::PathBuf::from)
+                            .unwrap_or_else(|_| std::path::PathBuf::from("/tmp"))
+                            .join(".ai-launcher")
+                    }
+                });
+            Ok(Box::new(gguf::GgufProvider::new(
+                &data_dir,
+                base_url, // Reuse base_url as optional model path
+                None,     // Default port
+            )))
+        }
         "ollama" => {
             let url = base_url.unwrap_or("http://localhost:11434");
             Ok(Box::new(ollama::OllamaProvider::new(url, model)))
@@ -170,7 +194,7 @@ pub fn create_provider(
             Ok(Box::new(openai_compat::OpenAiCompatProvider::new(url, model, key)))
         }
         other => Err(anyhow::anyhow!(
-            "Unknown LLM provider: '{}'. Supported: ollama, openai, anthropic, codex, groq, together, openai_compat",
+            "Unknown LLM provider: '{}'. Supported: gguf, ollama, openai, anthropic, codex, groq, together, openai_compat",
             other
         )),
     }
