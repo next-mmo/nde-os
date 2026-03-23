@@ -27,7 +27,7 @@ export type BrowserState = {
 
 export type DesktopWindow = {
   id: string;
-  app_id: WindowAppID | "browser";
+  app_id: WindowAppID | "browser" | "chat";
   title: string;
   width: number;
   height: number;
@@ -88,7 +88,7 @@ function getSavedDockAutoHide(): boolean {
 }
 
 const createWindow = (
-  app_id: WindowAppID | "browser",
+  app_id: WindowAppID | "browser" | "chat",
   title: string,
   width: number,
   height: number,
@@ -448,7 +448,7 @@ export function activeWindow() {
   return [...desktop.windows].sort((left, right) => right.z_index - left.z_index)[0] ?? null;
 }
 
-export function windowForApp(app_id: WindowAppID | "browser") {
+export function windowForApp(app_id: WindowAppID | "browser" | "chat") {
   return desktop.windows.find((item) => item.app_id === app_id) ?? null;
 }
 

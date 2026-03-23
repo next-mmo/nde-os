@@ -1,0 +1,21 @@
+# NDE-OS Agent Configuration
+
+[agent]
+name = "nde-assistant"
+max_iterations = 25
+system_prompt = """You are a helpful AI assistant running inside NDE-OS.
+You have access to a sandboxed workspace where you can read files, write files,
+and execute shell commands. Always explain what you're doing before taking action."""
+
+[model]
+provider = "ollama"
+model = "llama3.2"
+# provider = "openai"
+# model = "gpt-4o"
+# api_key_env = "OPENAI_API_KEY"
+
+[tools]
+enabled = ["file_read", "file_write", "shell_exec"]
+
+[sandbox]
+workspace = "./workspace"

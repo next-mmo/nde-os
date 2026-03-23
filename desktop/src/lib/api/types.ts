@@ -103,3 +103,132 @@ export interface LogEntry {
   message: string;
   app_id?: string;
 }
+
+// ── Agent Chat API types ─────────────────────────────────────────────────────
+
+export interface ChatRequest {
+  message: string;
+  conversation_id?: string;
+}
+
+export interface ChatResponse {
+  response: string;
+  conversation_id: string;
+}
+
+export interface ConversationSummary {
+  id: string;
+  title: string;
+  channel: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface StoredMessage {
+  id: number;
+  role: string;
+  content: string | null;
+  tool_calls: string | null;
+  tool_call_id: string | null;
+  created_at: string;
+}
+
+export interface AgentConfigInfo {
+  name: string;
+  provider: string;
+  model: string;
+  max_iterations: number;
+  tools: string[];
+  workspace: string;
+}
+
+// ── LLM / Model Management types ─────────────────────────────────────────────
+
+export interface ProviderStatus {
+  name: string;
+  provider_type: string;
+  is_active: boolean;
+}
+
+export interface ProviderConfig {
+  name: string;
+  provider_type: string;
+  model: string;
+  base_url?: string;
+  api_key?: string;
+  api_key_env?: string;
+  max_tokens: number;
+}
+
+// ── Plugin types ─────────────────────────────────────────────────────────────
+
+export type PluginState = "discovered" | "installed" | "running" | "stopped" | "error";
+export type PluginType = "monitor" | "hook" | "provider" | "tool" | "ui_panel" | "daemon";
+export type HookType = "on_message" | "on_response" | "on_tool_call" | "on_tool_result"
+  | "on_error" | "on_start" | "on_stop" | "on_install" | "on_config_change";
+
+export interface PluginStatus {
+  id: string;
+  name: string;
+  version: string;
+  plugin_type: PluginType;
+  state: PluginState;
+  pid?: number;
+  port?: number;
+  hooks: HookType[];
+}
+
+// ── Channel / Gateway types ──────────────────────────────────────────────────
+
+export type ChannelType = "rest" | "telegram" | "discord" | "slack" | "web_chat" | "cli";
+
+export interface ChannelStatus {
+  name: string;
+  channel_type: ChannelType;
+  is_running: boolean;
+  messages_received: number;
+  messages_sent: number;
+}
+
+// ── MCP types ────────────────────────────────────────────────────────────────
+
+export interface McpTool {
+  name: string;
+  description: string;
+  parameters: Record<string, unknown>;
+}
+
+export interface McpServerInfo {
+  name: string;
+  transport: string;
+  tools_count: number;
+  is_connected: boolean;
+}
+
+// ── Skills types ─────────────────────────────────────────────────────────────
+
+export interface SkillInfo {
+  name: string;
+  description: string;
+  path: string;
+  triggers: string[];
+}
+
+// ── Knowledge types ──────────────────────────────────────────────────────────
+
+export interface KnowledgeEntry {
+  id: string;
+  key: string;
+  value: string;
+  category: string;
+  created_at: string;
+  updated_at: string;
+}
+
+// ── Memory types ─────────────────────────────────────────────────────────────
+
+export interface MemoryEntry {
+  key: string;
+  value: string;
+  created_at: string;
+}
