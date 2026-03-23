@@ -1,3 +1,9 @@
+<p align="center">
+  <em>🤖 Built with ❤️ by <strong>Opus 4.6</strong> · <strong>Codex 4.2</strong> · <strong>Gemini Pro 3.1</strong></em>
+</p>
+
+---
+
 # 🖥️ NDE-OS
 
 **A sandboxed OS environment for AI applications — in your browser.**
@@ -57,7 +63,7 @@ pnpm dev
 
 | URL                                           | Description          |
 | --------------------------------------------- | -------------------- |
-| `http://localhost:5173`                       | Desktop UI           |
+| `http://localhost:5174`                       | Desktop UI           |
 | `http://localhost:8080/swagger-ui/`           | Swagger API Explorer |
 | `http://localhost:8080/api-docs/openapi.json` | OpenAPI 3.0.3 Spec   |
 

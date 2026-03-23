@@ -173,7 +173,7 @@ start_server() {
 # ── Start Tauri Desktop (includes Vite dev server) ──────────
 start_tauri() {
     echo -e "${GREEN}▶  Starting Tauri desktop ${DIM}(pnpm tauri dev)${RESET}"
-    echo -e "${DIM}   → Vite: http://localhost:5173${RESET}"
+    echo -e "${DIM}   → Vite: http://localhost:5174${RESET}"
     echo -e "${DIM}   → Tauri window will open automatically${RESET}"
     echo ""
 
@@ -186,7 +186,7 @@ start_tauri() {
 # ── Start Vite only (no Tauri window) ───────────────────────
 start_vite() {
     echo -e "${GREEN}▶  Starting Vite dev server ${DIM}(pnpm dev)${RESET}"
-    echo -e "${DIM}   → http://localhost:5173${RESET}"
+    echo -e "${DIM}   → http://localhost:5174${RESET}"
     echo ""
 
     (cd "$DESKTOP_DIR" && pnpm dev 2>&1 | while IFS= read -r line; do
@@ -223,7 +223,7 @@ case "$MODE" in
     desktop|tauri)
         echo -e "${BOLD}  Mode: ${CYAN}Tauri desktop only${RESET}"
         echo ""
-        free_ports 5173
+        free_ports 5174
         ensure_node_modules
         start_tauri
         wait_for_all
@@ -231,7 +231,7 @@ case "$MODE" in
     vite|frontend)
         echo -e "${BOLD}  Mode: ${CYAN}Vite frontend only${RESET}"
         echo ""
-        free_ports 5173
+        free_ports 5174
         ensure_node_modules
         start_vite
         wait_for_all
@@ -239,7 +239,7 @@ case "$MODE" in
     all|"")
         echo -e "${BOLD}  Mode: ${GREEN}server${RESET} + ${CYAN}Tauri desktop${RESET}"
         echo ""
-        free_ports 8080 5173
+        free_ports 8080 5174
         ensure_node_modules
         start_server
 

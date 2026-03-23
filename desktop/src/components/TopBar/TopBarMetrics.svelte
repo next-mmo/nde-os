@@ -1,9 +1,9 @@
 <svelte:options runes={true} />
 
 <script lang="ts">
-  import { resourceUsage, systemInfo } from "$lib/stores/state";
+  import { resourceUsage, systemInfo, healthStatus, llmActiveModel, llmProviderCount } from "$lib/stores/state";
   import { click_outside, elevation } from "🍎/actions";
-  import { desktop } from "🍎/state/desktop.svelte";
+  import { desktop, openStaticApp } from "🍎/state/desktop.svelte";
   import type { ResourceUsage } from "$lib/api/types";
 
   let expanded = $state(false);
@@ -41,19 +41,37 @@
 
   function toggle() { expanded = !expanded; }
   function close() { expanded = false; }
+
+  const isOnline = $derived($healthStatus === "online");
+  const serverLabel = $derived(isOnline ? "Online" : "Offline");
+  const llmLabel = $derived($llmActiveModel || "No LLM");
+  const providerCountLabel = $derived(`${$llmProviderCount} provider${$llmProviderCount !== 1 ? "s" : ""}`);
+
+  function openModelSettings(e: Event) {
+    e.stopPropagation();
+    openStaticApp("model-settings");
+  }
 </script>
 
 <div class="metrics-container" use:click_outside={close}>
-  <button
+  <div
     class="metrics-toggle"
     data-topbar-metrics
+    role="button"
+    tabindex="0"
     aria-label="System metrics"
     onclick={toggle}
+    onkeydown={(e) => e.key === 'Enter' && toggle()}
   >
+    <span class="status-dot" class:online={isOnline} title={serverLabel}></span>
+    <span class="llm-label" role="button" tabindex="0" title="Active LLM: {llmLabel}" onclick={openModelSettings} onkeydown={(e) => e.key === 'Enter' && openModelSettings(e)}>
+      {llmLabel}
+    </span>
+    <span class="sep">·</span>
     <span class="metric">{memoryLabel}</span>
     <span class="metric">{diskLabel}</span>
     <span class="metric">{gpuLabel}</span>
-  </button>
+  </div>
 
   {#if expanded}
     <div class="info-panel" class:dark={isDark} use:elevation={"system-info-panel"}>
@@ -142,6 +160,21 @@
           </div>
         </div>
       {/if}
+
+      <div class="info-divider"></div>
+      <div class="info-section">
+        <div class="info-row">
+          <span class="info-icon">🤖</span>
+          <span class="info-key">Model</span>
+          <span class="info-val">{llmLabel}</span>
+        </div>
+        <div class="info-row">
+          <span class="info-icon">🔌</span>
+          <span class="info-key">LLM</span>
+          <span class="info-val">{providerCountLabel}</span>
+        </div>
+        <button class="configure-link" onclick={openModelSettings}>Configure →</button>
+      </div>
     </div>
   {/if}
 </div>
@@ -173,6 +206,60 @@
     color: var(--system-color-text);
     white-space: nowrap;
     letter-spacing: 0.01em;
+  }
+
+  .status-dot {
+    width: 0.42rem;
+    height: 0.42rem;
+    border-radius: 50%;
+    background-color: var(--system-color-danger);
+    flex-shrink: 0;
+    transition: background-color 0.3s ease;
+  }
+
+  .status-dot.online {
+    background-color: var(--system-color-success);
+    box-shadow: 0 0 4px hsla(160 60% 50% / 0.5);
+  }
+
+  .llm-label {
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: var(--system-color-text);
+    white-space: nowrap;
+    cursor: pointer;
+    border-radius: 0.2rem;
+    padding: 0 0.15rem;
+    transition: color 0.15s;
+    max-width: 8rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .llm-label:hover {
+    color: var(--system-color-primary);
+  }
+
+  .sep {
+    font-size: 0.72rem;
+    color: var(--system-color-text-muted);
+    opacity: 0.5;
+  }
+
+  .configure-link {
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: var(--system-color-primary);
+    cursor: pointer;
+    margin-top: 0.15rem;
+    text-align: left;
+    padding: 0.15rem 0;
+    border-radius: 0.25rem;
+    transition: opacity 0.15s;
+  }
+
+  .configure-link:hover {
+    opacity: 0.75;
   }
 
   /* ── Popover panel ── */

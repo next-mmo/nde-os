@@ -11,6 +11,8 @@ export const systemInfo = writable<SystemInfo | null>(null);
 export const resourceUsage = writable<ResourceUsage | null>(null);
 export const healthStatus = writable<HealthStatus>("unknown");
 export const lastRefreshAt = writable<string | null>(null);
+export const llmActiveModel = writable<string>("");
+export const llmProviderCount = writable<number>(0);
 
 export const installedMap = derived(installed, ($installed) => {
   const map: Record<string, InstalledApp> = {};
@@ -68,6 +70,20 @@ export async function refreshHealth() {
   }
 }
 
+export async function refreshLlmStatus() {
+  try {
+    const [active, providers] = await Promise.all([
+      api.activeModel().catch(() => ""),
+      api.listModels().catch(() => []),
+    ]);
+    llmActiveModel.set(active as string);
+    llmProviderCount.set((providers as unknown[]).length);
+  } catch {
+    llmActiveModel.set("");
+    llmProviderCount.set(0);
+  }
+}
+
 export async function refreshAll() {
   await Promise.all([
     refreshCatalog(),
@@ -75,6 +91,7 @@ export async function refreshAll() {
     refreshSystemInfo(),
     refreshResourceUsage(),
     refreshHealth(),
+    refreshLlmStatus(),
   ]);
   lastRefreshAt.set(new Date().toISOString());
 }
