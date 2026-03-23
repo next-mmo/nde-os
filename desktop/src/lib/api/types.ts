@@ -141,3 +141,94 @@ export interface AgentConfigInfo {
   tools: string[];
   workspace: string;
 }
+
+// ── LLM / Model Management types ─────────────────────────────────────────────
+
+export interface ProviderStatus {
+  name: string;
+  provider_type: string;
+  is_active: boolean;
+}
+
+export interface ProviderConfig {
+  name: string;
+  provider_type: string;
+  model: string;
+  base_url?: string;
+  api_key?: string;
+  api_key_env?: string;
+  max_tokens: number;
+}
+
+// ── Plugin types ─────────────────────────────────────────────────────────────
+
+export type PluginState = "discovered" | "installed" | "running" | "stopped" | "error";
+export type PluginType = "monitor" | "hook" | "provider" | "tool" | "ui_panel" | "daemon";
+export type HookType = "on_message" | "on_response" | "on_tool_call" | "on_tool_result"
+  | "on_error" | "on_start" | "on_stop" | "on_install" | "on_config_change";
+
+export interface PluginStatus {
+  id: string;
+  name: string;
+  version: string;
+  plugin_type: PluginType;
+  state: PluginState;
+  pid?: number;
+  port?: number;
+  hooks: HookType[];
+}
+
+// ── Channel / Gateway types ──────────────────────────────────────────────────
+
+export type ChannelType = "rest" | "telegram" | "discord" | "slack" | "web_chat" | "cli";
+
+export interface ChannelStatus {
+  name: string;
+  channel_type: ChannelType;
+  is_running: boolean;
+  messages_received: number;
+  messages_sent: number;
+}
+
+// ── MCP types ────────────────────────────────────────────────────────────────
+
+export interface McpTool {
+  name: string;
+  description: string;
+  parameters: Record<string, unknown>;
+}
+
+export interface McpServerInfo {
+  name: string;
+  transport: string;
+  tools_count: number;
+  is_connected: boolean;
+}
+
+// ── Skills types ─────────────────────────────────────────────────────────────
+
+export interface SkillInfo {
+  name: string;
+  description: string;
+  path: string;
+  triggers: string[];
+}
+
+// ── Knowledge types ──────────────────────────────────────────────────────────
+
+export interface KnowledgeEntry {
+  id: string;
+  key: string;
+  value: string;
+  category: string;
+  created_at: string;
+  updated_at: string;
+}
+
+// ── Memory types ─────────────────────────────────────────────────────────────
+
+export interface MemoryEntry {
+  key: string;
+  value: string;
+  created_at: string;
+}

@@ -1,7 +1,7 @@
 <svelte:options runes={true} />
 
 <script lang="ts">
-  import { resourceUsage } from "$lib/stores/state";
+  import { resourceUsage, systemInfo } from "$lib/stores/state";
   import type { ResourceUsage } from "$lib/api/types";
 
   function formatBytes(bytes: number): string {
@@ -50,80 +50,43 @@
   const diskTone = $derived($resourceUsage ? usageTone($resourceUsage.disk_percent) : "safe");
   const memoryTooltip = $derived(memoryTitle($resourceUsage));
   const diskTooltip = $derived(diskTitle($resourceUsage));
+  const gpuDetected = $derived($systemInfo?.gpu_detected ?? false);
+  const gpuLabel = $derived(gpuDetected ? "GPU ✓" : "GPU ✗");
+  const gpuTone = $derived(gpuDetected ? "safe" : "off");
+  const gpuTooltip = $derived(gpuDetected ? "NVIDIA GPU detected" : "No GPU detected");
 </script>
 
 <div class="metrics" data-topbar-metrics aria-live="polite">
-  <div
-    class={`metric ${memoryTone}`}
-    data-topbar-metric="memory"
-    aria-label={memoryTooltip}
-    title={memoryTooltip}
-  >
-    <span class="metric-dot" aria-hidden="true"></span>
-    <span>{memoryLabel}</span>
-  </div>
-
-  <div
-    class={`metric ${diskTone}`}
-    data-topbar-metric="disk"
-    aria-label={diskTooltip}
-    title={diskTooltip}
-  >
-    <span class="metric-dot" aria-hidden="true"></span>
-    <span>{diskLabel}</span>
-  </div>
+  <span class="metric" title={memoryTooltip}>{memoryLabel}</span>
+  <span class="metric" title={diskTooltip}>{diskLabel}</span>
+  <span class="metric" title={gpuTooltip}>{gpuLabel}</span>
 </div>
 
 <style>
   .metrics {
     display: flex;
     align-items: center;
-    gap: 0.35rem;
-    padding-right: 0.2rem;
+    gap: 0.5rem;
+    padding: 0 0.3rem;
+    position: relative;
+    z-index: 1;
   }
 
   .metric {
-    display: flex;
-    align-items: center;
-    gap: 0.35rem;
-    height: 1.15rem;
-    padding: 0 0.45rem;
-    border-radius: 999px;
+    font-size: 0.72rem;
+    font-weight: 500;
+    color: var(--system-color-text);
     white-space: nowrap;
-    font-size: 0.68rem;
-    font-weight: 600;
-    letter-spacing: 0.02em;
-    background:
-      linear-gradient(180deg, hsla(var(--system-color-light-hsl) / 0.55), hsla(var(--system-color-light-hsl) / 0.36));
-    box-shadow:
-      inset 0 0 0 1px hsla(var(--system-color-dark-hsl) / 0.08),
-      0 1px 4px hsla(var(--system-color-dark-hsl) / 0.08);
-  }
-
-  .metric-dot {
-    width: 0.42rem;
-    height: 0.42rem;
-    border-radius: 999px;
-    background-color: var(--system-color-success);
-    flex-shrink: 0;
-  }
-
-  .metric.warning .metric-dot {
-    background-color: var(--system-color-warning);
-  }
-
-  .metric.danger .metric-dot {
-    background-color: var(--system-color-danger);
+    letter-spacing: 0.01em;
   }
 
   @media (max-width: 720px) {
     .metrics {
-      gap: 0.25rem;
+      gap: 0.3rem;
     }
 
     .metric {
-      padding: 0 0.35rem;
-      font-size: 0.64rem;
+      font-size: 0.66rem;
     }
   }
 </style>

@@ -1,7 +1,7 @@
 <svelte:options runes={true} />
 
 <script lang="ts">
-  import { catalogCount, healthStatus, runningCount } from "$lib/stores/state";
+  import { catalogCount, healthStatus, runningCount, systemInfo, resourceUsage } from "$lib/stores/state";
   import { desktop, toggleTheme, toggleDockAutoHide } from "🍎/state/desktop.svelte";
   import { click_outside, elevation } from "🍎/actions";
 
@@ -9,6 +9,12 @@
 
   const isDark = $derived(desktop.theme === "dark");
   const isDockAutoHide = $derived(desktop.dock_auto_hide);
+
+  function formatBytes(bytes: number): string {
+    if (bytes >= 1_073_741_824) return `${(bytes / 1_073_741_824).toFixed(1)} GB`;
+    if (bytes >= 1_048_576) return `${(bytes / 1_048_576).toFixed(0)} MB`;
+    return `${(bytes / 1024).toFixed(0)} KB`;
+  }
 
   function show() { visible = true; }
   function hide() { visible = false; }
@@ -59,6 +65,52 @@
           <span class="tile-text">Auto-hide</span>
         </button>
       </div>
+
+      <!-- System Specs -->
+      {#if $systemInfo || $resourceUsage}
+        <div class="ac-surface">
+          <div class="spec-header">System</div>
+          <div class="spec-grid">
+            {#if $systemInfo}
+              <div class="spec-row">
+                <span class="spec-icon">💻</span>
+                <span class="spec-key">OS</span>
+                <span class="spec-val">{$systemInfo.os} · {$systemInfo.arch}</span>
+              </div>
+              <div class="spec-row">
+                <span class="spec-icon">{$systemInfo.gpu_detected ? '🟢' : '⚪'}</span>
+                <span class="spec-key">GPU</span>
+                <span class="spec-val">{$systemInfo.gpu_detected ? 'Detected' : 'Not found'}</span>
+              </div>
+              {#if $systemInfo.python_version}
+                <div class="spec-row">
+                  <span class="spec-icon">🐍</span>
+                  <span class="spec-key">Python</span>
+                  <span class="spec-val">{$systemInfo.python_version}</span>
+                </div>
+              {/if}
+            {/if}
+            {#if $resourceUsage}
+              <div class="spec-row">
+                <span class="spec-icon">🧠</span>
+                <span class="spec-key">RAM</span>
+                <span class="spec-val">{formatBytes($resourceUsage.memory_used_bytes)} / {formatBytes($resourceUsage.memory_total_bytes)}</span>
+              </div>
+              <div class="meter-track">
+                <div class="meter-fill" class:warn={$resourceUsage.memory_percent > 80} style:width="{$resourceUsage.memory_percent}%"></div>
+              </div>
+              <div class="spec-row">
+                <span class="spec-icon">💾</span>
+                <span class="spec-key">Disk</span>
+                <span class="spec-val">{formatBytes($resourceUsage.disk_used_bytes)} / {formatBytes($resourceUsage.disk_total_bytes)}</span>
+              </div>
+              <div class="meter-track">
+                <div class="meter-fill" class:warn={$resourceUsage.disk_percent > 85} style:width="{$resourceUsage.disk_percent}%"></div>
+              </div>
+            {/if}
+          </div>
+        </div>
+      {/if}
 
       <!-- Stats -->
       <div class="ac-surface">
@@ -275,5 +327,68 @@
     align-items: center;
     justify-content: center;
     font-size: 1.1rem;
+  }
+
+  .spec-header {
+    font-size: 0.68rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--system-color-text-muted);
+    margin-bottom: 0.4rem;
+  }
+
+  .spec-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+
+  .spec-row {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+
+  .spec-icon {
+    width: 1.1rem;
+    font-size: 0.75rem;
+    flex-shrink: 0;
+    text-align: center;
+  }
+
+  .spec-key {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--system-color-text);
+    width: 2.8rem;
+    flex-shrink: 0;
+  }
+
+  .spec-val {
+    font-size: 0.72rem;
+    color: var(--system-color-text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .meter-track {
+    height: 4px;
+    border-radius: 2px;
+    background-color: hsla(var(--system-color-dark-hsl) / 0.08);
+    margin: 0.1rem 0 0.15rem 1.5rem;
+    overflow: hidden;
+  }
+
+  .meter-fill {
+    height: 100%;
+    border-radius: 2px;
+    background-color: var(--system-color-primary);
+    transition: width 0.4s ease;
+  }
+
+  .meter-fill.warn {
+    background-color: var(--system-color-danger);
   }
 </style>

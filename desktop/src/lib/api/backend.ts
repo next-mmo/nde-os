@@ -10,6 +10,15 @@ import type {
   ConversationSummary,
   StoredMessage,
   AgentConfigInfo,
+  ProviderStatus,
+  ProviderConfig,
+  PluginStatus,
+  ChannelStatus,
+  McpTool,
+  McpServerInfo,
+  SkillInfo,
+  KnowledgeEntry,
+  MemoryEntry,
 } from "./types";
 import type { StoreUploadRequest, StoreUploadResult } from "./types";
 
@@ -55,6 +64,32 @@ async function httpFallback<T>(command: string, args?: Record<string, unknown>):
     agent_conversations: { method: "GET", url: `/api/agent/conversations` },
     agent_messages:  { method: "GET",    url: `/api/agent/conversations/${args?.conversationId}/messages` },
     agent_config:    { method: "GET",    url: `/api/agent/config` },
+    // Models / LLM
+    list_models:     { method: "GET",    url: `/api/models` },
+    active_model:    { method: "GET",    url: `/api/models/active` },
+    switch_model:    { method: "POST",   url: `/api/models/switch`, body: { name: args?.name } },
+    add_provider:    { method: "POST",   url: `/api/models/providers`, body: args?.config },
+    remove_provider: { method: "DELETE", url: `/api/models/providers/${args?.name}` },
+    // Plugins
+    list_plugins:    { method: "GET",    url: `/api/plugins` },
+    get_plugin:      { method: "GET",    url: `/api/plugins/${args?.pluginId}` },
+    discover_plugins:{ method: "POST",   url: `/api/plugins/discover` },
+    install_plugin:  { method: "POST",   url: `/api/plugins/${args?.pluginId}/install` },
+    start_plugin:    { method: "POST",   url: `/api/plugins/${args?.pluginId}/start` },
+    stop_plugin:     { method: "POST",   url: `/api/plugins/${args?.pluginId}/stop` },
+    // Channels
+    list_channels:   { method: "GET",    url: `/api/channels` },
+    // MCP
+    list_mcp_tools:  { method: "GET",    url: `/api/mcp/tools` },
+    list_mcp_servers:{ method: "GET",    url: `/api/mcp/servers` },
+    // Skills
+    list_skills:     { method: "GET",    url: `/api/skills` },
+    // Knowledge
+    list_knowledge:  { method: "GET",    url: `/api/knowledge` },
+    search_knowledge:{ method: "GET",    url: `/api/knowledge/search?q=${encodeURIComponent(String(args?.query || ""))}` },
+    // Memory
+    list_memory:     { method: "GET",    url: `/api/memory` },
+    get_memory:      { method: "GET",    url: `/api/memory/${args?.key}` },
   };
 
   const route = routeMap[command];
@@ -162,4 +197,94 @@ export async function agentMessages(conversationId: string): Promise<StoredMessa
 
 export async function agentConfig(): Promise<AgentConfigInfo> {
   return smartInvoke<AgentConfigInfo>("agent_config");
+}
+
+// ── Models / LLM ──
+
+export async function listModels(): Promise<ProviderStatus[]> {
+  return smartInvoke<ProviderStatus[]>("list_models");
+}
+
+export async function activeModel(): Promise<string> {
+  return smartInvoke<string>("active_model");
+}
+
+export async function switchModel(name: string): Promise<string> {
+  return smartInvoke<string>("switch_model", { name });
+}
+
+export async function addProvider(config: ProviderConfig): Promise<string> {
+  return smartInvoke<string>("add_provider", { config });
+}
+
+export async function removeProvider(name: string): Promise<string> {
+  return smartInvoke<string>("remove_provider", { name });
+}
+
+// ── Plugins ──
+
+export async function listPlugins(): Promise<PluginStatus[]> {
+  return smartInvoke<PluginStatus[]>("list_plugins");
+}
+
+export async function getPlugin(pluginId: string): Promise<PluginStatus | null> {
+  return smartInvoke<PluginStatus | null>("get_plugin", { pluginId });
+}
+
+export async function discoverPlugins(): Promise<string> {
+  return smartInvoke<string>("discover_plugins");
+}
+
+export async function installPlugin(pluginId: string): Promise<string> {
+  return smartInvoke<string>("install_plugin", { pluginId });
+}
+
+export async function startPlugin(pluginId: string): Promise<string> {
+  return smartInvoke<string>("start_plugin", { pluginId });
+}
+
+export async function stopPlugin(pluginId: string): Promise<string> {
+  return smartInvoke<string>("stop_plugin", { pluginId });
+}
+
+// ── Channels ──
+
+export async function listChannels(): Promise<ChannelStatus[]> {
+  return smartInvoke<ChannelStatus[]>("list_channels");
+}
+
+// ── MCP ──
+
+export async function listMcpTools(): Promise<McpTool[]> {
+  return smartInvoke<McpTool[]>("list_mcp_tools");
+}
+
+export async function listMcpServers(): Promise<McpServerInfo[]> {
+  return smartInvoke<McpServerInfo[]>("list_mcp_servers");
+}
+
+// ── Skills ──
+
+export async function listSkills(): Promise<SkillInfo[]> {
+  return smartInvoke<SkillInfo[]>("list_skills");
+}
+
+// ── Knowledge ──
+
+export async function listKnowledge(): Promise<KnowledgeEntry[]> {
+  return smartInvoke<KnowledgeEntry[]>("list_knowledge");
+}
+
+export async function searchKnowledge(query: string): Promise<KnowledgeEntry[]> {
+  return smartInvoke<KnowledgeEntry[]>("search_knowledge", { query });
+}
+
+// ── Memory ──
+
+export async function listMemory(): Promise<MemoryEntry[]> {
+  return smartInvoke<MemoryEntry[]>("list_memory");
+}
+
+export async function getMemory(key: string): Promise<MemoryEntry | null> {
+  return smartInvoke<MemoryEntry | null>("get_memory", { key });
 }

@@ -42,6 +42,42 @@ export const apps_config = {
     width: 1200,
     height: 800,
   }),
+  "command-center": create_app_config({
+    title: "Command Center",
+    width: 980,
+    height: 720,
+    dock_breaks_before: true,
+  }),
+  "model-settings": create_app_config({
+    title: "LLM Providers",
+    width: 880,
+    height: 640,
+  }),
+  plugins: create_app_config({
+    title: "Plugins",
+    width: 920,
+    height: 660,
+  }),
+  channels: create_app_config({
+    title: "Channels",
+    width: 880,
+    height: 640,
+  }),
+  "mcp-tools": create_app_config({
+    title: "MCP Tools",
+    width: 920,
+    height: 660,
+  }),
+  skills: create_app_config({
+    title: "Skills",
+    width: 920,
+    height: 660,
+  }),
+  knowledge: create_app_config({
+    title: "Knowledge",
+    width: 960,
+    height: 680,
+  }),
   launchpad: create_app_config({
     title: "Launchpad",
     should_open_window: false,
