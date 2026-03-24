@@ -93,6 +93,7 @@ async function httpFallback<T>(command: string, args?: Record<string, unknown>):
     stop_plugin:     { method: "POST",   url: `/api/plugins/${args?.pluginId}/stop` },
     // Channels
     list_channels:   { method: "GET",    url: `/api/channels` },
+    configure_channel: { method: "POST", url: `/api/channels/${args?.name}/configure`, body: { channel_type: args?.channel_type, enabled: args?.enabled, token: args?.token } },
     // MCP
     list_mcp_tools:  { method: "GET",    url: `/api/mcp/tools` },
     list_mcp_servers:{ method: "GET",    url: `/api/mcp/servers` },
@@ -324,6 +325,10 @@ export async function stopPlugin(pluginId: string): Promise<string> {
 
 export async function listChannels(): Promise<ChannelStatus[]> {
   return smartInvoke<ChannelStatus[]>("list_channels");
+}
+
+export async function configureChannel(name: string, channelType: string, enabled: boolean, token: string): Promise<{success: boolean}> {
+  return smartInvoke<{success: boolean}>("configure_channel", { name, channel_type: channelType, enabled, token });
 }
 
 // ── MCP ──

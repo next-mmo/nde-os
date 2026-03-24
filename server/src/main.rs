@@ -90,7 +90,7 @@ fn route(
         (Method::Post, "/api/codex/oauth/start") => return model_handler::codex_oauth_start(req, llm_manager.clone(), rt, data_dir),
         (Method::Get, "/api/codex/oauth/status") => return model_handler::codex_oauth_status(data_dir),
         // Channels
-        (Method::Get, "/api/channels") => return subsystem_handler::list_channels(),
+        (Method::Get, "/api/channels") => return subsystem_handler::list_channels(data_dir),
         // MCP
         (Method::Get, "/api/mcp/tools") => return subsystem_handler::list_mcp_tools(),
         (Method::Get, "/api/mcp/servers") => return subsystem_handler::list_mcp_servers(),
@@ -138,6 +138,17 @@ fn route(
         return match (method.clone(), parts.as_slice()) {
             (Method::Delete, ["api", "models", "providers", name]) => {
                 model_handler::remove_provider(name, &llm_manager)
+            }
+            _ => err(404, &format!("Not found: {}", path)),
+        };
+    }
+
+    // Dynamic channel routes: /api/channels/{name}/configure
+    if path.starts_with("/api/channels/") {
+        let parts: Vec<&str> = path.trim_start_matches('/').split('/').collect();
+        return match (method.clone(), parts.as_slice()) {
+            (Method::Post, ["api", "channels", _name, "configure"]) => {
+                subsystem_handler::configure_channel(req, data_dir)
             }
             _ => err(404, &format!("Not found: {}", path)),
         };

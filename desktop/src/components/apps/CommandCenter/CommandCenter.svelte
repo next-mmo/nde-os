@@ -46,123 +46,127 @@
   }
 </script>
 
-<section class="cc-app">
-  <div class="cc-header">
+<section class="h-full overflow-auto p-[1.1rem] grid gap-4 content-start">
+  <div class="flex justify-between items-center">
     <div>
-      <p class="eyebrow">Overview</p>
-      <h2>Command Center</h2>
+      <p class="m-0 text-[0.72rem] uppercase tracking-[0.14em] text-gray-500">Overview</p>
+      <h2 class="mt-[0.3rem] mb-0 text-xl font-bold">Command Center</h2>
     </div>
-    <button class="refresh-btn" onclick={refresh} disabled={loading}>{loading ? "..." : "↻ Refresh"}</button>
+    <button class="rounded-full px-[0.9rem] py-[0.5rem] text-[0.82rem] cursor-pointer border border-black/10 dark:border-white/10 bg-white/50 dark:bg-black/50 text-black dark:text-white" onclick={refresh} disabled={loading}>{loading ? "..." : "↻ Refresh"}</button>
   </div>
 
   <!-- Status Cards Row -->
-  <div class="status-row">
-    <div class="status-card" class:online={$healthStatus === "online"}>
-      <span class="s-dot" class:active={$healthStatus === "online"}></span>
-      <div>
-        <strong>{$healthStatus === "online" ? "Server Online" : "Offline"}</strong>
-        <span>localhost:8080</span>
+  <div class="grid grid-cols-[repeat(auto-fit,minmax(10rem,1fr))] gap-[0.6rem]">
+    <div class="flex items-center gap-[0.55rem] px-[0.85rem] py-[0.75rem] rounded-2xl border border-black/10 dark:border-white/10 bg-white/50 dark:bg-black/50 text-left" class:online={$healthStatus === "online"}>
+      <span class="w-[0.55rem] h-[0.55rem] rounded-full shrink-0 transition-colors duration-300 {$healthStatus === 'online' ? 'bg-green-500 shadow-[0_0_6px_rgba(34,197,94,0.5)]' : 'bg-red-500'}"></span>
+      <div class="flex flex-col">
+        <strong class="text-[0.82rem]">{$healthStatus === "online" ? "Server Online" : "Offline"}</strong>
+        <span class="text-[0.7rem] text-gray-500">localhost:8080</span>
       </div>
     </div>
-    <button class="status-card clickable" onclick={() => selectLauncherSection("model-settings")}>
-      <span class="s-icon">🤖</span>
-      <div>
-        <strong>{activeModel || "No Model"}</strong>
-        <span>{providers.length} provider{providers.length !== 1 ? "s" : ""}</span>
+    <button class="flex items-center gap-[0.55rem] px-[0.85rem] py-[0.75rem] rounded-2xl border border-black/10 dark:border-white/10 bg-white/50 dark:bg-black/50 text-left cursor-pointer transition-all duration-150 hover:border-blue-500/30 hover:-translate-y-px" onclick={() => selectLauncherSection("model-settings")}>
+      <span class="text-[1.3rem]">🤖</span>
+      <div class="flex flex-col">
+        <strong class="text-[0.82rem]">{activeModel || "No Model"}</strong>
+        <span class="text-[0.7rem] text-gray-500">{providers.length} provider{providers.length !== 1 ? "s" : ""}</span>
       </div>
     </button>
-    <button class="status-card clickable" onclick={() => selectLauncherSection("plugins")}>
-      <span class="s-icon">🧩</span>
-      <div>
-        <strong>{runningPlugins} Running</strong>
-        <span>{plugins.length} plugin{plugins.length !== 1 ? "s" : ""}</span>
+    <button class="flex items-center gap-[0.55rem] px-[0.85rem] py-[0.75rem] rounded-2xl border border-black/10 dark:border-white/10 bg-white/50 dark:bg-black/50 text-left cursor-pointer transition-all duration-150 hover:border-blue-500/30 hover:-translate-y-px" onclick={() => selectLauncherSection("plugins")}>
+      <span class="text-[1.3rem]">🧩</span>
+      <div class="flex flex-col">
+        <strong class="text-[0.82rem]">{runningPlugins} Running</strong>
+        <span class="text-[0.7rem] text-gray-500">{plugins.length} plugin{plugins.length !== 1 ? "s" : ""}</span>
       </div>
     </button>
-    <button class="status-card clickable" onclick={() => selectLauncherSection("channels")}>
-      <span class="s-icon">📡</span>
-      <div>
-        <strong>{activeChannels} Active</strong>
-        <span>{channels.length} channel{channels.length !== 1 ? "s" : ""}</span>
+    <button class="flex items-center gap-[0.55rem] px-[0.85rem] py-[0.75rem] rounded-2xl border border-black/10 dark:border-white/10 bg-white/50 dark:bg-black/50 text-left cursor-pointer transition-all duration-150 hover:border-blue-500/30 hover:-translate-y-px" onclick={() => selectLauncherSection("channels")}>
+      <span class="text-[1.3rem]">📡</span>
+      <div class="flex flex-col">
+        <strong class="text-[0.82rem]">{activeChannels} Active</strong>
+        <span class="text-[0.7rem] text-gray-500">{channels.length} channel{channels.length !== 1 ? "s" : ""}</span>
       </div>
     </button>
   </div>
 
   <!-- Metrics Row -->
-  <div class="metrics-row">
-    <div class="metric-card">
-      <span class="metric-value">{$catalogCount}</span>
-      <span class="metric-label">Catalog Apps</span>
+  <div class="grid grid-cols-[repeat(auto-fit,minmax(8rem,1fr))] gap-[0.6rem]">
+    <div class="text-center p-[0.7rem] rounded-2xl border border-black/10 dark:border-white/10 bg-white/50 dark:bg-black/50">
+      <span class="block text-[1.5rem] font-bold text-black dark:text-white">{$catalogCount}</span>
+      <span class="block text-[0.68rem] uppercase tracking-[0.1em] text-gray-500 mt-[0.15rem]">Catalog Apps</span>
     </div>
-    <div class="metric-card">
-      <span class="metric-value">{$runningCount}</span>
-      <span class="metric-label">Running Apps</span>
+    <div class="text-center p-[0.7rem] rounded-2xl border border-black/10 dark:border-white/10 bg-white/50 dark:bg-black/50">
+      <span class="block text-[1.5rem] font-bold text-black dark:text-white">{$runningCount}</span>
+      <span class="block text-[0.68rem] uppercase tracking-[0.1em] text-gray-500 mt-[0.15rem]">Running Apps</span>
     </div>
-    <div class="metric-card">
-      <span class="metric-value">{agentTools.length}</span>
-      <span class="metric-label">Agent Tools</span>
+    <div class="text-center p-[0.7rem] rounded-2xl border border-black/10 dark:border-white/10 bg-white/50 dark:bg-black/50">
+      <span class="block text-[1.5rem] font-bold text-black dark:text-white">{agentTools.length}</span>
+      <span class="block text-[0.68rem] uppercase tracking-[0.1em] text-gray-500 mt-[0.15rem]">Agent Tools</span>
     </div>
-    <div class="metric-card">
-      <span class="metric-value">{providers.length}</span>
-      <span class="metric-label">LLM Providers</span>
+    <div class="text-center p-[0.7rem] rounded-2xl border border-black/10 dark:border-white/10 bg-white/50 dark:bg-black/50">
+      <span class="block text-[1.5rem] font-bold text-black dark:text-white">{providers.length}</span>
+      <span class="block text-[0.68rem] uppercase tracking-[0.1em] text-gray-500 mt-[0.15rem]">LLM Providers</span>
     </div>
   </div>
 
   <!-- Resources -->
   {#if $resourceUsage}
-    <div class="resources-row">
-      <div class="resource-card">
-        <div class="res-header">
-          <span>Memory</span>
-          <strong>{$resourceUsage.memory_percent}%</strong>
+    <div class="grid grid-cols-2 gap-[0.6rem]">
+      <div class="p-[0.85rem] rounded-2xl border border-black/10 dark:border-white/10 bg-white/50 dark:bg-black/50 grid gap-[0.35rem]">
+        <div class="flex justify-between items-center">
+          <span class="text-[0.82rem] font-semibold">Memory</span>
+          <strong class="text-[1.1rem]">{$resourceUsage.memory_percent}%</strong>
         </div>
-        <div class={`res-bar ${usageTone($resourceUsage.memory_percent)}`} style:--fill={`${$resourceUsage.memory_percent}%`}><span></span></div>
-        <span class="res-detail">{formatBytes($resourceUsage.memory_used_bytes)} / {formatBytes($resourceUsage.memory_total_bytes)}</span>
+        <div class="h-[0.45rem] rounded-full bg-black/10 dark:bg-white/10 overflow-hidden" style:--fill={`${$resourceUsage.memory_percent}%`}>
+          <span class="block h-full rounded-[inherit] {usageTone($resourceUsage.memory_percent) === 'danger' ? 'bg-linear-to-r from-yellow-500 to-red-500' : usageTone($resourceUsage.memory_percent) === 'warning' ? 'bg-linear-to-r from-yellow-500 to-blue-500' : 'bg-linear-to-r from-green-500 to-blue-500'}" style="width: var(--fill)"></span>
+        </div>
+        <span class="text-[0.72rem] text-gray-500">{formatBytes($resourceUsage.memory_used_bytes)} / {formatBytes($resourceUsage.memory_total_bytes)}</span>
       </div>
-      <div class="resource-card">
-        <div class="res-header">
-          <span>Disk</span>
-          <strong>{$resourceUsage.disk_percent}%</strong>
+      <div class="p-[0.85rem] rounded-2xl border border-black/10 dark:border-white/10 bg-white/50 dark:bg-black/50 grid gap-[0.35rem]">
+        <div class="flex justify-between items-center">
+          <span class="text-[0.82rem] font-semibold">Disk</span>
+          <strong class="text-[1.1rem]">{$resourceUsage.disk_percent}%</strong>
         </div>
-        <div class={`res-bar ${usageTone($resourceUsage.disk_percent)}`} style:--fill={`${$resourceUsage.disk_percent}%`}><span></span></div>
-        <span class="res-detail">{formatBytes($resourceUsage.disk_used_bytes)} / {formatBytes($resourceUsage.disk_total_bytes)}</span>
+        <div class="h-[0.45rem] rounded-full bg-black/10 dark:bg-white/10 overflow-hidden" style:--fill={`${$resourceUsage.disk_percent}%`}>
+          <span class="block h-full rounded-[inherit] {usageTone($resourceUsage.disk_percent) === 'danger' ? 'bg-linear-to-r from-yellow-500 to-red-500' : usageTone($resourceUsage.disk_percent) === 'warning' ? 'bg-linear-to-r from-yellow-500 to-blue-500' : 'bg-linear-to-r from-green-500 to-blue-500'}" style="width: var(--fill)"></span>
+        </div>
+        <span class="text-[0.72rem] text-gray-500">{formatBytes($resourceUsage.disk_used_bytes)} / {formatBytes($resourceUsage.disk_total_bytes)}</span>
       </div>
     </div>
   {/if}
 
   <!-- Quick Actions -->
-  <div class="actions-section">
-    <h3>Quick Actions</h3>
-    <div class="actions-grid">
-      <button class="action-card" onclick={() => selectLauncherSection("chat")}>
-        <span>💬</span><strong>Chat</strong><span class="act-desc">Talk to the agent</span>
+  <div class="grid gap-[0.6rem]">
+    <h3 class="mt-[0.3rem] mb-0 text-lg font-bold">Quick Actions</h3>
+    <div class="grid grid-cols-[repeat(auto-fill,minmax(8rem,1fr))] gap-[0.5rem]">
+      <button class="flex flex-col items-center gap-[0.25rem] py-[0.85rem] px-[0.5rem] rounded-2xl border border-black/10 dark:border-white/10 bg-white/50 dark:bg-black/50 cursor-pointer transition-all duration-150 text-center text-black dark:text-white hover:border-blue-500/35 hover:-translate-y-[2px] hover:shadow-[0_4px_12px_rgba(0,0,0,0.1)]" onclick={() => selectLauncherSection("chat")}>
+        <span class="text-[1.5rem]">💬</span><strong class="text-[0.78rem]">Chat</strong><span class="text-[0.65rem] text-gray-500">Talk to the agent</span>
       </button>
-      <button class="action-card" onclick={() => selectLauncherSection("model-settings")}>
-        <span>🤖</span><strong>Models</strong><span class="act-desc">Configure LLM</span>
+      <button class="flex flex-col items-center gap-[0.25rem] py-[0.85rem] px-[0.5rem] rounded-2xl border border-black/10 dark:border-white/10 bg-white/50 dark:bg-black/50 cursor-pointer transition-all duration-150 text-center text-black dark:text-white hover:border-blue-500/35 hover:-translate-y-[2px] hover:shadow-[0_4px_12px_rgba(0,0,0,0.1)]" onclick={() => selectLauncherSection("model-settings")}>
+        <span class="text-[1.5rem]">🤖</span><strong class="text-[0.78rem]">Models</strong><span class="text-[0.65rem] text-gray-500">Configure LLM</span>
       </button>
-      <button class="action-card" onclick={() => selectLauncherSection("plugins")}>
-        <span>🧩</span><strong>Plugins</strong><span class="act-desc">Manage extensions</span>
+      <button class="flex flex-col items-center gap-[0.25rem] py-[0.85rem] px-[0.5rem] rounded-2xl border border-black/10 dark:border-white/10 bg-white/50 dark:bg-black/50 cursor-pointer transition-all duration-150 text-center text-black dark:text-white hover:border-blue-500/35 hover:-translate-y-[2px] hover:shadow-[0_4px_12px_rgba(0,0,0,0.1)]" onclick={() => selectLauncherSection("plugins")}>
+        <span class="text-[1.5rem]">🧩</span><strong class="text-[0.78rem]">Plugins</strong><span class="text-[0.65rem] text-gray-500">Manage extensions</span>
       </button>
-      <button class="action-card" onclick={() => selectLauncherSection("channels")}>
-        <span>📡</span><strong>Channels</strong><span class="act-desc">Gateway status</span>
+      <button class="flex flex-col items-center gap-[0.25rem] py-[0.85rem] px-[0.5rem] rounded-2xl border border-black/10 dark:border-white/10 bg-white/50 dark:bg-black/50 cursor-pointer transition-all duration-150 text-center text-black dark:text-white hover:border-blue-500/35 hover:-translate-y-[2px] hover:shadow-[0_4px_12px_rgba(0,0,0,0.1)]" onclick={() => selectLauncherSection("channels")}>
+        <span class="text-[1.5rem]">📡</span><strong class="text-[0.78rem]">Channels</strong><span class="text-[0.65rem] text-gray-500">Gateway status</span>
       </button>
-      <button class="action-card" onclick={() => selectLauncherSection("mcp-tools")}>
-        <span>🔧</span><strong>MCP Tools</strong><span class="act-desc">Browse tools</span>
+      <button class="flex flex-col items-center gap-[0.25rem] py-[0.85rem] px-[0.5rem] rounded-2xl border border-black/10 dark:border-white/10 bg-white/50 dark:bg-black/50 cursor-pointer transition-all duration-150 text-center text-black dark:text-white hover:border-blue-500/35 hover:-translate-y-[2px] hover:shadow-[0_4px_12px_rgba(0,0,0,0.1)]" onclick={() => selectLauncherSection("mcp-tools")}>
+        <span class="text-[1.5rem]">🔧</span><strong class="text-[0.78rem]">MCP Tools</strong><span class="text-[0.65rem] text-gray-500">Browse tools</span>
       </button>
-      <button class="action-card" onclick={() => selectLauncherSection("skills")}>
-        <span>📘</span><strong>Skills</strong><span class="act-desc">Skill library</span>
+      <button class="flex flex-col items-center gap-[0.25rem] py-[0.85rem] px-[0.5rem] rounded-2xl border border-black/10 dark:border-white/10 bg-white/50 dark:bg-black/50 cursor-pointer transition-all duration-150 text-center text-black dark:text-white hover:border-blue-500/35 hover:-translate-y-[2px] hover:shadow-[0_4px_12px_rgba(0,0,0,0.1)]" onclick={() => selectLauncherSection("skills")}>
+        <span class="text-[1.5rem]">📘</span><strong class="text-[0.78rem]">Skills</strong><span class="text-[0.65rem] text-gray-500">Skill library</span>
       </button>
-      <button class="action-card" onclick={() => selectLauncherSection("knowledge")}>
-        <span>🧠</span><strong>Knowledge</strong><span class="act-desc">Agent memory</span>
+      <button class="flex flex-col items-center gap-[0.25rem] py-[0.85rem] px-[0.5rem] rounded-2xl border border-black/10 dark:border-white/10 bg-white/50 dark:bg-black/50 cursor-pointer transition-all duration-150 text-center text-black dark:text-white hover:border-blue-500/35 hover:-translate-y-[2px] hover:shadow-[0_4px_12px_rgba(0,0,0,0.1)]" onclick={() => selectLauncherSection("knowledge")}>
+        <span class="text-[1.5rem]">🧠</span><strong class="text-[0.78rem]">Knowledge</strong><span class="text-[0.65rem] text-gray-500">Agent memory</span>
       </button>
-      <button class="action-card" onclick={() => selectLauncherSection("code-editor")}>
-        <span>💻</span><strong>IDE</strong><span class="act-desc">Code editor</span>
+      <button class="flex flex-col items-center gap-[0.25rem] py-[0.85rem] px-[0.5rem] rounded-2xl border border-black/10 dark:border-white/10 bg-white/50 dark:bg-black/50 cursor-pointer transition-all duration-150 text-center text-black dark:text-white hover:border-blue-500/35 hover:-translate-y-[2px] hover:shadow-[0_4px_12px_rgba(0,0,0,0.1)]" onclick={() => selectLauncherSection("code-editor")}>
+        <span class="text-[1.5rem]">💻</span><strong class="text-[0.78rem]">IDE</strong><span class="text-[0.65rem] text-gray-500">Code editor</span>
       </button>
     </div>
   </div>
 
   <!-- System Info -->
   {#if $systemInfo}
-    <div class="system-footer">
+    <div class="flex gap-[0.5rem] items-center justify-center text-[0.72rem] text-gray-500 pt-[0.5rem] border-t border-black/10 dark:border-white/10">
       <span>NDE-OS v0.2.0</span>
       <span>·</span>
       <span>{$systemInfo.os}/{$systemInfo.arch}</span>
@@ -172,59 +176,6 @@
       <span>Python: {$systemInfo.python_version ?? "N/A"}</span>
     </div>
   {/if}
-</section>
-
-<style>
-  .cc-app { height: 100%; overflow: auto; padding: 1.1rem; display: grid; gap: 1rem; align-content: start; }
-  .cc-header { display: flex; justify-content: space-between; align-items: center; }
-  .eyebrow { margin: 0; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.14em; color: var(--system-color-text-muted); }
-  h2, h3 { margin: 0.3rem 0 0; }
-  .refresh-btn {
-    border-radius: 999px; padding: 0.5rem 0.9rem; font-size: 0.82rem; cursor: pointer;
-    border: 1px solid var(--system-color-border); background: var(--system-color-panel); color: var(--system-color-text);
-  }
-  .status-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); gap: 0.6rem; }
-  .status-card {
-    display: flex; align-items: center; gap: 0.55rem; padding: 0.75rem 0.85rem;
-    border-radius: 1rem; border: 1px solid var(--system-color-border); background: var(--system-color-panel); text-align: left;
-  }
-  .status-card.clickable { cursor: pointer; transition: all 0.15s; }
-  .status-card.clickable:hover { border-color: hsla(var(--system-color-primary-hsl) / 0.3); transform: translateY(-1px); }
-  .status-card div { display: flex; flex-direction: column; }
-  .status-card strong { font-size: 0.82rem; }
-  .status-card span:not(.s-dot):not(.s-icon) { font-size: 0.7rem; color: var(--system-color-text-muted); }
-  .s-dot { width: 0.55rem; height: 0.55rem; border-radius: 50%; background: var(--system-color-danger); flex-shrink: 0; }
-  .s-dot.active { background: var(--system-color-success); box-shadow: 0 0 6px hsla(160 60% 50% / 0.5); }
-  .s-icon { font-size: 1.3rem; }
-  .metrics-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr)); gap: 0.6rem; }
-  .metric-card { text-align: center; padding: 0.7rem; border-radius: 1rem; border: 1px solid var(--system-color-border); background: var(--system-color-panel); }
-  .metric-value { display: block; font-size: 1.5rem; font-weight: 700; color: var(--system-color-text); }
-  .metric-label { display: block; font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--system-color-text-muted); margin-top: 0.15rem; }
-  .resources-row { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; }
-  .resource-card { padding: 0.85rem; border-radius: 1rem; border: 1px solid var(--system-color-border); background: var(--system-color-panel); display: grid; gap: 0.35rem; }
-  .res-header { display: flex; justify-content: space-between; align-items: center; }
-  .res-header span { font-size: 0.82rem; font-weight: 600; }
-  .res-header strong { font-size: 1.1rem; }
-  .res-bar { --fill: 0%; height: 0.45rem; border-radius: 999px; background: hsla(var(--system-color-dark-hsl) / 0.08); overflow: hidden; }
-  .res-bar span { display: block; width: var(--fill); height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--system-color-success), var(--system-color-primary)); }
-  .res-bar.warning span { background: linear-gradient(90deg, var(--system-color-warning), var(--system-color-primary)); }
-  .res-bar.danger span { background: linear-gradient(90deg, var(--system-color-warning), var(--system-color-danger)); }
-  .res-detail { font-size: 0.72rem; color: var(--system-color-text-muted); }
-  .actions-section { display: grid; gap: 0.6rem; }
-  .actions-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(8rem, 1fr)); gap: 0.5rem; }
-  .action-card {
-    display: flex; flex-direction: column; align-items: center; gap: 0.25rem;
-    padding: 0.85rem 0.5rem; border-radius: 1rem; border: 1px solid var(--system-color-border);
-    background: var(--system-color-panel); cursor: pointer; transition: all 0.15s; text-align: center;
-    color: var(--system-color-text);
-  }
-  .action-card:hover { border-color: hsla(var(--system-color-primary-hsl) / 0.35); transform: translateY(-2px); box-shadow: 0 4px 12px hsla(0 0% 0% / 0.1); }
-  .action-card span:first-child { font-size: 1.5rem; }
-  .action-card strong { font-size: 0.78rem; }
-  .act-desc { font-size: 0.65rem; color: var(--system-color-text-muted); }
-  .system-footer {
-    display: flex; gap: 0.5rem; align-items: center; justify-content: center;
-    font-size: 0.72rem; color: var(--system-color-text-muted); padding-top: 0.5rem;
-    border-top: 1px solid var(--system-color-border);
+</section>id var(--system-color-border);
   }
 </style>

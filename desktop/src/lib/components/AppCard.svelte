@@ -64,115 +64,52 @@
   }
 </script>
 
-<div class="card" class:running={isRunning}>
-  <div class="card-header">
-    <span class="icon">{icon}</span>
-    <div class="info">
-      <div class="name">{app.name}</div>
-      <div class="desc">{app.description}</div>
+<div class="bg-white/50 dark:bg-black/50 border border-black/10 dark:border-white/10 rounded-2xl p-4 transition-all duration-200 {isRunning ? 'border-green-500 shadow-[0_0_0_1px_rgba(34,197,94,0.15)]' : 'hover:border-black/20 dark:hover:border-white/20'}">
+  <div class="flex items-start gap-3">
+    <span class="text-[28px] leading-none shrink-0 mt-0.5">{icon}</span>
+    <div class="flex-1 min-w-0">
+      <div class="font-semibold text-[14px] text-black dark:text-white">{app.name}</div>
+      <div class="text-[12px] text-gray-500 dark:text-gray-400 mt-0.5 leading-snug">{app.description}</div>
     </div>
-    <div class="status-badge" class:status-running={isRunning} class:status-installed={isInstalled && !isRunning} class:status-none={!isInstalled}>
+    
+    <div class="text-[11px] font-medium px-2 py-[3px] rounded-xl whitespace-nowrap flex items-center gap-1 {isRunning ? 'bg-green-500/15 text-green-600 dark:text-green-400' : isInstalled ? 'bg-blue-500/15 text-blue-600 dark:text-blue-400' : 'bg-black/5 dark:bg-white/5 text-gray-500 dark:text-gray-400'}">
       {#if isRunning}
-        <span class="dot dot-running"></span> Running
+        <span class="w-1.5 h-1.5 rounded-full inline-block bg-green-500 shadow-[0_0_6px_rgba(34,197,94,0.8)]"></span> Running
       {:else if isInstalled}
-        <span class="dot dot-installed"></span> Installed
+        <span class="w-1.5 h-1.5 rounded-full inline-block bg-blue-500"></span> Installed
       {:else}
         Available
       {/if}
     </div>
   </div>
 
-  <div class="meta">
+  <div class="flex flex-wrap gap-1.5 mt-2.5">
     {#each app.tags as tag}
-      <span class="tag">{tag}</span>
+      <span class="text-[10px] font-medium px-1.5 py-0.5 rounded bg-purple-500/10 text-purple-600 dark:text-purple-400 font-mono">{tag}</span>
     {/each}
     {#if app.needs_gpu}
-      <span class="tag tag-gpu">GPU</span>
+      <span class="text-[10px] font-medium px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-600 dark:text-amber-400 font-mono">GPU</span>
     {/if}
-    <span class="tag tag-size">{app.disk_size}</span>
+    <span class="text-[10px] font-medium px-1.5 py-0.5 rounded bg-black/5 dark:bg-white/5 text-gray-500 font-mono">{app.disk_size}</span>
   </div>
 
   {#if errorMsg}
-    <div class="error">{errorMsg}</div>
+    <div class="mt-2 text-[11px] text-red-500 bg-red-500/10 px-2.5 py-1.5 rounded font-mono">{errorMsg}</div>
   {/if}
 
-  <div class="actions">
+  <div class="flex gap-1.5 mt-3">
     {#if loading}
-      <button class="btn btn-disabled" disabled>
+      <button class="text-[12px] font-medium px-3.5 py-1.5 rounded bg-black/5 dark:bg-white/5 text-gray-500 cursor-not-allowed flex items-center gap-1" disabled>
         <span class="animate-spin">⏳</span> Working...
       </button>
     {:else if isRunning}
-      <button class="btn btn-open" onclick={handleOpen}>🌐 Open</button>
-      <button class="btn btn-stop" onclick={handleStop}>⏹ Stop</button>
+      <button class="text-[12px] font-medium px-3.5 py-1.5 rounded bg-blue-500 text-white flex items-center gap-1 hover:bg-blue-600 transition-colors active:scale-95" onclick={handleOpen}>🌐 Open</button>
+      <button class="text-[12px] font-medium px-3.5 py-1.5 rounded bg-amber-500 text-black flex items-center gap-1 hover:bg-amber-600 transition-colors active:scale-95" onclick={handleStop}>⏹ Stop</button>
     {:else if isInstalled}
-      <button class="btn btn-launch" onclick={handleLaunch}>▶ Launch</button>
-      <button class="btn btn-danger" onclick={handleUninstall}>🗑 Uninstall</button>
+      <button class="text-[12px] font-medium px-3.5 py-1.5 rounded bg-green-500 text-white flex items-center gap-1 hover:bg-green-600 transition-colors active:scale-95" onclick={handleLaunch}>▶ Launch</button>
+      <button class="text-[12px] font-medium px-3.5 py-1.5 rounded bg-transparent border border-black/10 dark:border-white/10 text-gray-500 flex items-center gap-1 hover:bg-red-500/10 hover:text-red-500 hover:border-red-500 transition-colors active:scale-95" onclick={handleUninstall}>🗑 Uninstall</button>
     {:else}
-      <button class="btn btn-install" onclick={handleInstall}>⬇ Install</button>
+      <button class="text-[12px] font-medium px-3.5 py-1.5 rounded bg-purple-500 text-white flex items-center gap-1 hover:bg-purple-600 transition-colors active:scale-95" onclick={handleInstall}>⬇ Install</button>
     {/if}
   </div>
 </div>
-
-<style>
-  .card {
-    background: var(--color-surface);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius);
-    padding: 16px;
-    transition: border-color 0.2s, box-shadow 0.2s;
-  }
-  .card:hover { border-color: var(--color-border-hover); }
-  .card.running { border-color: var(--color-success); box-shadow: 0 0 0 1px rgba(34,197,94,0.15); }
-
-  .card-header { display: flex; align-items: flex-start; gap: 12px; }
-  .icon { font-size: 28px; line-height: 1; flex-shrink: 0; margin-top: 2px; }
-  .info { flex: 1; min-width: 0; }
-  .name { font-weight: 600; font-size: 14px; color: var(--color-text); }
-  .desc { font-size: 12px; color: var(--color-text-dim); margin-top: 2px; line-height: 1.4; }
-
-  .status-badge {
-    font-size: 11px; font-weight: 500; padding: 3px 8px;
-    border-radius: 12px; white-space: nowrap; display: flex; align-items: center; gap: 4px;
-  }
-  .status-running { background: rgba(34,197,94,0.12); color: var(--color-success); }
-  .status-installed { background: rgba(59,130,246,0.12); color: var(--color-info); }
-  .status-none { background: rgba(161,161,170,0.1); color: var(--color-text-muted); }
-
-  .dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; }
-  .dot-running { background: var(--color-success); box-shadow: 0 0 6px var(--color-success); }
-  .dot-installed { background: var(--color-info); }
-
-  .meta { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
-  .tag {
-    font-size: 10px; font-weight: 500; padding: 2px 7px; border-radius: 4px;
-    background: rgba(139,92,246,0.1); color: var(--color-accent);
-    font-family: var(--font-mono);
-  }
-  .tag-gpu { background: rgba(245,158,11,0.12); color: var(--color-warning); }
-  .tag-size { background: rgba(161,161,170,0.08); color: var(--color-text-muted); }
-
-  .error {
-    margin-top: 8px; font-size: 11px; color: var(--color-danger);
-    background: rgba(239,68,68,0.08); padding: 6px 10px; border-radius: 4px;
-    font-family: var(--font-mono);
-  }
-
-  .actions { display: flex; gap: 6px; margin-top: 12px; }
-  .btn {
-    font-size: 12px; font-weight: 500; padding: 6px 14px; border-radius: 6px;
-    border: none; cursor: pointer; display: flex; align-items: center; gap: 4px;
-    transition: background 0.15s, transform 0.1s;
-  }
-  .btn:active { transform: scale(0.97); }
-  .btn-install { background: var(--color-accent); color: white; }
-  .btn-install:hover { background: var(--color-accent-hover); }
-  .btn-launch { background: var(--color-success); color: white; }
-  .btn-launch:hover { background: #16a34a; }
-  .btn-open { background: var(--color-info); color: white; }
-  .btn-open:hover { background: #2563eb; }
-  .btn-stop { background: var(--color-warning); color: #000; }
-  .btn-stop:hover { background: #d97706; }
-  .btn-danger { background: transparent; color: var(--color-text-muted); border: 1px solid var(--color-border); }
-  .btn-danger:hover { background: rgba(239,68,68,0.1); color: var(--color-danger); border-color: var(--color-danger); }
-  .btn-disabled { background: var(--color-surface-hover); color: var(--color-text-muted); cursor: not-allowed; }
-</style>

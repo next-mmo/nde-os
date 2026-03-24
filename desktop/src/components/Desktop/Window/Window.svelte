@@ -147,9 +147,7 @@
 
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 <section
-  class="window"
-  class:active={isActive}
-  class:fullscreen={window.fullscreen}
+  class="absolute grid grid-rows-[auto_1fr] rounded-xl overflow-hidden border border-black/10 dark:border-white/10 bg-white/50 dark:bg-gray-800/50 backdrop-blur-[26px] shadow-[0_16px_36px_rgba(0,0,0,0.22),0_48px_96px_rgba(0,0,0,0.18)] transition-shadow {isActive ? '!shadow-[0_20px_44px_rgba(0,0,0,0.3),0_56px_120px_rgba(0,0,0,0.24)] ring-1 ring-black/5 dark:ring-white/10' : ''} {window.fullscreen ? 'top-6! left-6! w-[calc(100vw-48px)]! h-[calc(100vh-126px)]! transform-none!' : ''}"
   data-window={window.app_id}
   aria-label={window.title}
   tabindex="-1"
@@ -175,148 +173,30 @@
   ])}
 >
   <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <header class="window-chrome window-drag-handle" ondblclick={handleTitleBarDblClick}>
+  <header class="window-drag-handle grid grid-cols-[auto_1fr_auto] items-center gap-4 px-4 pt-[0.9rem] pb-[0.7rem] bg-linear-to-b from-white/90 to-white/60 dark:from-gray-700/90 dark:to-gray-800/70 border-b border-black/10 dark:border-white/10" ondblclick={handleTitleBarDblClick}>
     <TrafficLights {window} />
-    <div class="window-title">
-      <strong>{windowTitle}</strong>
+    <div class="grid justify-items-center text-center gap-[0.08rem]">
+      <strong class="text-[0.9rem] font-semibold text-gray-900 dark:text-gray-100">{windowTitle}</strong>
       {#if window.session_id}
-        <span>localhost session</span>
+        <span class="text-[0.72rem] text-gray-500 dark:text-gray-400">localhost session</span>
       {/if}
     </div>
-    <div class="window-accent"></div>
+    <div class="w-8"></div>
   </header>
 
-  <div class="window-body" class:dragging={isDragging} class:resizing={isResizing}>
+  <div class="min-h-0 bg-gradient-to-b from-white/75 to-white/90 dark:from-gray-800/95 dark:to-gray-900/95 {isDragging || isResizing ? 'pointer-events-none' : ''}">
     <AppNexus {window} />
   </div>
 
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   {#if window.resizable && !window.fullscreen}
-    <div class="resize-handle resize-n" onpointerdown={(e: PointerEvent) => startResize(e, 'n')}></div>
-    <div class="resize-handle resize-s" onpointerdown={(e: PointerEvent) => startResize(e, 's')}></div>
-    <div class="resize-handle resize-e" onpointerdown={(e: PointerEvent) => startResize(e, 'e')}></div>
-    <div class="resize-handle resize-w" onpointerdown={(e: PointerEvent) => startResize(e, 'w')}></div>
-    <div class="resize-handle resize-ne" onpointerdown={(e: PointerEvent) => startResize(e, 'ne')}></div>
-    <div class="resize-handle resize-nw" onpointerdown={(e: PointerEvent) => startResize(e, 'nw')}></div>
-    <div class="resize-handle resize-se" onpointerdown={(e: PointerEvent) => startResize(e, 'se')}></div>
-    <div class="resize-handle resize-sw" onpointerdown={(e: PointerEvent) => startResize(e, 'sw')}></div>
+    <div class="absolute z-20 cursor-ns-resize -top-[3px] left-2 right-2 h-[6px]" onpointerdown={(e: PointerEvent) => startResize(e, 'n')}></div>
+    <div class="absolute z-20 cursor-ns-resize -bottom-[3px] left-2 right-2 h-[6px]" onpointerdown={(e: PointerEvent) => startResize(e, 's')}></div>
+    <div class="absolute z-20 cursor-ew-resize -right-[3px] top-2 bottom-2 w-[6px]" onpointerdown={(e: PointerEvent) => startResize(e, 'e')}></div>
+    <div class="absolute z-20 cursor-ew-resize -left-[3px] top-2 bottom-2 w-[6px]" onpointerdown={(e: PointerEvent) => startResize(e, 'w')}></div>
+    <div class="absolute z-20 cursor-nesw-resize -top-[3px] -right-[3px] w-[14px] h-[14px]" onpointerdown={(e: PointerEvent) => startResize(e, 'ne')}></div>
+    <div class="absolute z-20 cursor-nwse-resize -top-[3px] -left-[3px] w-[14px] h-[14px]" onpointerdown={(e: PointerEvent) => startResize(e, 'nw')}></div>
+    <div class="absolute z-20 cursor-nwse-resize -bottom-[3px] -right-[3px] w-[14px] h-[14px]" onpointerdown={(e: PointerEvent) => startResize(e, 'se')}></div>
+    <div class="absolute z-20 cursor-nesw-resize -bottom-[3px] -left-[3px] w-[14px] h-[14px]" onpointerdown={(e: PointerEvent) => startResize(e, 'sw')}></div>
   {/if}
 </section>
-
-<style>
-  .window {
-    position: absolute;
-    display: grid;
-    grid-template-rows: auto 1fr;
-    border-radius: var(--system-radius-window);
-    overflow: hidden;
-    border: 1px solid var(--system-color-border);
-    background: var(--system-color-surface);
-    box-shadow:
-      0 16px 36px hsla(220 30% 10% / 0.22),
-      0 48px 96px hsla(220 32% 8% / 0.18);
-    backdrop-filter: blur(26px);
-  }
-
-  .window.active {
-    box-shadow:
-      0 20px 44px hsla(220 32% 10% / 0.3),
-      0 56px 120px hsla(220 32% 8% / 0.24);
-  }
-
-  .window.fullscreen {
-    top: 24px !important;
-    left: 24px !important;
-    width: calc(100vw - 48px) !important;
-    height: calc(100vh - 126px) !important;
-    transform: none !important;
-  }
-
-  .window-chrome {
-    display: grid;
-    grid-template-columns: auto 1fr auto;
-    align-items: center;
-    gap: 1rem;
-    padding: 0.9rem 1rem 0.7rem;
-    background: linear-gradient(180deg, hsla(var(--system-color-light-hsl) / 0.92), hsla(var(--system-color-light-hsl) / 0.6));
-    border-bottom: 1px solid var(--system-color-border);
-  }
-
-  :global(body.dark) .window-chrome {
-    background: linear-gradient(180deg, hsla(225 12% 24% / 0.96), hsla(225 12% 20% / 0.7));
-  }
-
-  .window-title {
-    display: grid;
-    justify-items: center;
-    text-align: center;
-    gap: 0.08rem;
-  }
-
-  .window-title strong {
-    font-size: 0.9rem;
-    font-weight: 600;
-  }
-
-  .window-title span {
-    font-size: 0.72rem;
-    color: var(--system-color-text-muted);
-  }
-
-  .window-accent {
-    width: 2rem;
-  }
-
-  .window-body {
-    min-height: 0;
-    background: linear-gradient(180deg, hsla(var(--system-color-light-hsl) / 0.76), hsla(var(--system-color-light-hsl) / 0.92));
-  }
-
-  .window-body.dragging :global(iframe),
-  .window-body.resizing :global(iframe) {
-    pointer-events: none;
-  }
-
-  :global(body.dark) .window-body {
-    background: linear-gradient(180deg, hsla(225 16% 17% / 0.96), hsla(225 16% 14% / 0.96));
-  }
-
-  /* ── Resize handles ── */
-  .resize-handle {
-    position: absolute;
-    z-index: 20;
-  }
-
-  .resize-n {
-    top: -3px; left: 8px; right: 8px; height: 6px;
-    cursor: ns-resize;
-  }
-  .resize-s {
-    bottom: -3px; left: 8px; right: 8px; height: 6px;
-    cursor: ns-resize;
-  }
-  .resize-e {
-    right: -3px; top: 8px; bottom: 8px; width: 6px;
-    cursor: ew-resize;
-  }
-  .resize-w {
-    left: -3px; top: 8px; bottom: 8px; width: 6px;
-    cursor: ew-resize;
-  }
-  .resize-ne {
-    top: -3px; right: -3px; width: 14px; height: 14px;
-    cursor: nesw-resize;
-  }
-  .resize-nw {
-    top: -3px; left: -3px; width: 14px; height: 14px;
-    cursor: nwse-resize;
-  }
-  .resize-se {
-    bottom: -3px; right: -3px; width: 14px; height: 14px;
-    cursor: nwse-resize;
-  }
-  .resize-sw {
-    bottom: -3px; left: -3px; width: 14px; height: 14px;
-    cursor: nesw-resize;
-  }
-</style>

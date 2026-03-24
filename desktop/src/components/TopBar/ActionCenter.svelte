@@ -20,9 +20,9 @@
   function hide() { visible = false; }
 </script>
 
-<div class="ac-container" use:click_outside={hide}>
+<div class="relative h-full" use:click_outside={hide}>
   <button
-    class="ac-toggle"
+    class="h-full w-max px-2 rounded flex items-center text-black dark:text-white relative before:absolute before:inset-0 before:-z-10 before:rounded before:scale-[var(--scale)] before:origin-center before:transition-transform before:duration-100 before:bg-black/15 dark:before:bg-white/15"
     style:--scale={visible ? 1 : 0}
     onclick={show}
     onfocus={show}
@@ -37,75 +37,75 @@
   </button>
 
   {#if visible}
-    <div class="ac-panel" use:elevation={"action-center-panel"} class:dark={isDark}>
+    <div class="absolute right-0 mt-[5px] z-[9999] w-[18rem] flex flex-col gap-[0.6rem] p-[0.6rem] bg-white/35 dark:bg-black/35 backdrop-blur-[25px] rounded-[0.85rem] shadow-[0_0_14px_rgba(0,0,0,0.3)] dark:shadow-[inset_0_0_0_0.5px_rgba(255,255,255,0.1),0_0_14px_rgba(0,0,0,0.3)] select-none" use:elevation={"action-center-panel"}>
       <!-- Server Status -->
-      <div class="ac-surface">
-        <div class="ac-tile" class:online={$healthStatus === "online"}>
-          <span class="status-dot"></span>
-          <div class="tile-label">
-            <strong>{$healthStatus === "online" ? "Server Online" : "Server Offline"}</strong>
-            <span>localhost:8080</span>
+      <div class="p-2.5 rounded-[0.65rem] bg-white/50 dark:bg-black/50 shadow-[0_1px_4px_-1px_rgba(0,0,0,0.15)]">
+        <div class="flex gap-2 items-center">
+          <span class="w-[0.55rem] h-[0.55rem] rounded-full shrink-0 {$healthStatus === 'online' ? 'bg-green-500' : 'bg-red-500'}"></span>
+          <div class="flex flex-col gap-[0.05rem]">
+            <strong class="text-[0.82rem] font-semibold text-black dark:text-white">{$healthStatus === "online" ? "Server Online" : "Server Offline"}</strong>
+            <span class="text-[0.72rem] text-gray-500 dark:text-gray-400">localhost:8080</span>
           </div>
         </div>
       </div>
 
       <!-- Settings Row: Dark Mode + Auto Hide -->
-      <div class="ac-surface row">
-        <button class="ac-tile clickable flex-half" onclick={toggleTheme}>
-          <span class="toggle-icon" class:filled={isDark}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M21 12.79A9 9 0 1 1 11.21 3a7 7 0 0 0 9.79 9.79z"/></svg>
+      <div class="p-2.5 rounded-[0.65rem] bg-white/50 dark:bg-black/50 shadow-[0_1px_4px_-1px_rgba(0,0,0,0.15)] flex gap-1.5">
+        <button class="flex gap-2 items-center w-full rounded-lg p-1 transition-colors flex-1 hover:bg-black/5 dark:hover:bg-white/5" onclick={toggleTheme}>
+          <span class="flex justify-center items-center rounded-full shrink-0 w-[1.6rem] h-[1.6rem] transition-colors {isDark ? 'bg-blue-500 text-white' : 'bg-black/10 dark:bg-white/10 text-gray-500 dark:text-gray-400'}">
+            <svg class="w-[0.85rem] h-[0.85rem] {isDark ? 'text-white' : 'text-gray-500 dark:text-gray-400'}" viewBox="0 0 24 24" fill="currentColor"><path d="M21 12.79A9 9 0 1 1 11.21 3a7 7 0 0 0 9.79 9.79z"/></svg>
           </span>
-          <span class="tile-text">Dark Mode</span>
+          <span class="text-[0.82rem] font-semibold text-black dark:text-white">Dark Mode</span>
         </button>
 
-        <button class="ac-tile clickable flex-half" onclick={toggleDockAutoHide}>
-          <span class="toggle-icon" class:filled={isDockAutoHide}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M20 3H4c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2Zm0 16H4V5h16v14Zm-4-4h4v2h-4v-2Zm-6 0h4v2h-4v-2ZM4 15h4v2H4v-2Z"/></svg>
+        <button class="flex gap-2 items-center w-full rounded-lg p-1 transition-colors flex-1 hover:bg-black/5 dark:hover:bg-white/5" onclick={toggleDockAutoHide}>
+          <span class="flex justify-center items-center rounded-full shrink-0 w-[1.6rem] h-[1.6rem] transition-colors {isDockAutoHide ? 'bg-blue-500 text-white' : 'bg-black/10 dark:bg-white/10 text-gray-500 dark:text-gray-400'}">
+            <svg class="w-[0.85rem] h-[0.85rem] {isDockAutoHide ? 'text-white' : 'text-gray-500 dark:text-gray-400'}" viewBox="0 0 24 24" fill="currentColor"><path d="M20 3H4c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2Zm0 16H4V5h16v14Zm-4-4h4v2h-4v-2Zm-6 0h4v2h-4v-2ZM4 15h4v2H4v-2Z"/></svg>
           </span>
-          <span class="tile-text">Auto-hide</span>
+          <span class="text-[0.82rem] font-semibold text-black dark:text-white">Auto-hide</span>
         </button>
       </div>
 
       <!-- System Specs -->
       {#if $systemInfo || $resourceUsage}
-        <div class="ac-surface">
-          <div class="spec-header">System</div>
-          <div class="spec-grid">
+        <div class="p-2.5 rounded-[0.65rem] bg-white/50 dark:bg-black/50 shadow-[0_1px_4px_-1px_rgba(0,0,0,0.15)]">
+          <div class="text-[0.68rem] font-bold uppercase tracking-widest text-gray-500 dark:text-gray-400 mb-[0.4rem]">System</div>
+          <div class="flex flex-col gap-1">
             {#if $systemInfo}
-              <div class="spec-row">
-                <span class="spec-icon">💻</span>
-                <span class="spec-key">OS</span>
-                <span class="spec-val">{$systemInfo.os} · {$systemInfo.arch}</span>
+              <div class="flex items-center gap-1.5">
+                <span class="w-[1.1rem] text-[0.75rem] shrink-0 text-center">💻</span>
+                <span class="text-[0.75rem] font-semibold text-black dark:text-white w-11 shrink-0">OS</span>
+                <span class="text-[0.72rem] text-gray-500 dark:text-gray-400 whitespace-nowrap overflow-hidden text-ellipsis">{$systemInfo.os} · {$systemInfo.arch}</span>
               </div>
-              <div class="spec-row">
-                <span class="spec-icon">{$systemInfo.gpu_detected ? '🟢' : '⚪'}</span>
-                <span class="spec-key">GPU</span>
-                <span class="spec-val">{$systemInfo.gpu_detected ? 'Detected' : 'Not found'}</span>
+              <div class="flex items-center gap-1.5">
+                <span class="w-[1.1rem] text-[0.75rem] shrink-0 text-center">{$systemInfo.gpu_detected ? '🟢' : '⚪'}</span>
+                <span class="text-[0.75rem] font-semibold text-black dark:text-white w-11 shrink-0">GPU</span>
+                <span class="text-[0.72rem] text-gray-500 dark:text-gray-400 whitespace-nowrap overflow-hidden text-ellipsis">{$systemInfo.gpu_detected ? 'Detected' : 'Not found'}</span>
               </div>
               {#if $systemInfo.python_version}
-                <div class="spec-row">
-                  <span class="spec-icon">🐍</span>
-                  <span class="spec-key">Python</span>
-                  <span class="spec-val">{$systemInfo.python_version}</span>
+                <div class="flex items-center gap-1.5">
+                  <span class="w-[1.1rem] text-[0.75rem] shrink-0 text-center">🐍</span>
+                  <span class="text-[0.75rem] font-semibold text-black dark:text-white w-11 shrink-0">Python</span>
+                  <span class="text-[0.72rem] text-gray-500 dark:text-gray-400 whitespace-nowrap overflow-hidden text-ellipsis">{$systemInfo.python_version}</span>
                 </div>
               {/if}
             {/if}
             {#if $resourceUsage}
-              <div class="spec-row">
-                <span class="spec-icon">🧠</span>
-                <span class="spec-key">RAM</span>
-                <span class="spec-val">{formatBytes($resourceUsage.memory_used_bytes)} / {formatBytes($resourceUsage.memory_total_bytes)}</span>
+              <div class="flex items-center gap-1.5">
+                <span class="w-[1.1rem] text-[0.75rem] shrink-0 text-center">🧠</span>
+                <span class="text-[0.75rem] font-semibold text-black dark:text-white w-11 shrink-0">RAM</span>
+                <span class="text-[0.72rem] text-gray-500 dark:text-gray-400 whitespace-nowrap overflow-hidden text-ellipsis">{formatBytes($resourceUsage.memory_used_bytes)} / {formatBytes($resourceUsage.memory_total_bytes)}</span>
               </div>
-              <div class="meter-track">
-                <div class="meter-fill" class:warn={$resourceUsage.memory_percent > 80} style:width="{$resourceUsage.memory_percent}%"></div>
+              <div class="h-1 rounded-sm bg-black/10 dark:bg-white/10 ml-6 mt-[0.1rem] mb-[0.15rem] overflow-hidden">
+                <div class="h-full rounded-sm transition-[width] duration-400 {$resourceUsage.memory_percent > 80 ? 'bg-red-500' : 'bg-blue-500'}" style:width="{$resourceUsage.memory_percent}%"></div>
               </div>
-              <div class="spec-row">
-                <span class="spec-icon">💾</span>
-                <span class="spec-key">Disk</span>
-                <span class="spec-val">{formatBytes($resourceUsage.disk_used_bytes)} / {formatBytes($resourceUsage.disk_total_bytes)}</span>
+              <div class="flex items-center gap-1.5">
+                <span class="w-[1.1rem] text-[0.75rem] shrink-0 text-center">💾</span>
+                <span class="text-[0.75rem] font-semibold text-black dark:text-white w-11 shrink-0">Disk</span>
+                <span class="text-[0.72rem] text-gray-500 dark:text-gray-400 whitespace-nowrap overflow-hidden text-ellipsis">{formatBytes($resourceUsage.disk_used_bytes)} / {formatBytes($resourceUsage.disk_total_bytes)}</span>
               </div>
-              <div class="meter-track">
-                <div class="meter-fill" class:warn={$resourceUsage.disk_percent > 85} style:width="{$resourceUsage.disk_percent}%"></div>
+              <div class="h-1 rounded-sm bg-black/10 dark:bg-white/10 ml-6 mt-[0.1rem] mb-[0.15rem] overflow-hidden">
+                <div class="h-full rounded-sm transition-[width] duration-400 {$resourceUsage.disk_percent > 85 ? 'bg-red-500' : 'bg-blue-500'}" style:width="{$resourceUsage.disk_percent}%"></div>
               </div>
             {/if}
           </div>
@@ -113,282 +113,29 @@
       {/if}
 
       <!-- Stats -->
-      <div class="ac-surface">
-        <div class="ac-stat-row">
-          <div class="stat">
-            <span class="stat-value">{$catalogCount}</span>
-            <span class="stat-label">Catalog</span>
+      <div class="p-2.5 rounded-[0.65rem] bg-white/50 dark:bg-black/50 shadow-[0_1px_4px_-1px_rgba(0,0,0,0.15)]">
+        <div class="grid grid-cols-2 gap-2">
+          <div class="flex flex-col items-center gap-[0.1rem] py-[0.3rem]">
+            <span class="text-[1.3rem] font-bold text-black dark:text-white">{$catalogCount}</span>
+            <span class="text-[0.72rem] text-gray-500 dark:text-gray-400">Catalog</span>
           </div>
-          <div class="stat">
-            <span class="stat-value">{$runningCount}</span>
-            <span class="stat-label">Running</span>
+          <div class="flex flex-col items-center gap-[0.1rem] py-[0.3rem]">
+            <span class="text-[1.3rem] font-bold text-black dark:text-white">{$runningCount}</span>
+            <span class="text-[0.72rem] text-gray-500 dark:text-gray-400">Running</span>
           </div>
         </div>
       </div>
 
       <!-- User -->
-      <div class="ac-surface">
-        <div class="ac-tile user-tile">
-          <div class="user-avatar">👤</div>
-          <div class="tile-label">
-            <strong>User</strong>
-            <span>NDE-OS Session</span>
+      <div class="p-2.5 rounded-[0.65rem] bg-white/50 dark:bg-black/50 shadow-[0_1px_4px_-1px_rgba(0,0,0,0.15)]">
+        <div class="flex gap-2 items-center">
+          <div class="w-8 h-8 rounded-full bg-black/10 dark:bg-white/10 flex items-center justify-center text-[1.1rem]">👤</div>
+          <div class="flex flex-col gap-[0.05rem]">
+            <strong class="text-[0.82rem] font-semibold text-black dark:text-white">User</strong>
+            <span class="text-[0.72rem] text-gray-500 dark:text-gray-400">NDE-OS Session</span>
           </div>
         </div>
       </div>
     </div>
   {/if}
 </div>
-
-<style>
-  .ac-container {
-    position: relative;
-    height: 100%;
-  }
-
-  .ac-toggle {
-    height: 100%;
-    width: max-content;
-    padding: 0 0.5rem;
-    border-radius: 0.25rem;
-    position: relative;
-    display: flex;
-    align-items: center;
-    color: var(--system-color-text);
-  }
-
-  .ac-toggle::before {
-    content: "";
-    position: absolute;
-    inset: 0;
-    z-index: -1;
-    border-radius: inherit;
-    transform: scale(var(--scale));
-    transform-origin: center center;
-    transition: transform 100ms ease;
-    background-color: hsla(var(--system-color-dark-hsl) / 0.15);
-  }
-
-  .ac-panel {
-    --border-size: 0;
-
-    position: absolute;
-    right: 0;
-    margin-top: 5px;
-    z-index: 9999;
-    width: 18rem;
-
-    display: flex;
-    flex-direction: column;
-    gap: 0.6rem;
-    padding: 0.6rem;
-
-    background-color: hsla(var(--system-color-light-hsl) / 0.35);
-    backdrop-filter: blur(25px);
-    border-radius: 0.85rem;
-
-    box-shadow:
-      hsla(0, 0%, 0%, 0.3) 0px 0px 14px 0px,
-      inset 0 0 0 var(--border-size) hsla(var(--system-color-dark-hsl) / 0.3),
-      0 0 0 var(--border-size) hsla(var(--system-color-light-hsl) / 0.3);
-
-    user-select: none;
-  }
-
-  .ac-panel.dark {
-    --border-size: 0.5px;
-  }
-
-  .ac-surface {
-    padding: 0.55rem 0.65rem;
-    border-radius: 0.65rem;
-    background-color: hsla(var(--system-color-light-hsl) / 0.5);
-    box-shadow: hsla(0, 0%, 0%, 0.15) 0px 1px 4px -1px;
-  }
-
-  .ac-tile {
-    display: flex;
-    gap: 0.55rem;
-    align-items: center;
-  }
-
-  .tile-label {
-    display: flex;
-    flex-direction: column;
-    gap: 0.05rem;
-  }
-
-  .tile-label strong {
-    font-size: 0.82rem;
-    font-weight: 600;
-    color: var(--system-color-text);
-  }
-
-  .tile-label span,
-  .stat-label {
-    font-size: 0.72rem;
-    color: var(--system-color-text-muted);
-  }
-
-  .status-dot {
-    width: 0.55rem;
-    height: 0.55rem;
-    border-radius: 50%;
-    background-color: var(--system-color-danger);
-    flex-shrink: 0;
-  }
-
-  .ac-tile.online .status-dot {
-    background-color: var(--system-color-success);
-  }
-
-  .row {
-    display: flex;
-    gap: 0.4rem;
-  }
-
-  .clickable {
-    display: flex;
-    gap: 0.5rem;
-    align-items: center;
-    width: 100%;
-    border-radius: 0.5rem;
-    padding: 0.3rem;
-    transition: background-color 120ms ease;
-  }
-
-  .flex-half {
-    flex: 1 1 50%;
-  }
-
-  .clickable:hover {
-    background-color: hsla(var(--system-color-dark-hsl) / 0.08);
-  }
-
-  .tile-text {
-    font-size: 0.82rem;
-    font-weight: 600;
-    color: var(--system-color-text);
-  }
-
-  .toggle-icon {
-    --size: 1.6rem;
-    height: var(--size);
-    width: var(--size);
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    border-radius: 50%;
-    background-color: hsla(var(--system-color-dark-hsl) / 0.1);
-    transition: background-color 150ms ease;
-    flex-shrink: 0;
-  }
-
-  .toggle-icon :global(svg) {
-    width: 0.85rem;
-    height: 0.85rem;
-    color: var(--system-color-text-muted);
-  }
-
-  .toggle-icon.filled {
-    background-color: var(--system-color-primary);
-  }
-
-  .toggle-icon.filled :global(svg) {
-    color: white;
-  }
-
-  .ac-stat-row {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 0.5rem;
-  }
-
-  .stat {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 0.1rem;
-    padding: 0.3rem 0;
-  }
-
-  .stat-value {
-    font-size: 1.3rem;
-    font-weight: 700;
-    color: var(--system-color-text);
-  }
-
-  .user-tile .user-avatar {
-    width: 2rem;
-    height: 2rem;
-    border-radius: 50%;
-    background-color: hsla(var(--system-color-dark-hsl) / 0.1);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 1.1rem;
-  }
-
-  .spec-header {
-    font-size: 0.68rem;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    color: var(--system-color-text-muted);
-    margin-bottom: 0.4rem;
-  }
-
-  .spec-grid {
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
-  }
-
-  .spec-row {
-    display: flex;
-    align-items: center;
-    gap: 0.4rem;
-  }
-
-  .spec-icon {
-    width: 1.1rem;
-    font-size: 0.75rem;
-    flex-shrink: 0;
-    text-align: center;
-  }
-
-  .spec-key {
-    font-size: 0.75rem;
-    font-weight: 600;
-    color: var(--system-color-text);
-    width: 2.8rem;
-    flex-shrink: 0;
-  }
-
-  .spec-val {
-    font-size: 0.72rem;
-    color: var(--system-color-text-muted);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  .meter-track {
-    height: 4px;
-    border-radius: 2px;
-    background-color: hsla(var(--system-color-dark-hsl) / 0.08);
-    margin: 0.1rem 0 0.15rem 1.5rem;
-    overflow: hidden;
-  }
-
-  .meter-fill {
-    height: 100%;
-    border-radius: 2px;
-    background-color: var(--system-color-primary);
-    transition: width 0.4s ease;
-  }
-
-  .meter-fill.warn {
-    background-color: var(--system-color-danger);
-  }
-</style>

@@ -43,10 +43,10 @@
 </script>
 
 <QueryClientProvider client={queryClient}>
-  <div class="desktop-shell">
-    <div class="wallpaper" aria-hidden="true"></div>
+  <div class="w-full h-full relative overflow-hidden">
+    <div class="absolute inset-0 scale-[1.04] saturate-[1.05]" style="background: linear-gradient(180deg, hsla(215 85% 80% / 0.18), transparent 18%), linear-gradient(135deg, hsla(8 100% 76% / 0.16), transparent 32%), center / cover no-repeat var(--system-wallpaper);" aria-hidden="true"></div>
 
-    <main class="desktop-grid">
+    <main class="relative z-10 w-full h-full grid grid-rows-[auto_1fr_auto]">
       <TopBar />
       <WindowsArea />
       <Dock />
@@ -57,32 +57,3 @@
     {/if}
   </div>
 </QueryClientProvider>
-
-<style>
-  .desktop-shell {
-    width: 100%;
-    height: 100%;
-    position: relative;
-    overflow: hidden;
-  }
-
-  .wallpaper {
-    position: absolute;
-    inset: 0;
-    background:
-      linear-gradient(180deg, hsla(215 85% 80% / 0.18), transparent 18%),
-      linear-gradient(135deg, hsla(8 100% 76% / 0.16), transparent 32%),
-      center / cover no-repeat var(--system-wallpaper);
-    transform: scale(1.04);
-    filter: saturate(1.05);
-  }
-
-  .desktop-grid {
-    position: relative;
-    z-index: 1;
-    width: 100%;
-    height: 100%;
-    display: grid;
-    grid-template-rows: auto 1fr auto;
-  }
-</style>

@@ -18,103 +18,25 @@
   }
 </script>
 
-<div class="traffic-lights" class:unfocused={!isFocused}>
+<div class="flex gap-2 relative z-10 group/tl {isFocused ? '' : 'opacity-70 grayscale-[0.3] hover:grayscale-0 hover:opacity-100'}">
   <button
-    class="tl-btn close"
-    class:disabled={!window.closable}
+    class="grid place-items-center w-3 h-3 rounded-full bg-transparent border-[0.5px] border-black/10 shadow-[inset_0_1px_1px_rgba(255,255,255,0.2)] p-0 cursor-pointer [-webkit-app-region:no-drag] relative {window.closable ? 'bg-[#ff5f57] hover:bg-[#ff5f57]' : 'bg-[#bfc2c8] cursor-default pointer-events-none'}"
     aria-label="Close window"
     disabled={!window.closable}
     onclick={(e) => handleClick(e, () => closeWindow(window.id))}
   >
-    <span class="dot"></span>
+    <!-- icon dot -->
   </button>
-  <button class="tl-btn minimize" aria-label="Minimize window" onclick={(e) => handleClick(e, () => minimizeWindow(window.id))}>
-    <span class="dot"></span>
+  <button 
+    class="grid place-items-center w-3 h-3 rounded-full bg-[#febc2e] border-[0.5px] border-black/10 shadow-[inset_0_1px_1px_rgba(255,255,255,0.2)] p-0 cursor-pointer [-webkit-app-region:no-drag] relative" 
+    aria-label="Minimize window" 
+    onclick={(e) => handleClick(e, () => minimizeWindow(window.id))}
+  >
   </button>
-  <button class="tl-btn fullscreen" aria-label="Toggle fullscreen" onclick={(e) => handleClick(e, () => toggleFullscreen(window.id))}>
-    <span class="dot"></span>
+  <button 
+    class="grid place-items-center w-3 h-3 rounded-full bg-[#28c840] border-[0.5px] border-black/10 shadow-[inset_0_1px_1px_rgba(255,255,255,0.2)] p-0 cursor-pointer [-webkit-app-region:no-drag] relative" 
+    aria-label="Toggle fullscreen" 
+    onclick={(e) => handleClick(e, () => toggleFullscreen(window.id))}
+  >
   </button>
 </div>
-
-<style>
-  .traffic-lights {
-    display: flex;
-    gap: 0;
-    position: relative;
-    z-index: 10;
-  }
-
-  .tl-btn {
-    display: grid;
-    place-items: center;
-    width: 1.75rem;
-    height: 1.75rem;
-    border-radius: 50%;
-    background: transparent;
-    border: none;
-    padding: 0;
-    cursor: pointer;
-    -webkit-app-region: no-drag;
-    position: relative;
-  }
-
-  .dot {
-    display: block;
-    width: 0.8rem;
-    height: 0.8rem;
-    border-radius: 50%;
-    box-shadow: 0 0 0 0.5px hsla(0 0% 0% / 0.22);
-    pointer-events: none;
-    transition: transform 0.12s ease;
-  }
-
-  .tl-btn:hover .dot {
-    transform: scale(1.15);
-  }
-
-  .tl-btn:active .dot {
-    transform: scale(0.9);
-  }
-
-  .close .dot {
-    background: #ff5f57;
-  }
-
-  .close.disabled .dot {
-    background: #bfc2c8 !important;
-    cursor: default;
-  }
-
-  .close.disabled {
-    cursor: default;
-    pointer-events: none;
-  }
-
-  .minimize .dot {
-    background: #febc2e;
-  }
-
-  .fullscreen .dot {
-    background: #28c840;
-  }
-
-  .unfocused .dot {
-    background: #bfc2c8;
-  }
-
-  .unfocused .tl-btn:hover .dot {
-    background: inherit;
-  }
-
-  .unfocused .close:hover .dot {
-    background: #ff5f57;
-  }
-
-  .unfocused .minimize:hover .dot {
-    background: #febc2e;
-  }
-
-  .unfocused .fullscreen:hover .dot {
-    background: #28c840;
-  }
-</style>

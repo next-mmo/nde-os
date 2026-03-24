@@ -74,25 +74,22 @@
   const all_menus: Record<string, MenuSection> = { apple: apple_menu, ...app_menus };
 </script>
 
-<div class="menubar-container" use:click_outside={clearActiveMenu}>
+<div class="h-full flex relative" use:click_outside={clearActiveMenu}>
   {#each Object.entries(all_menus) as [menuID, menuConfig]}
-    <div class="menu-slot">
+    <div class="relative h-full">
       <div style:height="100%">
         <button
-          class="menu-button"
-          class:default-menu={menuID === "apple"}
-          class:app-title={menuID === Object.keys(app_menus)[0]}
-          style:--scale={menubar_menus.active === menuID ? 1 : 0}
+          class="relative z-10 h-full px-2 text-[0.82rem] font-medium tracking-wide whitespace-nowrap rounded transition-colors text-black dark:text-white {menuID === 'apple' ? 'ml-2 mr-1 px-2.5 flex items-center' : ''} {menubar_menus.active === menuID ? 'bg-black/15 dark:bg-white/15' : 'hover:bg-black/10 dark:hover:bg-white/10'}"
           onclick={() => setActiveMenu(menuID)}
           onmouseover={() => menubar_menus.active && setActiveMenu(menuID)}
           onfocus={() => setActiveMenu(menuID)}
         >
           {#if menuID === "apple"}
-            <svg width="14" height="17" viewBox="0 0 17 20" fill="currentColor">
+            <svg class="w-4 h-4" viewBox="0 0 17 20" fill="currentColor">
               <path d="M15.64 14.85c-.37.82-.54 1.18-.96 1.9-.58.99-1.4 2.22-2.42 2.23-.91.01-1.14-.6-2.38-.59-1.23.01-1.49.6-2.4.6-1.02-.01-1.8-1.13-2.38-2.11C3.16 13.55 2.94 9.88 4.6 7.94c1.17-1.37 3.02-2.17 4.11-2.17 1.53 0 2.47 1.02 3.72 1.02 1.22 0 1.96-1.03 3.72-1.02.9 0 2.53.37 3.49 1.77-3.08 1.68-2.58 6.07 0.53 7.23l-.53.08zM12.14 0c.17 1.22-.35 2.42-1.05 3.26-.73.87-1.96 1.54-3.15 1.5-.2-1.16.38-2.37 1.09-3.17C9.77.71 11.01.08 12.14 0z"/>
             </svg>
           {:else if menuID === Object.keys(app_menus)[0]}
-            <strong>{title}</strong>
+            <strong class="font-bold">{title}</strong>
           {:else}
             {menuConfig.title}
           {/if}
@@ -100,7 +97,7 @@
       </div>
 
       <div
-        class="menu-parent"
+        class="absolute mt-[1.5px] z-[9999]"
         style:visibility={menubar_menus.active === menuID ? "visible" : "hidden"}
         use:elevation={"menubar-menu-parent"}
       >
@@ -109,68 +106,3 @@
     </div>
   {/each}
 </div>
-
-<style>
-  .menubar-container {
-    height: 100%;
-    display: flex;
-    position: relative;
-  }
-
-  .menu-slot {
-    position: relative;
-    height: 100%;
-  }
-
-  .menu-parent {
-    position: absolute;
-    margin-top: 1.5px;
-    z-index: 9999;
-  }
-
-  .menu-button {
-    font-weight: 500;
-    font-size: 0.82rem;
-    font-family: var(--system-font-family);
-    letter-spacing: 0.3px;
-    border-radius: 0.25rem;
-    position: relative;
-    z-index: 1;
-    padding: 0 0.5rem;
-    height: 100%;
-    color: var(--system-color-text);
-    white-space: nowrap;
-  }
-
-  .menu-button::after {
-    content: "";
-    position: absolute;
-    top: 0;
-    left: 0;
-    z-index: -1;
-    height: 100%;
-    width: 100%;
-    border-radius: inherit;
-    transform: scale(var(--scale), var(--scale));
-    transform-origin: center center;
-    transition: transform 100ms ease;
-    background-color: hsla(var(--system-color-dark-hsl) / 0.15);
-  }
-
-  .menu-button.default-menu {
-    margin: 0 0.15rem 0 0.5rem;
-    padding: 0 0.6rem;
-    display: flex;
-    align-items: center;
-  }
-
-  .menu-button.default-menu :global(svg) {
-    height: 0.95rem;
-    width: 0.95rem;
-  }
-
-  .menu-button.app-title strong {
-    font-weight: 700;
-    font-size: 0.82rem;
-  }
-</style>

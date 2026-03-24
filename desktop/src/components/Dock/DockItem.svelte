@@ -68,72 +68,16 @@
   }
 </script>
 
-<button class="dock-item" aria-label={label} onclick={handleClick}>
-  <p class="tooltip">{label}</p>
+<button class="relative flex flex-col items-center justify-end gap-1 group/dockitem p-0 bg-transparent border-none appearance-none outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded-2xl" aria-label={label} onclick={handleClick}>
+  <p class="absolute bottom-[calc(100%+0.85rem)] whitespace-nowrap m-0 hidden group-hover/dockitem:block group-focus-visible/dockitem:block px-3 py-2 rounded-[0.7rem] bg-white/90 dark:bg-gray-800/90 backdrop-blur-md border border-black/10 dark:border-white/10 shadow-xl text-sm font-medium z-50 text-black dark:text-white">
+    {label}
+  </p>
   {#if !srcFallback}
-    <img bind:this={imageEl} src="/app-icons/{app_id}/256.webp" alt="" style:width={`${width / 16}rem`} onerror={() => srcFallback = true} />
+    <img class="w-[3.625rem] will-change-transform drop-shadow-md" bind:this={imageEl} src="/app-icons/{app_id}/256.webp" alt="" style:width={`${width / 16}rem`} onerror={() => srcFallback = true} />
   {:else}
-    <div class="fallback-icon" style:width={`${width / 16}rem`} style:height={`${width / 16}rem`}>
+    <div class="w-[3.625rem] h-[3.625rem] will-change-transform rounded-[20%] bg-gradient-to-br from-blue-500/80 to-blue-700/80 grid place-items-center text-white font-bold text-xl shadow-md border border-white/20" style:width={`${width / 16}rem`} style:height={`${width / 16}rem`}>
       {label.slice(0, 2).toUpperCase()}
     </div>
   {/if}
-  <div class="dot" style:opacity={isDockAppOpen(app_id as StaticAppID) ? 1 : 0}></div>
+  <div class="w-1 h-1 rounded-full bg-black/60 dark:bg-white/60 transition-opacity duration-200" style:opacity={isDockAppOpen(app_id as StaticAppID) ? 1 : 0}></div>
 </button>
-
-<style>
-  .dock-item {
-    position: relative;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: flex-end;
-    gap: 0.15rem;
-  }
-
-  img {
-    width: 3.625rem;
-    will-change: width;
-  }
-
-  .fallback-icon {
-    width: 3.625rem;
-    height: 3.625rem;
-    will-change: width, height;
-    border-radius: 20%;
-    background: linear-gradient(135deg, hsla(var(--system-color-primary-hsl) / 0.8), hsla(206 72% 44% / 0.8));
-    display: grid;
-    place-items: center;
-    color: white;
-    font-weight: bold;
-    font-size: 1.2rem;
-    box-shadow: 0 4px 12px hsla(0 0% 0% / 0.2);
-    border: 1px solid hsla(0 0% 100% / 0.2);
-  }
-
-  .tooltip {
-    position: absolute;
-    bottom: calc(100% + 0.85rem);
-    white-space: nowrap;
-    margin: 0;
-    display: none;
-    padding: 0.5rem 0.75rem;
-    border-radius: 0.7rem;
-    background: hsla(var(--system-color-light-hsl) / 0.88);
-    border: 1px solid var(--system-color-border);
-    box-shadow: 0 12px 32px hsla(220 30% 10% / 0.2);
-    font-size: 0.8rem;
-    z-index: 100;
-  }
-
-  .dock-item:hover .tooltip,
-  .dock-item:focus-visible .tooltip {
-    display: block;
-  }
-
-  .dot {
-    width: 0.28rem;
-    height: 0.28rem;
-    border-radius: 999px;
-    background: var(--system-color-dark);
-  }
-</style>

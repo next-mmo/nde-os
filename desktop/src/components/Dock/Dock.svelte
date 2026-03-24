@@ -35,9 +35,12 @@
   });
 </script>
 
-<section class="dock-shell" class:auto-hide={desktop.dock_auto_hide} use:elevation={"dock"}>
+<section 
+  class="flex justify-center pt-2 pb-4 pointer-events-none transition-transform duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] {desktop.dock_auto_hide ? 'fixed bottom-0 left-0 right-0 z-[1000] translate-y-[calc(100%-10px)] hover:translate-y-0 focus-within:translate-y-0' : ''}" 
+  use:elevation={"dock"}
+>
   <div
-    class="dock"
+    class="pointer-events-auto flex items-end gap-1 px-2.5 py-1.5 rounded-[1.25rem] bg-white/40 dark:bg-black/30 backdrop-blur-xl border border-white/40 dark:border-white/10 shadow-[inset_0_1px_1px_rgba(255,255,255,0.4),0_18px_50px_rgba(0,0,0,0.28)]"
     role="toolbar"
     aria-label="Dock"
     tabindex="-1"
@@ -46,54 +49,9 @@
   >
     {#each dockApps as { app_id } (app_id)}
       {#if apps_config[app_id as keyof typeof apps_config]?.dock_breaks_before}
-        <div class="divider" aria-hidden="true"></div>
+        <div class="w-[1px] self-stretch bg-black/10 dark:bg-white/10 mx-1" aria-hidden="true"></div>
       {/if}
       <DockItem {app_id} mouse_x={mouseX} />
     {/each}
   </div>
 </section>
-
-<style>
-  .dock-shell {
-    display: flex;
-    justify-content: center;
-    padding: 0.55rem 0 0.95rem;
-    pointer-events: none;
-    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  }
-
-  .dock-shell.auto-hide {
-    position: fixed;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    z-index: 1000;
-    transform: translateY(calc(100% - 10px));
-  }
-
-  .dock-shell.auto-hide:hover, .dock-shell.auto-hide:focus-within {
-    transform: translateY(0);
-  }
-
-  .dock {
-    pointer-events: auto;
-    display: flex;
-    align-items: flex-end;
-    gap: 0.3rem;
-    padding: 0.4rem 0.55rem;
-    border-radius: 1.2rem;
-    background: hsla(var(--system-color-light-hsl) / 0.38);
-    border: 1px solid hsla(0 0% 100% / 0.26);
-    box-shadow:
-      inset 0 0 0 0.5px hsla(0 0% 100% / 0.5),
-      0 18px 50px hsla(220 40% 10% / 0.28);
-    backdrop-filter: blur(14px);
-  }
-
-  .divider {
-    width: 1px;
-    align-self: stretch;
-    background: hsla(220 12% 20% / 0.18);
-    margin: 0 0.2rem;
-  }
-</style>

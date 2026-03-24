@@ -31,24 +31,6 @@
   }
 </script>
 
-<div class="surface">
-  <iframe title={session.title} src={iframeSrc} onload={handleLoad}></iframe>
+<div class="w-full h-full rounded-[1.2rem] overflow-hidden bg-[hsl(220,28%,12%)] border border-black/10 dark:border-white/10 shadow-sm">
+  <iframe class="w-full h-full border-0 bg-white" title={session.title} src={iframeSrc} onload={handleLoad}></iframe>
 </div>
-
-<style>
-  .surface {
-    width: 100%;
-    height: 100%;
-    border-radius: 1.2rem;
-    overflow: hidden;
-    background: hsl(220 28% 12%);
-    border: 1px solid var(--system-color-border);
-  }
-
-  iframe {
-    width: 100%;
-    height: 100%;
-    border: 0;
-    background: white;
-  }
-</style>

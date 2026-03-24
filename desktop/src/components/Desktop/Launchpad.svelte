@@ -6,6 +6,7 @@
   import { revealOrLaunchManifest } from "$lib/session-actions";
   import { catalog, installedMap } from "$lib/stores/state";
   import { desktop, openStaticApp, selectLauncherSection, selectManifest, toggleLaunchpad } from "🍎/state/desktop.svelte";
+  import { fade } from "svelte/transition";
 
   let panelEl = $state<HTMLElement>();
   let filter = $state("");
@@ -47,59 +48,59 @@
   }
 </script>
 
-<div class="overlay">
+<div class="absolute inset-0 z-[100] backdrop-blur-[26px] bg-linear-to-b from-[#070b16]/35 to-[#070b16]/20 pt-[4.8rem] pb-[6.5rem] px-4 md:px-16" transition:fade={{duration:200}}>
   <section
     data-testid="launchpad"
-    class="launchpad"
+    class="w-full max-w-[1240px] h-full mx-auto rounded-[2rem] bg-white/35 dark:bg-black/35 border border-white/35 dark:border-white/10 shadow-[0_32px_96px_rgba(10,14,33,0.28)] flex flex-col gap-6 p-4 md:p-8"
     bind:this={panelEl}
     use:click_outside={() => toggleLaunchpad(false)}
     aria-label="Launchpad"
   >
-    <header class="launchpad-header">
+    <header class="flex flex-col md:flex-row justify-between gap-4 items-start">
       <div>
-        <p class="eyebrow">Launchpad</p>
-        <h2>Open apps from the dashboard or a separate window.</h2>
+        <p class="uppercase tracking-[0.14em] text-[0.72rem] font-bold m-0 text-gray-600 dark:text-gray-400">Launchpad</p>
+        <h2 class="mt-[0.3rem] mb-0 max-w-[34rem] text-[1.9rem] leading-[1.05] text-black dark:text-white font-semibold">Open apps from the dashboard or a separate window.</h2>
       </div>
-      <input bind:value={filter} placeholder="Search apps" aria-label="Search apps" />
+      <input class="w-full md:w-[18rem] rounded-full border border-black/10 dark:border-white/10 bg-white/75 dark:bg-gray-800/75 px-[1.2rem] py-[0.95rem] text-black dark:text-white outline-none focus:ring-2 focus:ring-blue-500" bind:value={filter} placeholder="Search apps" aria-label="Search apps" />
     </header>
 
-    <div class="section">
-      <p class="section-title">System</p>
-      <div class="tile-grid">
-        <button class="tile" onclick={() => openShellApp("ai-launcher")}>
-          <img src="/app-icons/ai-launcher/256.webp" alt="" />
-          <span>AI Launcher</span>
+    <div class="flex flex-col gap-[0.85rem]">
+      <p class="uppercase tracking-[0.14em] text-[0.72rem] font-bold m-0 text-gray-600 dark:text-gray-400">System</p>
+      <div class="grid grid-cols-[repeat(auto-fill,minmax(7.8rem,1fr))] gap-4">
+        <button class="grid gap-[0.7rem] justify-items-center px-3 py-4 rounded-[1.4rem] bg-white/50 dark:bg-black/50 border border-black/10 dark:border-white/10 hover:bg-white/70 dark:hover:bg-black/70 transition-colors" onclick={() => openShellApp("ai-launcher")}>
+          <img class="w-[4.6rem] h-[4.6rem]" src="/app-icons/ai-launcher/256.webp" alt="" />
+          <span class="text-[0.88rem] text-center text-black dark:text-white font-medium">AI Launcher</span>
         </button>
         {#each systemApps as [app_id, app_config]}
-          <button class="tile" onclick={() => openShellApp(app_id)}>
-            <img src="/app-icons/{app_id}/256.webp" alt=""
-              onerror={(e) => { const t = e.currentTarget; if (t instanceof HTMLImageElement) { t.style.display = 'none'; t.nextElementSibling?.classList.add('visible'); } }}
+          <button class="grid gap-[0.7rem] justify-items-center px-3 py-4 rounded-[1.4rem] bg-white/50 dark:bg-black/50 border border-black/10 dark:border-white/10 hover:bg-white/70 dark:hover:bg-black/70 transition-colors group" onclick={() => openShellApp(app_id)}>
+            <img class="w-[4.6rem] h-[4.6rem]" src="/app-icons/{app_id}/256.webp" alt=""
+              onerror={(e) => { const t = e.currentTarget; if (t instanceof HTMLImageElement) { t.style.display = 'none'; t.nextElementSibling?.classList.replace('hidden', 'grid'); } }}
             />
-            <div class="tile-fallback">{(app_config.title || String(app_id)).slice(0, 2).toUpperCase()}</div>
-            <span>{app_config.title}</span>
+            <div class="hidden w-[4.6rem] h-[4.6rem] rounded-[22%] bg-linear-to-br from-blue-500/75 to-blue-700/75 place-items-center text-white font-bold text-[1.4rem] shadow-[0_4px_16px_rgba(0,0,0,0.2)] border border-white/20">{(app_config.title || String(app_id)).slice(0, 2).toUpperCase()}</div>
+            <span class="text-[0.88rem] text-center text-black dark:text-white font-medium">{app_config.title}</span>
           </button>
         {/each}
       </div>
     </div>
 
-    <div class="section">
-      <div class="section-bar">
-        <p class="section-title">AI Apps</p>
+    <div class="flex flex-col gap-[0.85rem]">
+      <div class="flex justify-between items-center text-gray-600 dark:text-gray-400 text-[0.85rem]">
+        <p class="uppercase tracking-[0.14em] text-[0.72rem] font-bold m-0">AI Apps</p>
         <span>{filteredCatalog.length} app(s)</span>
       </div>
-      <div class="catalog-grid">
+      <div class="grid grid-cols-[repeat(auto-fill,minmax(17rem,1fr))] gap-4 overflow-y-auto pr-1">
         {#each filteredCatalog as app (app.id)}
-          <article class="catalog-card">
-            <button class="catalog-main" onclick={() => openManifest(app.id, desktop.default_session_mode)}>
-              <div class="catalog-icon">{app.icon ?? "AI"}</div>
+          <article class="grid gap-[0.8rem] p-4 rounded-[1.2rem] bg-white/60 dark:bg-black/60 border border-black/10 dark:border-white/10 hover:bg-white/80 dark:hover:bg-black/80 transition-colors">
+            <button class="grid grid-cols-[auto_1fr] gap-[0.9rem] items-start text-left" onclick={() => openManifest(app.id, desktop.default_session_mode)}>
+              <div class="w-[3rem] h-[3rem] rounded-[0.95rem] bg-linear-to-b from-blue-500/20 to-blue-700/10 grid place-items-center font-bold text-blue-500">{app.icon ?? "AI"}</div>
               <div>
-                <strong>{app.name}</strong>
-                <p>{app.description}</p>
+                <strong class="block mb-[0.3rem] text-black dark:text-white">{app.name}</strong>
+                <p class="m-0 text-gray-600 dark:text-gray-400 text-[0.84rem]">{app.description}</p>
               </div>
             </button>
-            <div class="card-actions">
-              <button onclick={() => openManifest(app.id, "embedded")}>Open in Dashboard</button>
-              <button onclick={() => openManifest(app.id, "windowed")}>Open in Window</button>
+            <div class="flex gap-[0.55rem]">
+              <button class="flex-1 rounded-full px-[0.8rem] py-[0.6rem] bg-white/80 dark:bg-gray-800/80 border border-black/10 dark:border-white/10 text-[0.8rem] hover:bg-white dark:hover:bg-gray-700 transition-colors text-black dark:text-white font-medium" onclick={() => openManifest(app.id, "embedded")}>Open in Dashboard</button>
+              <button class="flex-1 rounded-full px-[0.8rem] py-[0.6rem] bg-white/80 dark:bg-gray-800/80 border border-black/10 dark:border-white/10 text-[0.8rem] hover:bg-white dark:hover:bg-gray-700 transition-colors text-black dark:text-white font-medium" onclick={() => openManifest(app.id, "windowed")}>Open in Window</button>
             </div>
           </article>
         {/each}
@@ -107,198 +108,3 @@
     </div>
   </section>
 </div>
-
-<style>
-  .overlay {
-    position: absolute;
-    inset: 0;
-    z-index: 100;
-    backdrop-filter: blur(26px);
-    background: linear-gradient(180deg, hsla(222 66% 8% / 0.35), hsla(222 66% 8% / 0.2));
-    padding: 4.8rem 4rem 6.5rem;
-  }
-
-  .launchpad {
-    width: min(1240px, 100%);
-    height: 100%;
-    margin: 0 auto;
-    border-radius: 2rem;
-    background: hsla(var(--system-color-light-hsl) / 0.36);
-    border: 1px solid hsla(0 0% 100% / 0.34);
-    box-shadow: 0 32px 96px hsla(222 60% 10% / 0.28);
-    display: flex;
-    flex-direction: column;
-    gap: 1.5rem;
-    padding: 2rem;
-  }
-
-  .launchpad-header {
-    display: flex;
-    justify-content: space-between;
-    gap: 1rem;
-    align-items: flex-start;
-  }
-
-  .eyebrow,
-  .section-title {
-    text-transform: uppercase;
-    letter-spacing: 0.14em;
-    font-size: 0.72rem;
-    font-weight: 700;
-    margin: 0;
-    color: var(--system-color-text-muted);
-  }
-
-  h2 {
-    margin: 0.3rem 0 0;
-    max-width: 34rem;
-    font-size: 1.9rem;
-    line-height: 1.05;
-  }
-
-  input {
-    width: 18rem;
-    border-radius: 999px;
-    border: 1px solid var(--system-color-border);
-    background: hsla(var(--system-color-light-hsl) / 0.78);
-    padding: 0.95rem 1.2rem;
-    color: var(--system-color-text);
-  }
-
-  .section {
-    display: flex;
-    flex-direction: column;
-    gap: 0.85rem;
-  }
-
-  .section-bar {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    color: var(--system-color-text-muted);
-    font-size: 0.85rem;
-  }
-
-  .tile-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(7.8rem, 1fr));
-    gap: 1rem;
-  }
-
-  .tile {
-    display: grid;
-    gap: 0.7rem;
-    justify-items: center;
-    padding: 1rem 0.75rem;
-    border-radius: 1.4rem;
-    background: hsla(var(--system-color-light-hsl) / 0.5);
-    border: 1px solid var(--system-color-border);
-  }
-
-  .tile img {
-    width: 4.6rem;
-    height: 4.6rem;
-  }
-
-  .tile-fallback {
-    display: none;
-    width: 4.6rem;
-    height: 4.6rem;
-    border-radius: 22%;
-    background: linear-gradient(135deg, hsla(var(--system-color-primary-hsl) / 0.75), hsla(206 72% 44% / 0.75));
-    place-items: center;
-    color: white;
-    font-weight: 700;
-    font-size: 1.4rem;
-    box-shadow: 0 4px 16px hsla(0 0% 0% / 0.2);
-    border: 1px solid hsla(0 0% 100% / 0.2);
-  }
-
-  .tile-fallback.visible {
-    display: grid;
-  }
-
-  .tile span {
-    font-size: 0.88rem;
-    text-align: center;
-  }
-
-  .catalog-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr));
-    gap: 1rem;
-    overflow: auto;
-    padding-right: 0.35rem;
-  }
-
-  .catalog-card {
-    display: grid;
-    gap: 0.8rem;
-    padding: 1rem;
-    border-radius: 1.2rem;
-    background: hsla(var(--system-color-light-hsl) / 0.6);
-    border: 1px solid var(--system-color-border);
-  }
-
-  .catalog-main {
-    display: grid;
-    grid-template-columns: auto 1fr;
-    gap: 0.9rem;
-    align-items: start;
-    text-align: left;
-  }
-
-  .catalog-icon {
-    width: 3rem;
-    height: 3rem;
-    border-radius: 0.95rem;
-    background: linear-gradient(180deg, hsla(var(--system-color-primary-hsl) / 0.22), hsla(206 72% 44% / 0.08));
-    display: grid;
-    place-items: center;
-    font-weight: 700;
-    color: var(--system-color-primary);
-  }
-
-  strong {
-    display: block;
-    margin-bottom: 0.3rem;
-  }
-
-  p {
-    margin: 0;
-    color: var(--system-color-text-muted);
-    font-size: 0.84rem;
-  }
-
-  .card-actions {
-    display: flex;
-    gap: 0.55rem;
-  }
-
-  .card-actions button {
-    flex: 1;
-    border-radius: 999px;
-    padding: 0.6rem 0.8rem;
-    background: hsla(var(--system-color-light-hsl) / 0.84);
-    border: 1px solid var(--system-color-border);
-    font-size: 0.8rem;
-  }
-
-  @media (max-width: 900px) {
-    .overlay {
-      padding: 4.4rem 1rem 6rem;
-    }
-
-    .launchpad {
-      padding: 1rem;
-    }
-
-    .launchpad-header {
-      flex-direction: column;
-    }
-
-    input {
-      width: 100%;
-    }
-  }
-</style>

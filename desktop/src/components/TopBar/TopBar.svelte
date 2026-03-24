@@ -7,63 +7,15 @@
   import TopBarTime from "🍎/components/TopBar/TopBarTime.svelte";
 </script>
 
-<header class="topbar">
+<header class="flex items-center relative w-full h-[1.65rem] bg-white/30 dark:bg-black/30 text-black dark:text-white fill-current z-[9990] backdrop-blur-md before:content-[''] before:fixed before:inset-x-0 before:top-0 before:h-inherit before:-z-10 before:backdrop-blur-md">
   <MenuBar />
 
-  <span class="spacer"></span>
+  <span class="flex-1"></span>
 
   <ActionCenter />
   <TopBarMetrics />
 
-  <button class="topbar-button" aria-label="Current time">
+  <button class="font-medium text-[0.78rem] tracking-wide relative h-full px-2.5 text-black dark:text-white whitespace-nowrap rounded hover:bg-black/10 dark:hover:bg-white/10" aria-label="Current time">
     <TopBarTime />
   </button>
 </header>
-
-<style>
-  .topbar {
-    display: flex;
-    align-items: center;
-    position: relative;
-    width: 100%;
-    height: 1.65rem;
-
-    background-color: hsla(var(--system-color-light-hsl) / 0.3);
-    color: var(--system-color-text);
-    fill: var(--system-color-text);
-
-    z-index: 9990;
-  }
-
-  .topbar::before {
-    content: "";
-    width: inherit;
-    height: inherit;
-    position: fixed;
-    left: 0;
-    top: 0;
-    z-index: 0;
-    backdrop-filter: blur(14px);
-  }
-
-  .spacer {
-    flex: 1 1 auto;
-  }
-
-  .topbar-button {
-    font-weight: 500;
-    font-size: 0.78rem;
-    font-family: var(--system-font-family);
-    letter-spacing: 0.3px;
-    position: relative;
-    height: 100%;
-    padding: 0 0.6rem;
-    color: var(--system-color-text);
-    white-space: nowrap;
-    border-radius: 0.25rem;
-  }
-
-  .topbar-button:hover {
-    background-color: hsla(var(--system-color-dark-hsl) / 0.1);
-  }
-</style>
