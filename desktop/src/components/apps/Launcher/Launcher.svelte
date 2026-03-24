@@ -34,6 +34,7 @@
   import Skills from "🍎/components/apps/Skills/Skills.svelte";
   import Knowledge from "🍎/components/apps/Knowledge/Knowledge.svelte";
   import CodeEditor from "🍎/components/apps/CodeEditor/CodeEditor.svelte";
+  import OpenWithMenu from "🍎/components/Desktop/OpenWithMenu.svelte";
   import {
     desktop,
     focusSessionDetails,
@@ -449,10 +450,7 @@
               <h2>{currentSession.title}</h2>
             </div>
             <div class="session-actions">
-              <button onclick={() => openSessionInWindow(currentSession.id)}>Open in Window</button>
-              <button onclick={() => openSessionInNewOsWindow(currentSession.port, currentSession.title)}>
-                New OS Window
-              </button>
+              <OpenWithMenu session_id={currentSession.id} port={currentSession.port} title={currentSession.title} />
             </div>
           </div>
 
@@ -736,8 +734,7 @@
                     </div>
                   </button>
                   <div class="row-actions">
-                    <button onclick={() => openSessionInDashboard(session.id)}>Open in Dashboard</button>
-                    <button onclick={() => openSessionInWindow(session.id)}>Open in Window</button>
+                    <OpenWithMenu session_id={session.id} port={session.port} title={session.title} />
                   </div>
                 </article>
               {:else}
@@ -809,9 +806,10 @@
                 <button disabled={isAppPending(selectedManifest.id)} aria-busy={pendingActionFor(selectedManifest.id) === "stop"} onclick={() => stopInstalledApp(selectedInstalled)}>{stopLabel(selectedManifest.id)}</button>
                 <button disabled={isAppPending(selectedManifest.id)} aria-busy={pendingActionFor(selectedManifest.id) === "uninstall"} onclick={() => uninstallManifest(selectedManifest)}>{uninstallLabel(selectedManifest.id)}</button>
                 {#if selectedInstalled.status.port}
-                  <button onclick={() => openSessionInNewOsWindow(selectedInstalled.status.port!, selectedManifest.name)}>
-                    New OS Window
-                  </button>
+                  {@const inspSession = desktop.sessions.find(s => s.app_id === selectedManifest.id)}
+                  {#if inspSession}
+                    <OpenWithMenu session_id={inspSession.id} port={selectedInstalled.status.port!} title={selectedManifest.name} />
+                  {/if}
                 {/if}
               {:else}
                 <button disabled={isAppPending(selectedManifest.id)} aria-busy={pendingActionFor(selectedManifest.id) === "launch-dashboard"} onclick={() => launchManifest(selectedManifest, "embedded")}>{launchLabel(selectedManifest.id, "embedded")}</button>
@@ -1015,8 +1013,7 @@
   .hero-actions button,
   .detail-actions button,
   .utility-list button,
-  .show-more button,
-  .session-actions button {
+  .show-more button {
     border-radius: 999px;
     padding: 0.65rem 0.95rem;
     border: 1px solid var(--system-color-border);

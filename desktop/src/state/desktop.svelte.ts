@@ -4,7 +4,7 @@ import type { InstalledApp } from "$lib/api/types";
 export type WindowAppID = Exclude<StaticAppID, "launchpad">;
 export type ThemeScheme = "light" | "dark";
 export type LauncherSection = "overview" | "catalog" | "installed" | "running" | "server" | "command-center" | "chat" | "model-settings" | "plugins" | "channels" | "mcp-tools" | "skills" | "knowledge" | "code-editor";
-export type SessionMode = "embedded" | "windowed";
+export type SessionMode = "embedded" | "windowed" | "drawer-left" | "drawer-right" | "fullscreen";
 
 export type RunningSession = {
   id: string;
@@ -48,7 +48,7 @@ type WorkspaceView =
 const makeWindowId = (prefix: string) =>
   `${prefix}-${Math.random().toString(36).slice(2, 9)}-${Date.now().toString(36)}`;
 
-type SavedWindowGeometry = { x: number; y: number; width: number; height: number };
+type SavedWindowGeometry = { x: number; y: number; width: number; height: number; fullscreen: boolean };
 
 const GEOMETRY_STORAGE_KEY = "ai-launcher:window-geometry";
 const OPEN_WINDOWS_STORAGE_KEY = "ai-launcher:open-windows";
@@ -74,6 +74,19 @@ export function saveWindowGeometry(app_id: string, geo: SavedWindowGeometry) {
   } catch {}
 }
 
+export function saveWindowFullscreen(app_id: string, fullscreen: boolean) {
+  try {
+    const all = loadAllGeometry();
+    const existing = all[app_id];
+    if (existing) {
+      existing.fullscreen = fullscreen;
+    } else {
+      all[app_id] = { x: 0, y: 0, width: 0, height: 0, fullscreen };
+    }
+    localStorage.setItem(GEOMETRY_STORAGE_KEY, JSON.stringify(all));
+  } catch {}
+}
+
 function saveOpenWindows() {
   try {
     const appIds = desktop.windows.map((w) => w.app_id);
@@ -89,10 +102,12 @@ function loadOpenWindows(): string[] {
   return [];
 }
 
-function getSavedSessionMode(): SessionMode {
+export type DefaultSessionMode = "embedded" | "windowed";
+
+function getSavedSessionMode(): DefaultSessionMode {
   try {
     const saved = localStorage.getItem("ai-launcher:default-mode");
-    if (saved === "embedded" || saved === "windowed") return saved as SessionMode;
+    if (saved === "embedded" || saved === "windowed") return saved as DefaultSessionMode;
   } catch {}
   return "windowed";
 }
@@ -150,6 +165,11 @@ const createWindow = (
   browser: null,
 });
 
+export type DrawerState = {
+  session_id: string;
+  side: "left" | "right";
+};
+
 export const desktop = $state({
   theme: getSavedTheme(),
   launchpad_open: false,
@@ -163,6 +183,8 @@ export const desktop = $state({
   next_z_index: 10,
   default_session_mode: getSavedSessionMode(),
   dock_auto_hide: getSavedDockAutoHide(),
+  drawer: null as DrawerState | null,
+  fullscreen_session_id: null as string | null,
 });
 
 export function toggleDockAutoHide() {
@@ -215,9 +237,9 @@ export function bootDesktop() {
     );
     win.resizable = config.resizable!;
     win.expandable = config.expandable!;
-    if (appId === "ai-launcher") {
-      win.fullscreen = true;
-    }
+    const savedGeo = loadWindowGeometry(appId);
+    // Restore saved fullscreen state; default ai-launcher to fullscreen on first run
+    win.fullscreen = typeof savedGeo?.fullscreen === 'boolean' ? savedGeo.fullscreen : (appId === "ai-launcher");
     assignWindowFocus(win);
     desktop.windows.push(win);
   }
@@ -272,6 +294,7 @@ export function toggleFullscreen(window_id: string) {
   if (!window) return;
   window.fullscreen = !window.fullscreen;
   assignWindowFocus(window);
+  saveWindowFullscreen(window.app_id, window.fullscreen);
 }
 
 export function openStaticApp(app_id: StaticAppID) {
@@ -398,6 +421,58 @@ export function openSessionInWindow(session_id: string) {
   session.mode = "windowed";
   session.window_id = window.id;
   desktop.selected_session_id = session.id;
+}
+
+export function openSessionInDrawer(session_id: string, side: "left" | "right") {
+  const session = desktop.sessions.find((item) => item.id === session_id);
+  if (!session) return;
+  // Close any existing windowed view for this session
+  if (session.window_id) {
+    const index = desktop.windows.findIndex((item) => item.id === session.window_id);
+    if (index >= 0) desktop.windows.splice(index, 1);
+    session.window_id = null;
+  }
+  // Clear fullscreen if set
+  if (desktop.fullscreen_session_id === session_id) {
+    desktop.fullscreen_session_id = null;
+  }
+  session.mode = side === "left" ? "drawer-left" : "drawer-right";
+  desktop.drawer = { session_id, side };
+  desktop.selected_session_id = session_id;
+}
+
+export function closeDrawer() {
+  if (desktop.drawer) {
+    const session = desktop.sessions.find((item) => item.id === desktop.drawer!.session_id);
+    if (session) session.mode = "embedded";
+  }
+  desktop.drawer = null;
+}
+
+export function openSessionFullscreen(session_id: string) {
+  const session = desktop.sessions.find((item) => item.id === session_id);
+  if (!session) return;
+  // Close any existing windowed view for this session
+  if (session.window_id) {
+    const index = desktop.windows.findIndex((item) => item.id === session.window_id);
+    if (index >= 0) desktop.windows.splice(index, 1);
+    session.window_id = null;
+  }
+  // Clear drawer if set
+  if (desktop.drawer?.session_id === session_id) {
+    desktop.drawer = null;
+  }
+  session.mode = "fullscreen";
+  desktop.fullscreen_session_id = session_id;
+  desktop.selected_session_id = session_id;
+}
+
+export function closeFullscreenSession() {
+  if (desktop.fullscreen_session_id) {
+    const session = desktop.sessions.find((item) => item.id === desktop.fullscreen_session_id);
+    if (session) session.mode = "embedded";
+  }
+  desktop.fullscreen_session_id = null;
 }
 
 export function openGenericBrowserWindow(initialUrl = "http://localhost:3000", title = apps_config.browser.title) {

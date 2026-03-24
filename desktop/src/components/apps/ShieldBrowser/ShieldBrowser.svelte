@@ -66,17 +66,10 @@
       profiles = await invoke<ShieldProfile[]>("list_shield_profiles");
       status = await invoke<ShieldStatus>("get_shield_status");
 
-      // Determine initial view
-      const hasEngines = status.installed_engines.length > 0;
-      if (!hasEngines) {
-        view = "setup";
-        // Pre-resolve latest version
-        resolveSetupVersion();
-      } else {
-        view = "profiles";
-        // Pre-resolve version for create form
-        resolveCreateVersion();
-      }
+      // Always start in profiles view — user opens setup explicitly
+      view = "profiles";
+      // Pre-resolve version for create form in background
+      resolveCreateVersion();
     } catch (e) {
       console.error("Failed to init shield:", e);
       profiles = [];
@@ -307,6 +300,9 @@
         {#if view === "create"}
           <button class="action-btn" onclick={() => view = "profiles"}>← Back</button>
         {:else}
+          {#if status && status.installed_engines.length === 0}
+            <button class="action-btn" onclick={() => { resolveSetupVersion(); view = "setup"; }}>🔧 Set Up Engine</button>
+          {/if}
           <button class="action-btn primary" onclick={() => { resolveCreateVersion(); view = "create"; }}>+ New Profile</button>
           <button class="action-btn" onclick={refresh}>↻</button>
         {/if}
@@ -370,9 +366,15 @@
             {#if profiles.length === 0}
               <div class="empty-state">
                 <span class="empty-icon">🛡️</span>
-                <h3>No Profiles Yet</h3>
-                <p>Create your first anti-detect browser profile to get started.</p>
-                <button class="action-btn primary" onclick={() => { resolveCreateVersion(); view = "create"; }}>+ Create Profile</button>
+                {#if status && status.installed_engines.length === 0}
+                  <h3>Welcome to Shield Browser</h3>
+                  <p>Set up a browser engine to create anti-detect profiles with unique fingerprints.</p>
+                  <button class="action-btn primary" onclick={() => { resolveSetupVersion(); view = "setup"; }}>🔧 Set Up Engine</button>
+                {:else}
+                  <h3>No Profiles Yet</h3>
+                  <p>Create your first anti-detect browser profile to get started.</p>
+                  <button class="action-btn primary" onclick={() => { resolveCreateVersion(); view = "create"; }}>+ Create Profile</button>
+                {/if}
               </div>
             {:else}
               {#each profiles as profile (profile.id)}

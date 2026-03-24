@@ -9,9 +9,10 @@ import {
   selectManifest,
   upsertSession,
   sendSessionToDashboard,
+  type DefaultSessionMode,
 } from "🍎/state/desktop.svelte";
 
-export type OpenTarget = "embedded" | "windowed";
+export type OpenTarget = DefaultSessionMode;
 
 function runningPort(installed: InstalledApp | null | undefined) {
   return installed?.status.state === "Running" ? installed.status.port ?? null : null;

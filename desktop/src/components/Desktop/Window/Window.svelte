@@ -103,6 +103,9 @@
   if (savedGeo) {
     window.width = savedGeo.width;
     window.height = savedGeo.height;
+    if (typeof savedGeo.fullscreen === 'boolean') {
+      window.fullscreen = savedGeo.fullscreen;
+    }
   }
 
   const defaultPosition = () => {
@@ -128,6 +131,7 @@
       x, y,
       width: window.width,
       height: window.height,
+      fullscreen: window.fullscreen,
     });
   }
 

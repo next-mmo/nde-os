@@ -5,7 +5,8 @@
   import { apps_config } from "🍎/configs/apps/apps-config";
   import { revealOrLaunchManifest } from "$lib/session-actions";
   import { catalog, installedMap } from "$lib/stores/state";
-  import { desktop, openStaticApp, selectLauncherSection, selectManifest, toggleLaunchpad } from "🍎/state/desktop.svelte";
+  import { desktop, openStaticApp, selectLauncherSection, selectManifest, toggleLaunchpad, sessionForApp } from "🍎/state/desktop.svelte";
+  import OpenWithMenu from "🍎/components/Desktop/OpenWithMenu.svelte";
   import { fade } from "svelte/transition";
 
   let panelEl = $state<HTMLElement>();
@@ -98,9 +99,13 @@
                 <p class="m-0 text-gray-600 dark:text-gray-400 text-[0.84rem]">{app.description}</p>
               </div>
             </button>
-            <div class="flex gap-[0.55rem]">
-              <button class="flex-1 rounded-full px-[0.8rem] py-[0.6rem] bg-white/80 dark:bg-gray-800/80 border border-black/10 dark:border-white/10 text-[0.8rem] hover:bg-white dark:hover:bg-gray-700 transition-colors text-black dark:text-white font-medium" onclick={() => openManifest(app.id, "embedded")}>Open in Dashboard</button>
-              <button class="flex-1 rounded-full px-[0.8rem] py-[0.6rem] bg-white/80 dark:bg-gray-800/80 border border-black/10 dark:border-white/10 text-[0.8rem] hover:bg-white dark:hover:bg-gray-700 transition-colors text-black dark:text-white font-medium" onclick={() => openManifest(app.id, "windowed")}>Open in Window</button>
+            <div class="flex gap-[0.55rem] items-center">
+              <button class="flex-1 rounded-full px-[0.8rem] py-[0.6rem] bg-white/80 dark:bg-gray-800/80 border border-black/10 dark:border-white/10 text-[0.8rem] hover:bg-white dark:hover:bg-gray-700 transition-colors text-black dark:text-white font-medium" onclick={() => openManifest(app.id, desktop.default_session_mode)}>Open</button>
+              {#if sessionForApp(app.id)}
+                <OpenWithMenu session_id={sessionForApp(app.id)!.id} port={sessionForApp(app.id)!.port} title={app.name} />
+              {:else}
+                <button class="flex-1 rounded-full px-[0.8rem] py-[0.6rem] bg-white/80 dark:bg-gray-800/80 border border-black/10 dark:border-white/10 text-[0.8rem] hover:bg-white dark:hover:bg-gray-700 transition-colors text-black dark:text-white font-medium" onclick={() => openManifest(app.id, desktop.default_session_mode === "embedded" ? "windowed" : "embedded")}>{desktop.default_session_mode === "embedded" ? "Window" : "Dashboard"}</button>
+              {/if}
             </div>
           </article>
         {/each}

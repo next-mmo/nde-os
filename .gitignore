@@ -11,7 +11,7 @@ target-codex-build-serial
 target-buildcheck
 *.gguf
 .env
-workspace/.sandbox_info
+/workspace/
 err.log
 error.json
 b4679.json

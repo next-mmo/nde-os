@@ -23,24 +23,27 @@
   let renameValue = $state("");
   let showNewFolderInput = $state(false);
   let newFolderName = $state("");
+  let sandboxRoot = $state("");
 
-  // Sidebar quick-access folders
+  // Context menu state
+  let contextMenu = $state<{ x: number; y: number; type: "file" | "folder" | "blank"; entry?: FileEntry } | null>(null);
+
+  // Sidebar: NDE-OS workspace directories (these live inside the sandbox root)
   const sidebarItems = [
-    { label: "Home", icon: "🏠", path: "" },
-    { label: "Desktop", icon: "🖥️", path: "Desktop" },
-    { label: "Downloads", icon: "⬇️", path: "Downloads" },
-    { label: "Documents", icon: "📄", path: "Documents" },
-    { label: "Pictures", icon: "🖼️", path: "Pictures" },
-    { label: "Music", icon: "🎵", path: "Music" },
-    { label: "Videos", icon: "🎬", path: "Videos" },
+    { label: "Workspace", icon: "🏠", subpath: "" },
+    { label: "Apps", icon: "📦", subpath: "" }, // Will contain app workspaces
+    { label: "Data", icon: "💾", subpath: "data" },
+    { label: "Models", icon: "🧠", subpath: "models" },
+    { label: "Outputs", icon: "📤", subpath: "outputs" },
+    { label: "Logs", icon: "📋", subpath: "logs" },
+    { label: "Config", icon: "⚙️", subpath: "config" },
+    { label: "Temp", icon: "🗑️", subpath: "tmp" },
   ];
-
-  let homeDir = $state("");
 
   async function init() {
     try {
-      homeDir = await invoke<string>("get_home_dir");
-      await navigate(homeDir);
+      sandboxRoot = await invoke<string>("get_home_dir");
+      await navigate("");
     } catch (e) {
       error = String(e);
     }
@@ -52,12 +55,12 @@
     selectedPath = null;
     renamingPath = null;
     showNewFolderInput = false;
+    contextMenu = null;
     try {
       const result = await invoke<FileEntry[]>("list_directory", { path });
       entries = result;
-      currentPath = path || homeDir;
+      currentPath = path || sandboxRoot;
 
-      // Update history
       if (historyIndex < history.length - 1) {
         history = history.slice(0, historyIndex + 1);
       }
@@ -87,6 +90,7 @@
     loading = true;
     error = "";
     selectedPath = null;
+    contextMenu = null;
     try {
       entries = await invoke<FileEntry[]>("list_directory", { path });
       currentPath = path;
@@ -97,24 +101,28 @@
   }
 
   function goUp() {
+    // Don't navigate above sandbox root
+    if (!currentPath || currentPath === sandboxRoot) return;
+
     const sep = currentPath.includes("\\") ? "\\" : "/";
     const parts = currentPath.split(sep).filter(Boolean);
-    if (parts.length <= 1) {
-      // On Windows, going up from C:\Users → C:\
-      if (currentPath.match(/^[A-Z]:\\/i)) {
-        navigate(currentPath.slice(0, 3));
-      }
-      return;
-    }
+    if (parts.length <= 1) return;
     parts.pop();
     const parent = currentPath.startsWith("/")
       ? "/" + parts.join("/")
       : parts.join(sep);
+
+    // Verify parent is still inside sandbox
+    const rootNorm = sandboxRoot.replace(/\\/g, "/").toLowerCase();
+    const parentNorm = parent.replace(/\\/g, "/").toLowerCase();
+    if (!parentNorm.startsWith(rootNorm)) return;
+
     navigate(parent);
   }
 
-  async function handleEntryClick(entry: FileEntry) {
+  function handleEntryClick(entry: FileEntry) {
     selectedPath = entry.path;
+    contextMenu = null;
   }
 
   async function handleEntryDblClick(entry: FileEntry) {
@@ -143,11 +151,13 @@
     }
   }
 
-  async function handleDelete() {
-    if (!selectedPath) return;
+  async function handleDelete(path?: string) {
+    const target = path || selectedPath;
+    if (!target) return;
     try {
-      await invoke("delete_entry", { path: selectedPath });
+      await invoke("delete_entry", { path: target });
       selectedPath = null;
+      contextMenu = null;
       await loadPath(currentPath);
     } catch (e) {
       error = String(e);
@@ -157,6 +167,7 @@
   function startRename(entry: FileEntry) {
     renamingPath = entry.path;
     renameValue = entry.name;
+    contextMenu = null;
   }
 
   async function handleRename(entry: FileEntry) {
@@ -174,6 +185,26 @@
       error = String(e);
     }
   }
+
+  function copyPath(path: string) {
+    navigator.clipboard.writeText(path).catch(() => {});
+    contextMenu = null;
+  }
+
+  // ── Context menu ──────────────────────────────────────────────────
+
+  function showContextMenu(e: MouseEvent, type: "file" | "folder" | "blank", entry?: FileEntry) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (entry) selectedPath = entry.path;
+    contextMenu = { x: e.clientX, y: e.clientY, type, entry };
+  }
+
+  function closeContextMenu() {
+    contextMenu = null;
+  }
+
+  // ── Utils ─────────────────────────────────────────────────────────
 
   function formatSize(bytes: number): string {
     if (bytes === 0) return "—";
@@ -203,43 +234,51 @@
     return map[ext] || "📄";
   }
 
-  // Breadcrumb segments
+  // Breadcrumbs relative to sandbox root
   const breadcrumbs = $derived.by(() => {
-    if (!currentPath) return [];
-    const sep = currentPath.includes("\\") ? "\\" : "/";
-    const parts = currentPath.split(sep).filter(Boolean);
-    const crumbs: { label: string; path: string }[] = [];
-    for (let i = 0; i < parts.length; i++) {
-      const path = currentPath.startsWith("/")
-        ? "/" + parts.slice(0, i + 1).join("/")
-        : parts.slice(0, i + 1).join(sep);
-      crumbs.push({ label: parts[i], path });
+    if (!currentPath || !sandboxRoot) return [{ label: "NDE-OS", path: sandboxRoot }];
+    const sep = sandboxRoot.includes("\\") ? "\\" : "/";
+    const rootParts = sandboxRoot.split(sep).filter(Boolean);
+    const currentParts = currentPath.split(sep).filter(Boolean);
+    // Remove root prefix to get relative parts
+    const relParts = currentParts.slice(rootParts.length);
+
+    const crumbs: { label: string; path: string }[] = [
+      { label: "NDE-OS", path: sandboxRoot },
+    ];
+    for (let i = 0; i < relParts.length; i++) {
+      const path = sandboxRoot + sep + relParts.slice(0, i + 1).join(sep);
+      crumbs.push({ label: relParts[i], path });
     }
     return crumbs;
   });
 
-  function handleSidebar(item: { path: string }) {
-    if (item.path === "") {
-      navigate(homeDir);
+  function handleSidebar(item: { subpath: string }) {
+    if (item.subpath === "") {
+      navigate("");
     } else {
-      const sep = homeDir.includes("\\") ? "\\" : "/";
-      navigate(homeDir + sep + item.path);
+      const sep = sandboxRoot.includes("\\") ? "\\" : "/";
+      navigate(sandboxRoot + sep + item.subpath);
     }
   }
+
+  // Is at sandbox root?
+  const isAtRoot = $derived(currentPath === sandboxRoot || currentPath === "");
 
   // Init on mount
   init();
 </script>
 
-<div class="flex w-full h-full overflow-hidden text-sm">
+<!-- svelte-ignore a11y_no_static_element_interactions -->
+<div class="flex w-full h-full overflow-hidden text-sm" onclick={closeContextMenu} onkeydown={undefined}>
   <!-- Sidebar -->
   <aside class="w-48 shrink-0 border-r border-black/8 dark:border-white/8 bg-white/30 dark:bg-gray-900/30 backdrop-blur-md flex flex-col overflow-y-auto">
     <div class="px-3 pt-3 pb-1.5">
-      <span class="text-[0.65rem] uppercase tracking-widest font-semibold text-gray-400 dark:text-gray-500">Favorites</span>
+      <span class="text-[0.65rem] uppercase tracking-widest font-semibold text-gray-400 dark:text-gray-500">NDE-OS</span>
     </div>
     {#each sidebarItems as item}
       <button
-        class="flex items-center gap-2 px-3 py-1.5 text-left text-[0.82rem] font-medium rounded-lg mx-1.5 transition-colors duration-150 hover:bg-black/5 dark:hover:bg-white/5 {currentPath.endsWith(item.path) || (item.path === '' && currentPath === homeDir) ? 'bg-blue-500/12 text-blue-600 dark:text-blue-400' : 'text-gray-700 dark:text-gray-300'}"
+        class="flex items-center gap-2 px-3 py-1.5 text-left text-[0.82rem] font-medium rounded-lg mx-1.5 transition-colors duration-150 hover:bg-black/5 dark:hover:bg-white/5 {currentPath.endsWith(item.subpath) && item.subpath !== '' ? 'bg-blue-500/12 text-blue-600 dark:text-blue-400' : item.subpath === '' && isAtRoot ? 'bg-blue-500/12 text-blue-600 dark:text-blue-400' : 'text-gray-700 dark:text-gray-300'}"
         onclick={() => handleSidebar(item)}
       >
         <span class="text-base">{item.icon}</span>
@@ -270,7 +309,8 @@
         <svg class="w-4 h-4" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"/></svg>
       </button>
       <button
-        class="p-1.5 rounded-md transition-colors hover:bg-black/8 dark:hover:bg-white/8 text-gray-600 dark:text-gray-400"
+        class="p-1.5 rounded-md transition-colors hover:bg-black/8 dark:hover:bg-white/8 disabled:opacity-30 disabled:cursor-default text-gray-600 dark:text-gray-400"
+        disabled={isAtRoot}
         onclick={goUp}
         aria-label="Go up"
       >
@@ -305,7 +345,7 @@
         <button
           class="p-1.5 rounded-md transition-colors hover:bg-black/8 dark:hover:bg-white/8 disabled:opacity-30 disabled:cursor-default text-red-500 dark:text-red-400"
           disabled={!selectedPath}
-          onclick={handleDelete}
+          onclick={() => handleDelete()}
           aria-label="Delete"
           title="Delete"
         >
@@ -356,8 +396,14 @@
       </div>
     {/if}
 
-    <!-- File list -->
-    <div class="flex-1 overflow-auto">
+    <!-- File list area — right-click on blank opens context menu -->
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <div
+      class="flex-1 overflow-auto"
+      oncontextmenu={(e) => showContextMenu(e, "blank")}
+      onclick={() => { selectedPath = null; contextMenu = null; }}
+      onkeydown={undefined}
+    >
       {#if loading}
         <div class="flex items-center justify-center h-full text-gray-400 dark:text-gray-500">
           <svg class="w-5 h-5 animate-spin mr-2" viewBox="0 0 24 24" fill="none"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
@@ -375,12 +421,14 @@
           </thead>
           <tbody>
             {#each entries as entry (entry.path)}
+              <!-- svelte-ignore a11y_no_static_element_interactions -->
               <tr
                 class="border-b border-black/3 dark:border-white/3 cursor-default transition-colors {selectedPath === entry.path ? 'bg-blue-500/12 dark:bg-blue-500/15' : 'hover:bg-black/3 dark:hover:bg-white/3'}"
-                onclick={() => handleEntryClick(entry)}
+                onclick={(e) => { e.stopPropagation(); handleEntryClick(entry); }}
                 ondblclick={() => handleEntryDblClick(entry)}
+                oncontextmenu={(e) => { e.stopPropagation(); showContextMenu(e, entry.is_dir ? "folder" : "file", entry); }}
                 tabindex="0"
-                onkeydown={(e) => { if (e.key === "Enter") handleEntryDblClick(entry); if (e.key === "F2") startRename(entry); }}
+                onkeydown={(e) => { if (e.key === "Enter") handleEntryDblClick(entry); if (e.key === "F2") startRename(entry); if (e.key === "Delete") handleDelete(entry.path); }}
               >
                 <td class="px-4 py-1.5">
                   <div class="flex items-center gap-2">
@@ -390,7 +438,7 @@
                         type="text"
                         class="flex-1 text-sm px-1.5 py-0.5 rounded border border-blue-400 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 outline-none"
                         bind:value={renameValue}
-                        onkeydown={(e) => { if (e.key === "Enter") handleRename(entry); if (e.key === "Escape") { renamingPath = null; } }}
+                        onkeydown={(e) => { e.stopPropagation(); if (e.key === "Enter") handleRename(entry); if (e.key === "Escape") { renamingPath = null; } }}
                         onblur={() => handleRename(entry)}
                       />
                     {:else}
@@ -421,9 +469,10 @@
           {#each entries as entry (entry.path)}
             <button
               class="flex flex-col items-center gap-1 p-2 rounded-xl transition-colors cursor-default {selectedPath === entry.path ? 'bg-blue-500/12 dark:bg-blue-500/15 ring-1 ring-blue-400/30' : 'hover:bg-black/4 dark:hover:bg-white/4'}"
-              onclick={() => handleEntryClick(entry)}
+              onclick={(e) => { e.stopPropagation(); handleEntryClick(entry); }}
               ondblclick={() => handleEntryDblClick(entry)}
-              onkeydown={(e) => { if (e.key === "Enter") handleEntryDblClick(entry); }}
+              oncontextmenu={(e) => { e.stopPropagation(); showContextMenu(e, entry.is_dir ? "folder" : "file", entry); }}
+              onkeydown={(e) => { if (e.key === "Enter") handleEntryDblClick(entry); if (e.key === "Delete") handleDelete(entry.path); }}
             >
               <span class="text-3xl">{fileIcon(entry)}</span>
               <span class="text-[0.7rem] text-gray-700 dark:text-gray-300 text-center leading-tight line-clamp-2 w-full break-all">{entry.name}</span>
@@ -441,7 +490,83 @@
     <!-- Status bar -->
     <div class="flex items-center justify-between px-4 py-1.5 text-[0.7rem] text-gray-500 dark:text-gray-400 border-t border-black/6 dark:border-white/6 bg-white/30 dark:bg-gray-800/30">
       <span>{entries.length} item{entries.length !== 1 ? "s" : ""}</span>
-      <span class="truncate max-w-[60%] text-right">{currentPath}</span>
+      <span class="truncate max-w-[60%] text-right font-mono opacity-70">
+        {#if sandboxRoot && currentPath}
+          /{currentPath.replace(sandboxRoot, "").replace(/^[\\/]/, "").replace(/\\/g, "/") || ""}
+        {:else}
+          /
+        {/if}
+      </span>
     </div>
   </div>
 </div>
+
+<!-- Context Menu overlay -->
+{#if contextMenu}
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <div
+    class="fixed inset-0 z-9999"
+    onclick={closeContextMenu}
+    oncontextmenu={(e) => { e.preventDefault(); closeContextMenu(); }}
+    onkeydown={undefined}
+  >
+    <div
+      class="absolute min-w-[180px] py-1 rounded-xl bg-white/95 dark:bg-gray-800/95 backdrop-blur-xl border border-black/10 dark:border-white/10 shadow-xl shadow-black/20"
+      style="left: {contextMenu.x}px; top: {contextMenu.y}px;"
+    >
+      {#if contextMenu.type === "file" && contextMenu.entry}
+        <button class="flex items-center gap-2 w-full px-3 py-1.5 text-[0.8rem] text-left bg-transparent border-none cursor-default rounded-md mx-1 hover:bg-blue-500/15 dark:hover:bg-blue-500/20" onclick={() => { if (contextMenu?.entry) handleEntryDblClick(contextMenu.entry); }}>
+          <span>📂</span> Open
+        </button>
+        <button class="flex items-center gap-2 w-full px-3 py-1.5 text-[0.8rem] text-left bg-transparent border-none cursor-default rounded-md mx-1 hover:bg-blue-500/15 dark:hover:bg-blue-500/20" onclick={() => { if (contextMenu?.entry) startRename(contextMenu.entry); }}>
+          <span>✏️</span> Rename
+        </button>
+        <button class="flex items-center gap-2 w-full px-3 py-1.5 text-[0.8rem] text-left bg-transparent border-none cursor-default rounded-md mx-1 hover:bg-blue-500/15 dark:hover:bg-blue-500/20" onclick={() => { if (contextMenu?.entry) copyPath(contextMenu.entry.path); }}>
+          <span>📋</span> Copy Path
+        </button>
+        <div class="h-px mx-2 my-1 bg-black/8 dark:bg-white/8"></div>
+        <button class="flex items-center gap-2 w-full px-3 py-1.5 text-[0.8rem] text-left bg-transparent border-none cursor-default rounded-md mx-1 hover:bg-red-500/15 dark:hover:bg-red-500/20 text-red-500 dark:text-red-400" onclick={() => { if (contextMenu?.entry) handleDelete(contextMenu.entry.path); }}>
+          <span>🗑️</span> Delete
+        </button>
+
+      {:else if contextMenu.type === "folder" && contextMenu.entry}
+        <button class="flex items-center gap-2 w-full px-3 py-1.5 text-[0.8rem] text-left bg-transparent border-none cursor-default rounded-md mx-1 hover:bg-blue-500/15 dark:hover:bg-blue-500/20" onclick={() => { if (contextMenu?.entry) navigate(contextMenu.entry.path); contextMenu = null; }}>
+          <span>📂</span> Open
+        </button>
+        <button class="flex items-center gap-2 w-full px-3 py-1.5 text-[0.8rem] text-left bg-transparent border-none cursor-default rounded-md mx-1 hover:bg-blue-500/15 dark:hover:bg-blue-500/20" onclick={() => { if (contextMenu?.entry) startRename(contextMenu.entry); }}>
+          <span>✏️</span> Rename
+        </button>
+        <button class="flex items-center gap-2 w-full px-3 py-1.5 text-[0.8rem] text-left bg-transparent border-none cursor-default rounded-md mx-1 hover:bg-blue-500/15 dark:hover:bg-blue-500/20" onclick={() => { if (contextMenu?.entry) copyPath(contextMenu.entry.path); }}>
+          <span>📋</span> Copy Path
+        </button>
+        <div class="h-px mx-2 my-1 bg-black/8 dark:bg-white/8"></div>
+        <button class="flex items-center gap-2 w-full px-3 py-1.5 text-[0.8rem] text-left bg-transparent border-none cursor-default rounded-md mx-1 hover:bg-red-500/15 dark:hover:bg-red-500/20 text-red-500 dark:text-red-400" onclick={() => { if (contextMenu?.entry) handleDelete(contextMenu.entry.path); }}>
+          <span>🗑️</span> Delete
+        </button>
+
+      {:else}
+        <!-- Blank area context menu -->
+        <button class="flex items-center gap-2 w-full px-3 py-1.5 text-[0.8rem] text-left bg-transparent border-none cursor-default rounded-md mx-1 hover:bg-blue-500/15 dark:hover:bg-blue-500/20" onclick={() => { showNewFolderInput = true; newFolderName = ""; contextMenu = null; }}>
+          <span>📁</span> New Folder
+        </button>
+        <button class="flex items-center gap-2 w-full px-3 py-1.5 text-[0.8rem] text-left bg-transparent border-none cursor-default rounded-md mx-1 hover:bg-blue-500/15 dark:hover:bg-blue-500/20" onclick={() => { loadPath(currentPath); contextMenu = null; }}>
+          <span>🔄</span> Refresh
+        </button>
+        <div class="h-px mx-2 my-1 bg-black/8 dark:bg-white/8"></div>
+        <button class="flex items-center gap-2 w-full px-3 py-1.5 text-[0.8rem] text-left bg-transparent border-none cursor-default rounded-md mx-1 hover:bg-blue-500/15 dark:hover:bg-blue-500/20" onclick={() => { viewMode = "list"; contextMenu = null; }}>
+          <span>📃</span> List View
+        </button>
+        <button class="flex items-center gap-2 w-full px-3 py-1.5 text-[0.8rem] text-left bg-transparent border-none cursor-default rounded-md mx-1 hover:bg-blue-500/15 dark:hover:bg-blue-500/20" onclick={() => { viewMode = "grid"; contextMenu = null; }}>
+          <span>📊</span> Grid View
+        </button>
+        <div class="h-px mx-2 my-1 bg-black/8 dark:bg-white/8"></div>
+        <button class="flex items-center gap-2 w-full px-3 py-1.5 text-[0.8rem] text-left bg-transparent border-none cursor-default rounded-md mx-1 hover:bg-blue-500/15 dark:hover:bg-blue-500/20" onclick={() => copyPath(currentPath)}>
+          <span>📋</span> Copy Current Path
+        </button>
+      {/if}
+    </div>
+  </div>
+{/if}
+
+
+
