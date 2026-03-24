@@ -5,6 +5,7 @@ export type WindowAppID = Exclude<StaticAppID, "launchpad">;
 export type ThemeScheme = "light" | "dark";
 export type LauncherSection = "overview" | "catalog" | "installed" | "running" | "server" | "command-center" | "chat" | "model-settings" | "plugins" | "channels" | "mcp-tools" | "skills" | "knowledge" | "code-editor";
 export type SessionMode = "embedded" | "windowed" | "drawer-left" | "drawer-right" | "fullscreen";
+export type DesktopIconPosition = { x: number; y: number };
 
 export type RunningSession = {
   id: string;
@@ -52,6 +53,24 @@ type SavedWindowGeometry = { x: number; y: number; width: number; height: number
 
 const GEOMETRY_STORAGE_KEY = "ai-launcher:window-geometry";
 const OPEN_WINDOWS_STORAGE_KEY = "ai-launcher:open-windows";
+const ICON_POSITIONS_STORAGE_KEY = "ai-launcher:icon-positions";
+const HIDDEN_ICONS_STORAGE_KEY = "ai-launcher:hidden-icons";
+
+function loadIconPositions(): Record<string, DesktopIconPosition> {
+  try {
+    const raw = localStorage.getItem(ICON_POSITIONS_STORAGE_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch {}
+  return {};
+}
+
+function loadHiddenIcons(): string[] {
+  try {
+    const raw = localStorage.getItem(HIDDEN_ICONS_STORAGE_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch {}
+  return [];
+}
 
 function loadAllGeometry(): Record<string, SavedWindowGeometry> {
   try {
@@ -144,6 +163,11 @@ function getSavedDockAutoHide(): boolean {
   return false;
 }
 
+function getSavedCollapsed(): boolean {
+  // Always start collapsed on launch — user clicks FAB to expand
+  return true;
+}
+
 const createWindow = (
   app_id: WindowAppID | "browser" | "chat",
   title: string,
@@ -172,6 +196,7 @@ export type DrawerState = {
 
 export const desktop = $state({
   theme: getSavedTheme(),
+  collapsed: getSavedCollapsed(),
   launchpad_open: false,
   launcher_section: getSavedLauncherSection(),
   launcher_query: "",
@@ -185,6 +210,9 @@ export const desktop = $state({
   dock_auto_hide: getSavedDockAutoHide(),
   drawer: null as DrawerState | null,
   fullscreen_session_id: null as string | null,
+  icon_positions: loadIconPositions() as Record<string, DesktopIconPosition>,
+  icon_selection: new Set<string>(),
+  hidden_icons: new Set<string>(loadHiddenIcons()),
 });
 
 export function toggleDockAutoHide() {
@@ -192,6 +220,126 @@ export function toggleDockAutoHide() {
   try {
     localStorage.setItem("ai-launcher:dock-auto-hide", String(desktop.dock_auto_hide));
   } catch {}
+}
+
+export async function expandDesktop() {
+  desktop.collapsed = false;
+
+  // Save current FAB position before expanding
+  try {
+    const { getCurrentWindow } = await import("@tauri-apps/api/window");
+    const win = getCurrentWindow();
+    const pos = await win.outerPosition();
+    const scale = (await win.scaleFactor()) ?? 1;
+    localStorage.setItem("ai-launcher:fab-position", JSON.stringify({
+      x: pos.x / scale,
+      y: pos.y / scale,
+    }));
+  } catch (_) {}
+
+  // Restore saved window geometry or default to maximized
+  try {
+    const { getCurrentWindow } = await import("@tauri-apps/api/window");
+    const { LogicalSize, LogicalPosition } = await import("@tauri-apps/api/dpi");
+    const win = getCurrentWindow();
+
+    await win.setAlwaysOnTop(false);
+    await win.setSkipTaskbar(false);
+    await win.setMinSize(new LogicalSize(900, 600));
+
+    const saved = loadWindowGeometry("__tauri-main__");
+    if (saved && saved.width > 0 && saved.height > 0) {
+      await win.setSize(new LogicalSize(saved.width, saved.height));
+      await win.setPosition(new LogicalPosition(saved.x, saved.y));
+      if (saved.fullscreen) {
+        await win.setFullscreen(true);
+      }
+    } else {
+      // First run: maximize
+      await win.setSize(new LogicalSize(1100, 750));
+      await win.center();
+      await win.setFullscreen(true);
+    }
+  } catch (_) {
+    // Not in Tauri
+  }
+}
+
+/** Save the current Tauri window geometry so it can be restored after collapse */
+async function saveMainWindowGeometry() {
+  try {
+    const { getCurrentWindow } = await import("@tauri-apps/api/window");
+    const win = getCurrentWindow();
+    const size = await win.innerSize();
+    const pos = await win.outerPosition();
+    const scale = (await win.scaleFactor()) ?? 1;
+    const fs = await win.isFullscreen();
+    saveWindowGeometry("__tauri-main__", {
+      x: pos.x / scale,
+      y: pos.y / scale,
+      width: size.width / scale,
+      height: size.height / scale,
+      fullscreen: fs,
+    });
+  } catch (_) {}
+}
+
+const TAB_WIDTH = 24;
+const TAB_HEIGHT = 48;
+
+function loadFabY(): number | null {
+  try {
+    const raw = localStorage.getItem("ai-launcher:fab-y");
+    if (raw) {
+      const y = JSON.parse(raw);
+      if (typeof y === "number") return y;
+    }
+  } catch (_) {}
+  return null;
+}
+
+export async function saveFabPosition() {
+  try {
+    const { getCurrentWindow } = await import("@tauri-apps/api/window");
+    const win = getCurrentWindow();
+    const pos = await win.outerPosition();
+    const scale = (await win.scaleFactor()) ?? 1;
+    localStorage.setItem("ai-launcher:fab-y", JSON.stringify(pos.y / scale));
+  } catch (_) {}
+}
+
+export async function collapseDesktop() {
+  // Save current window geometry before shrinking
+  await saveMainWindowGeometry();
+
+  desktop.collapsed = true;
+
+  // Shrink to right-edge tab
+  try {
+    const { getCurrentWindow, primaryMonitor } = await import("@tauri-apps/api/window");
+    const { LogicalSize, LogicalPosition } = await import("@tauri-apps/api/dpi");
+    const win = getCurrentWindow();
+
+    const monitor = await primaryMonitor();
+    if (!monitor) return;
+
+    const scale = monitor.scaleFactor;
+    const screenW = monitor.size.width / scale;
+    const screenH = monitor.size.height / scale;
+
+    await win.setMinSize(new LogicalSize(TAB_WIDTH, TAB_HEIGHT));
+    await win.setSize(new LogicalSize(TAB_WIDTH, TAB_HEIGHT));
+
+    // Restore saved Y or default to center-right
+    const savedY = loadFabY();
+    const y = savedY ?? (screenH / 2 - TAB_HEIGHT / 2);
+    await win.setPosition(new LogicalPosition(screenW - TAB_WIDTH, y));
+
+    await win.setAlwaysOnTop(true);
+    await win.setSkipTaskbar(true);
+  } catch (_) {
+    // Not in Tauri
+  }
 }
 
 export function toggleDefaultSessionMode() {
@@ -606,6 +754,57 @@ export function isDockAppOpen(app_id: StaticAppID | string) {
     return desktop.windows.some((item) => item.app_id === "browser");
   }
   return desktop.windows.some((item) => item.app_id === app_id) || desktop.sessions.some((item) => item.app_id === app_id);
+}
+
+export function saveIconPositions() {
+  try {
+    localStorage.setItem(ICON_POSITIONS_STORAGE_KEY, JSON.stringify(desktop.icon_positions));
+  } catch {}
+}
+
+export function setIconPosition(id: string, x: number, y: number) {
+  desktop.icon_positions[id] = { x, y };
+  saveIconPositions();
+}
+
+export function resetIconPositions() {
+  desktop.icon_positions = {};
+  try {
+    localStorage.removeItem(ICON_POSITIONS_STORAGE_KEY);
+  } catch {}
+}
+
+export function selectIcon(id: string | null, additive = false) {
+  if (id === null) {
+    desktop.icon_selection = new Set();
+    return;
+  }
+  if (additive) {
+    const next = new Set(desktop.icon_selection);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    desktop.icon_selection = next;
+  } else {
+    desktop.icon_selection = new Set([id]);
+  }
+}
+
+export function hideDesktopIcon(id: string) {
+  const next = new Set(desktop.hidden_icons);
+  next.add(id);
+  desktop.hidden_icons = next;
+  try {
+    localStorage.setItem(HIDDEN_ICONS_STORAGE_KEY, JSON.stringify([...next]));
+  } catch {}
+}
+
+export function showDesktopIcon(id: string) {
+  const next = new Set(desktop.hidden_icons);
+  next.delete(id);
+  desktop.hidden_icons = next;
+  try {
+    localStorage.setItem(HIDDEN_ICONS_STORAGE_KEY, JSON.stringify([...next]));
+  } catch {}
 }
 
 export type { StaticAppID };

@@ -15,12 +15,13 @@
         "title": "AI Launcher",
         "width": 1100,
         "height": 750,
-        "minWidth": 900,
-        "minHeight": 600,
+        "minWidth": 20,
+        "minHeight": 40,
         "resizable": true,
         "center": true,
         "decorations": false,
-        "fullscreen": false
+        "fullscreen": false,
+        "alwaysOnTop": true
       }
     ],
     "security": {

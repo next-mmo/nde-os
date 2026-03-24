@@ -2,7 +2,7 @@ use ai_launcher_core::agent;
 use ai_launcher_core::agent::config::AgentConfig;
 use ai_launcher_core::memory::{ConversationStore, MemoryManager};
 use serde::{Deserialize, Serialize};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use crate::response::*;
@@ -24,11 +24,17 @@ impl AgentState {
 
         // Load agent config from file or defaults
         let config_path = data_dir.join("agent.toml");
-        let config = if config_path.exists() {
+        let mut config = if config_path.exists() {
             AgentConfig::from_file(&config_path).unwrap_or_default()
         } else {
             AgentConfig::default()
         };
+
+        // Resolve relative workspace paths under data_dir so the sandbox
+        // is created in AppData, not relative to the process CWD.
+        if !PathBuf::from(&config.workspace).is_absolute() {
+            config.workspace = data_dir.join(&config.workspace).to_string_lossy().into();
+        }
 
         let runtime = tokio::runtime::Runtime::new()?;
 

@@ -1,12 +1,12 @@
 const z_index_config = {
   wallpaper: -1,
-  topbar: 90,
-  dock: 80,
-  launchpad: 100,
+  topbar: 9100,
+  dock: 9000,
+  launchpad: 9500,
   window_traffic_lights: 12,
-  "menubar-menu-parent": 200,
-  "action-center-panel": 210,
-  "system-info-panel": 220,
+  "menubar-menu-parent": 9800,
+  "action-center-panel": 9810,
+  "system-info-panel": 9820,
 };
 
 if (typeof document !== "undefined") {

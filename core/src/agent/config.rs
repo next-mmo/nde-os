@@ -38,7 +38,7 @@ fn default_name() -> String { "assistant".into() }
 fn default_max_iterations() -> usize { 25 }
 fn default_provider() -> String { "gguf".into() }
 fn default_model() -> String { "tinyllama-1.1b".into() }
-fn default_workspace() -> String { "./workspace".into() }
+fn default_workspace() -> String { "workspace".into() }
 fn default_tools() -> Vec<String> {
     vec![
         // Filesystem

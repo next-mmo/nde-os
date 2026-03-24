@@ -5,6 +5,7 @@
   import ActionCenter from "🍎/components/TopBar/ActionCenter.svelte";
   import TopBarMetrics from "./TopBarMetrics.svelte";
   import TopBarTime from "🍎/components/TopBar/TopBarTime.svelte";
+  import { collapseDesktop } from "🍎/state/desktop.svelte";
 
   let isTauri = $state(false);
   let tauriWindow: any = null;
@@ -19,11 +20,13 @@
   });
 
   function handleClose() {
-    tauriWindow?.close();
+    // Collapse to floating button instead of closing the app
+    collapseDesktop();
   }
 
   function handleMinimize() {
-    tauriWindow?.minimize();
+    // Collapse to floating button instead of minimizing
+    collapseDesktop();
   }
 
   function handleMaximize() {

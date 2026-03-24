@@ -376,7 +376,7 @@ fn config_defaults_are_sane() {
         "app_list", "app_install", "app_launch", "app_stop",
         "system_info", "http_fetch", "skill_list",
     ]);
-    assert_eq!(config.workspace, "./workspace");
+    assert_eq!(config.workspace, "workspace");
     assert!(config.api_key.is_none());
     assert!(config.base_url.is_none());
 }
