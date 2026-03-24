@@ -296,56 +296,39 @@ impl GgufProvider {
         (url, archive.to_string())
     }
 
-    /// Extract llama-server from the downloaded archive.
+    /// Extract llama-server and ALL companion files (DLLs etc.) from the downloaded archive.
     fn extract_server(bytes: &[u8], _archive_type: &str, dest: &Path) -> Result<()> {
-        // llama.cpp releases are ZIP files on all platforms
+        // llama.cpp releases are ZIP files on all platforms.
+        // We MUST extract all files (DLLs, .so, .dylib) — not just the server binary,
+        // because llama-server.exe depends on ggml-base.dll and other shared libraries.
         let cursor = std::io::Cursor::new(bytes);
         let mut archive = zip::ZipArchive::new(cursor)
             .context("Failed to open zip archive")?;
 
+        let mut extracted_count = 0u32;
         for i in 0..archive.len() {
             let mut file = archive.by_index(i).context("Failed to read zip entry")?;
             let name = file.name().to_string();
 
-            // We only care about llama-server binary
-            let is_server = if cfg!(windows) {
-                name.contains("llama-server") && name.ends_with(".exe")
-            } else {
-                name.contains("llama-server") && !name.ends_with(".dll") && !name.ends_with(".so")
-            };
-
-            if !is_server {
+            if file.is_dir() {
                 continue;
             }
 
-            let out_name = if cfg!(windows) {
-                "llama-server.exe"
-            } else {
-                "llama-server"
+            // Get just the filename (strip directory prefixes from the archive)
+            let file_name = match PathBuf::from(&name).file_name() {
+                Some(f) => f.to_os_string(),
+                None => continue,
             };
-            let out_path = dest.join(out_name);
+
+            let out_path = dest.join(&file_name);
             let mut out_file = std::fs::File::create(&out_path)
-                .context("Failed to create llama-server file")?;
+                .with_context(|| format!("Failed to create file: {}", out_path.display()))?;
             std::io::copy(&mut file, &mut out_file)
-                .context("Failed to write llama-server")?;
-
-            tracing::info!(path = %out_path.display(), "Extracted llama-server");
-            return Ok(());
+                .with_context(|| format!("Failed to write file: {}", out_path.display()))?;
+            extracted_count += 1;
         }
 
-        // If no exact match, extract everything and hope for the best
-        for i in 0..archive.len() {
-            let mut file = archive.by_index(i).context("zip entry")?;
-            let name = file.name().to_string();
-            if let Some(file_name) = PathBuf::from(&name).file_name() {
-                let out_path = dest.join(file_name);
-                if !file.is_dir() {
-                    let mut out_file = std::fs::File::create(&out_path)?;
-                    std::io::copy(&mut file, &mut out_file)?;
-                }
-            }
-        }
-
+        tracing::info!(count = extracted_count, dest = %dest.display(), "Extracted llama.cpp files");
         Ok(())
     }
 
@@ -404,6 +387,7 @@ impl GgufProvider {
             .arg("--ctx-size").arg("4096")
             .arg("--n-gpu-layers").arg("99")
             .arg("--host").arg("127.0.0.1")
+            .arg("--jinja") // Required for tool calling support
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
             .spawn()
@@ -411,8 +395,8 @@ impl GgufProvider {
 
         *proc = Some(child);
 
-        // Wait for server ready (up to 30s)
-        for i in 0..60 {
+        // Wait for server ready (up to 60s — large models need time to load)
+        for i in 0..120 {
             tokio::time::sleep(std::time::Duration::from_millis(500)).await;
             if self.health_check().await {
                 tracing::info!(elapsed_ms = (i + 1) * 500, "llama-server ready");
@@ -420,7 +404,7 @@ impl GgufProvider {
             }
         }
 
-        Err(anyhow::anyhow!("llama-server did not become ready within 30 seconds"))
+        Err(anyhow::anyhow!("llama-server did not become ready within 60 seconds"))
     }
 
     async fn health_check(&self) -> bool {

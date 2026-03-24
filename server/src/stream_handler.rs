@@ -1,8 +1,10 @@
 /// Streaming SSE handler for agent chat.
 /// POST /api/agent/chat/stream → text/event-stream
 use ai_launcher_core::agent::AgentRuntime;
+use crate::agent_handler::AgentState;
 use serde::Deserialize;
 use std::io::{Cursor, Write};
+use std::sync::Mutex;
 use tiny_http::{Header, Request, Response};
 
 use crate::response::*;
@@ -19,8 +21,8 @@ pub struct StreamChatRequest {
 pub fn handle_stream_chat(
     req: &mut Request,
     runtime: &tokio::runtime::Runtime,
-    agent_state: &crate::AgentState,
-    llm_manager: &std::sync::Arc<std::sync::Mutex<ai_launcher_core::llm::manager::LlmManager>>,
+    agent_state: &Mutex<AgentState>,
+    llm_manager: &std::sync::Arc<Mutex<ai_launcher_core::llm::manager::LlmManager>>,
 ) -> Response<Cursor<Vec<u8>>> {
     let body = match read_body(req) {
         Some(b) => b,
@@ -32,10 +34,32 @@ pub fn handle_stream_chat(
         Err(e) => return err(400, &format!("Invalid JSON: {}", e)),
     };
 
-    let mut config = agent_state.config.clone();
+    let state = agent_state.lock().unwrap();
+    let mut config = state.config.clone();
     crate::agent_handler::sync_model_config(&mut config, llm_manager);
 
     let message = chat_req.message.clone();
+
+    // Get or create conversation — mirrors agent_handler::agent_chat
+    let conv_id = match chat_req.conversation_id {
+        Some(id) => id,
+        None => {
+            match state.memory.conversations.create_conversation(
+                &chat_req.message.chars().take(50).collect::<String>(),
+                "nde-chat",
+            ) {
+                Ok(id) => id,
+                Err(e) => return err(500, &format!("Failed to create conversation: {}", e)),
+            }
+        }
+    };
+
+    // Save user message
+    if let Err(e) = state.memory.conversations.save_message(
+        &conv_id, "user", Some(&chat_req.message), None, None,
+    ) {
+        return err(500, &format!("Failed to save message: {}", e));
+    }
 
     let result: Result<String, anyhow::Error> = runtime.block_on(async {
         match AgentRuntime::from_config(config) {
@@ -46,6 +70,11 @@ pub fn handle_stream_chat(
 
     match result {
         Ok(response_text) => {
+            // Save assistant response to conversation
+            state.memory.conversations.save_message(
+                &conv_id, "assistant", Some(&response_text), None, None,
+            ).ok();
+
             // Build SSE response
             let mut sse_data = Vec::new();
 
@@ -63,10 +92,11 @@ pub fn handle_stream_chat(
                 .ok();
             }
 
-            // Send done event
+            // Send done event with conversation_id
             let done = serde_json::json!({
                 "type": "done",
                 "content": response_text,
+                "conversation_id": conv_id,
             });
             write!(
                 sse_data,
@@ -86,6 +116,7 @@ pub fn handle_stream_chat(
             let error_event = serde_json::json!({
                 "type": "error",
                 "message": e.to_string(),
+                "conversation_id": conv_id,
             });
             write!(
                 sse_data,

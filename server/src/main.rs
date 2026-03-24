@@ -71,8 +71,7 @@ fn route(
         // Agent chat API
         (Method::Post, "/api/agent/chat") => return agent_handler::agent_chat(req, agent, &llm_manager),
         (Method::Post, "/api/agent/chat/stream") => {
-            let agent_state = agent.lock().unwrap();
-            return stream_handler::handle_stream_chat(req, rt, &agent_state, &llm_manager);
+            return stream_handler::handle_stream_chat(req, rt, agent, &llm_manager);
         }
         (Method::Get, "/api/agent/conversations") => return agent_handler::list_conversations(agent),
         (Method::Get, "/api/agent/config") => return agent_handler::agent_config(agent, &llm_manager),
