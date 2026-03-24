@@ -42,10 +42,32 @@ Monorepo: `core/` (Rust sandbox), `server/` (Rust API), `desktop/` (Tauri+Svelte
 - Canonicalize paths (symlink/traversal defense). Readonly stays readonly.
 - `uv` not `pip`. One venv per workspace (`workspace/.venv`).
 
-## 5. Testing
+## 5. Tauri Performance & Security
+
+Follow `.agents/skills/tauri-best-practices/SKILL.md` for all Tauri 2 code:
+
+- **IPC**: Batch data in single commands, return structs not primitives. All commands `async`.
+- **Events**: Stream progress via `app.emit()` — never poll from frontend.
+- **Payloads**: Keep under 1 MB. Large data → write to disk, pass path.
+- **State**: Use `tauri::manage()` with `Mutex`/`RwLock`. Minimize lock scope.
+- **Security**: CSP configured, `freezePrototype: true`, per-window capabilities, path canonicalization.
+- **App Size**: Release profile with `lto = true`, `strip = true`, `opt-level = "s"`, `panic = "abort"`, `codegen-units = 1`.
+- **Frontend**: Tree-shake `@tauri-apps/api` imports, code-split routes, compress assets.
+- **Errors**: `anyhow` internally, `String` or typed `Serialize` errors at the IPC boundary.
+
+## 6. Testing
 
 Tests fail = task NOT done. **Only test what you touched** — run scoped tests for changed crates/files, not the full suite.
 
 - Scoped: `cargo test -p <changed-crate> -- <test_name>` | `npx playwright test <changed-spec>`
 - Full suite only before final merge/PR.
 - Sandbox verify: `curl -s http://localhost:8080/api/sandbox/test/verify`
+
+### E2E (Playwright + Tauri)
+
+**Tests MUST run inside the Tauri WebView2, not a standalone browser.** The app is a Tauri 2 desktop — behavior differs from browser (drag regions, window APIs, permissions). Always use the CDP fixtures.
+
+- **CDP**: `dev.sh` sets `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS="--remote-debugging-port=9222"` on the Tauri process. Playwright connects via `chromium.connectOverCDP()`.
+- **Fixtures**: All E2E specs import from `e2e/fixtures.ts` (provides CDP-connected `page`) and `e2e/helpers.ts`.
+- **Run**: `cd desktop && npx playwright test e2e/<spec>.spec.ts --reporter=list` (requires `./dev.sh` running).
+- **Never** use `page.goto("http://localhost:5174")` — the Tauri webview loads its own URL via the bridge.

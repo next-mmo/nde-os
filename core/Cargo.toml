@@ -27,6 +27,10 @@ pin-project-lite = "0.2"
 zip = { version = "2", default-features = false, features = ["deflate"] }
 rand = "0.8"
 urlencoding = "2"
+# Shield Browser (anti-detect)
+tar = "0.4"
+bzip2 = "0.5"
+flate2 = "1"
 
 [dev-dependencies]
 tempfile = "3"

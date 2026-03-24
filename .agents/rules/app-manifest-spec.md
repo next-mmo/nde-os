@@ -1,3 +1,7 @@
+---
+trigger: model_decision
+---
+
 # App Manifest Specification
 
 Version: 1.0
@@ -8,41 +12,41 @@ Every AI app installable through AI Launcher is defined by a `manifest.json` fil
 
 ## Required Fields
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `id` | string | Unique identifier. Lowercase, hyphens only. Example: `stable-diffusion-webui` |
-| `name` | string | Human-readable display name |
-| `description` | string | Short description (1-2 sentences) |
-| `author` | string | Author or organization name |
-| `python_version` | string | Required Python version (e.g. `"3.10"`, `"3"` for any 3.x) |
-| `needs_gpu` | bool | Whether the app requires an NVIDIA GPU |
-| `pip_deps` | string[] | Pip packages to install via `uv pip install` |
-| `launch_cmd` | string | Shell command to start the app |
-| `port` | integer | Port the app's web UI listens on |
-| `disk_size` | string | Estimated disk space (e.g. `"~12GB"`) |
+| Field            | Type     | Description                                                                   |
+| ---------------- | -------- | ----------------------------------------------------------------------------- |
+| `id`             | string   | Unique identifier. Lowercase, hyphens only. Example: `stable-diffusion-webui` |
+| `name`           | string   | Human-readable display name                                                   |
+| `description`    | string   | Short description (1-2 sentences)                                             |
+| `author`         | string   | Author or organization name                                                   |
+| `python_version` | string   | Required Python version (e.g. `"3.10"`, `"3"` for any 3.x)                    |
+| `needs_gpu`      | bool     | Whether the app requires an NVIDIA GPU                                        |
+| `pip_deps`       | string[] | Pip packages to install via `uv pip install`                                  |
+| `launch_cmd`     | string   | Shell command to start the app                                                |
+| `port`           | integer  | Port the app's web UI listens on                                              |
+| `disk_size`      | string   | Estimated disk space (e.g. `"~12GB"`)                                         |
 
 ## Optional Fields
 
-| Field | Type | Default | Description |
-|-------|------|---------|-------------|
-| `repo` | string | null | Git repository URL to clone |
-| `branch` | string | `"main"` | Git branch to checkout |
-| `env` | [string, string][] | `[]` | Extra environment variables |
-| `tags` | string[] | `[]` | Tags for search and filtering |
-| `icon` | string | `"📦"` | Emoji icon |
-| `homepage` | string | null | Project homepage URL |
-| `license` | string | null | License identifier |
-| `requirements_file` | string | `"requirements.txt"` | Path to requirements file inside repo |
-| `pre_install` | string | null | Shell command to run before pip install |
-| `post_install` | string | null | Shell command to run after pip install |
-| `pre_launch` | string | null | Shell command to run before launch |
-| `health_check` | string | null | HTTP URL to poll for readiness |
-| `health_timeout` | integer | 30 | Seconds to wait for health check |
-| `min_vram` | integer | 0 | Minimum GPU VRAM in GB |
-| `min_ram` | integer | 0 | Minimum system RAM in GB |
-| `cuda_version` | string | null | Required CUDA version (e.g. `"12.1"`) |
-| `models` | Model[] | `[]` | Models to download (see below) |
-| `volumes` | Volume[] | `[]` | Shared volumes (see below) |
+| Field               | Type               | Default              | Description                             |
+| ------------------- | ------------------ | -------------------- | --------------------------------------- |
+| `repo`              | string             | null                 | Git repository URL to clone             |
+| `branch`            | string             | `"main"`             | Git branch to checkout                  |
+| `env`               | [string, string][] | `[]`                 | Extra environment variables             |
+| `tags`              | string[]           | `[]`                 | Tags for search and filtering           |
+| `icon`              | string             | `"📦"`               | Emoji icon                              |
+| `homepage`          | string             | null                 | Project homepage URL                    |
+| `license`           | string             | null                 | License identifier                      |
+| `requirements_file` | string             | `"requirements.txt"` | Path to requirements file inside repo   |
+| `pre_install`       | string             | null                 | Shell command to run before pip install |
+| `post_install`      | string             | null                 | Shell command to run after pip install  |
+| `pre_launch`        | string             | null                 | Shell command to run before launch      |
+| `health_check`      | string             | null                 | HTTP URL to poll for readiness          |
+| `health_timeout`    | integer            | 30                   | Seconds to wait for health check        |
+| `min_vram`          | integer            | 0                    | Minimum GPU VRAM in GB                  |
+| `min_ram`           | integer            | 0                    | Minimum system RAM in GB                |
+| `cuda_version`      | string             | null                 | Required CUDA version (e.g. `"12.1"`)   |
+| `models`            | Model[]            | `[]`                 | Models to download (see below)          |
+| `volumes`           | Volume[]           | `[]`                 | Shared volumes (see below)              |
 
 ## Model Downloads
 
@@ -100,9 +104,7 @@ When `shared: true`, the volume is stored at `~/.ai-launcher/.shared/shared-mode
   "port": 7860,
   "health_check": "http://localhost:7860/sdapi/v1/progress",
   "health_timeout": 120,
-  "env": [
-    ["COMMANDLINE_ARGS", "--xformers --no-half-vae"]
-  ],
+  "env": [["COMMANDLINE_ARGS", "--xformers --no-half-vae"]],
   "disk_size": "~12GB",
   "tags": ["image-generation", "diffusion", "gpu", "txt2img", "img2img"],
   "icon": "🎨",

@@ -84,12 +84,7 @@ textarea {
   box-shadow: var(--system-focus-outline);
 }
 
-button {
-  border: 0;
-  background: transparent;
-  color: inherit;
-  font: inherit;
-}
+
 
 ::-webkit-scrollbar {
   width: 6px;
@@ -188,13 +183,19 @@ button {
 @layer base {
 	* {
 		@apply border-border outline-ring/50;
-  }
+	}
 	body {
 		@apply bg-background text-foreground;
-  }
+	}
 	html {
 		@apply font-sans;
-  }
+	}
+	button {
+		border: 0;
+		background: transparent;
+		color: inherit;
+		font: inherit;
+	}
 }
 
 @custom-variant data-open {

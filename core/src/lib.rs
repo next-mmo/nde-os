@@ -18,5 +18,8 @@ pub mod security;
 pub mod plugins;
 pub mod mcp;
 
+// Shield Browser (anti-detect)
+pub mod shield;
+
 #[cfg(test)]
 mod tests;

@@ -174,8 +174,12 @@ start_server() {
 start_tauri() {
     echo -e "${GREEN}▶  Starting Tauri desktop ${DIM}(pnpm tauri dev)${RESET}"
     echo -e "${DIM}   → Vite: http://localhost:5174${RESET}"
+    echo -e "${DIM}   → CDP:  http://127.0.0.1:9222 (for E2E tests)${RESET}"
     echo -e "${DIM}   → Tauri window will open automatically${RESET}"
     echo ""
+
+    # Export so WebView2 inherits it on Windows (inline VAR=value doesn't propagate through pnpm)
+    export WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS="--remote-debugging-port=9222"
 
     (cd "$DESKTOP_DIR" && pnpm tauri dev 2>&1 | while IFS= read -r line; do
         echo -e "${CYAN}[tauri]${RESET}  $line"

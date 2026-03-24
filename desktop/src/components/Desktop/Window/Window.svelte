@@ -190,12 +190,12 @@
 
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   {#if window.resizable && !window.fullscreen}
-    <div class="absolute z-20 cursor-ns-resize -top-[3px] left-2 right-2 h-[6px]" onpointerdown={(e: PointerEvent) => startResize(e, 'n')}></div>
+    <div class="absolute z-20 cursor-ns-resize -top-[3px] left-28 right-2 h-[6px]" onpointerdown={(e: PointerEvent) => startResize(e, 'n')}></div>
     <div class="absolute z-20 cursor-ns-resize -bottom-[3px] left-2 right-2 h-[6px]" onpointerdown={(e: PointerEvent) => startResize(e, 's')}></div>
     <div class="absolute z-20 cursor-ew-resize -right-[3px] top-2 bottom-2 w-[6px]" onpointerdown={(e: PointerEvent) => startResize(e, 'e')}></div>
-    <div class="absolute z-20 cursor-ew-resize -left-[3px] top-2 bottom-2 w-[6px]" onpointerdown={(e: PointerEvent) => startResize(e, 'w')}></div>
+    <div class="absolute z-20 cursor-ew-resize -left-[3px] top-12 bottom-2 w-[6px]" onpointerdown={(e: PointerEvent) => startResize(e, 'w')}></div>
     <div class="absolute z-20 cursor-nesw-resize -top-[3px] -right-[3px] w-[14px] h-[14px]" onpointerdown={(e: PointerEvent) => startResize(e, 'ne')}></div>
-    <div class="absolute z-20 cursor-nwse-resize -top-[3px] -left-[3px] w-[14px] h-[14px]" onpointerdown={(e: PointerEvent) => startResize(e, 'nw')}></div>
+    <div class="absolute z-20 cursor-nwse-resize -top-[3px] left-[100px] w-[14px] h-[14px]" onpointerdown={(e: PointerEvent) => startResize(e, 'nw')}></div>
     <div class="absolute z-20 cursor-nwse-resize -bottom-[3px] -right-[3px] w-[14px] h-[14px]" onpointerdown={(e: PointerEvent) => startResize(e, 'se')}></div>
     <div class="absolute z-20 cursor-nesw-resize -bottom-[3px] -left-[3px] w-[14px] h-[14px]" onpointerdown={(e: PointerEvent) => startResize(e, 'sw')}></div>
   {/if}

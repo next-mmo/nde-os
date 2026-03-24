@@ -62,6 +62,10 @@
   {#await import("🍎/components/apps/Knowledge/Knowledge.svelte") then { default: Knowledge }}
     <Knowledge />
   {/await}
+{:else if window.app_id === "shield-browser"}
+  {#await import("🍎/components/apps/ShieldBrowser/ShieldBrowser.svelte") then { default: ShieldBrowser }}
+    <ShieldBrowser />
+  {/await}
 {:else}
   {#await import("🍎/components/apps/Placeholder/Placeholder.svelte") then { default: Placeholder }}
     <Placeholder app_id={window.app_id} />

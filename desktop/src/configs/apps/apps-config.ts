@@ -78,6 +78,12 @@ export const apps_config = {
     width: 960,
     height: 680,
   }),
+  "shield-browser": create_app_config({
+    title: "Shield Browser",
+    width: 1100,
+    height: 760,
+    dock_breaks_before: true,
+  }),
   launchpad: create_app_config({
     title: "Launchpad",
     should_open_window: false,

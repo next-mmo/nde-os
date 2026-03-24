@@ -51,6 +51,7 @@ const makeWindowId = (prefix: string) =>
 type SavedWindowGeometry = { x: number; y: number; width: number; height: number };
 
 const GEOMETRY_STORAGE_KEY = "ai-launcher:window-geometry";
+const OPEN_WINDOWS_STORAGE_KEY = "ai-launcher:open-windows";
 
 function loadAllGeometry(): Record<string, SavedWindowGeometry> {
   try {
@@ -71,6 +72,21 @@ export function saveWindowGeometry(app_id: string, geo: SavedWindowGeometry) {
     all[app_id] = geo;
     localStorage.setItem(GEOMETRY_STORAGE_KEY, JSON.stringify(all));
   } catch {}
+}
+
+function saveOpenWindows() {
+  try {
+    const appIds = desktop.windows.map((w) => w.app_id);
+    localStorage.setItem(OPEN_WINDOWS_STORAGE_KEY, JSON.stringify(appIds));
+  } catch {}
+}
+
+function loadOpenWindows(): string[] {
+  try {
+    const raw = localStorage.getItem(OPEN_WINDOWS_STORAGE_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch {}
+  return [];
 }
 
 function getSavedSessionMode(): SessionMode {
@@ -175,14 +191,36 @@ function assignWindowFocus(window: DesktopWindow) {
 
 export function bootDesktop() {
   if (desktop.windows.length > 0) return;
-  const launcherConfig = apps_config["ai-launcher"];
-  const launcher = createWindow("ai-launcher", launcherConfig.title, launcherConfig.width!, launcherConfig.height!);
-  launcher.resizable = launcherConfig.resizable!;
-  launcher.expandable = launcherConfig.expandable!;
-  launcher.closable = false;
-  launcher.fullscreen = true;
-  assignWindowFocus(launcher);
-  desktop.windows.push(launcher);
+
+  // Restore previously open windows from localStorage
+  const savedAppIds = loadOpenWindows();
+  const validStaticIds = Object.keys(apps_config) as StaticAppID[];
+  const appsToRestore = savedAppIds.filter(
+    (id) => validStaticIds.includes(id as StaticAppID) && id !== "launchpad",
+  );
+
+  // Always ensure the launcher is present
+  if (!appsToRestore.includes("ai-launcher")) {
+    appsToRestore.unshift("ai-launcher");
+  }
+
+  for (const appId of appsToRestore) {
+    const config = apps_config[appId as Exclude<StaticAppID, "launchpad">];
+    if (!config) continue;
+    const win = createWindow(
+      appId as WindowAppID,
+      config.title,
+      config.width!,
+      config.height!,
+    );
+    win.resizable = config.resizable!;
+    win.expandable = config.expandable!;
+    if (appId === "ai-launcher") {
+      win.fullscreen = true;
+    }
+    assignWindowFocus(win);
+    desktop.windows.push(win);
+  }
 }
 
 export function toggleTheme() {
@@ -220,6 +258,7 @@ export function closeWindow(window_id: string) {
   if (!desktop.windows.some((item) => item.app_id === "ai-launcher")) {
     bootDesktop();
   }
+  saveOpenWindows();
 }
 
 export function minimizeWindow(window_id: string) {
@@ -257,6 +296,7 @@ export function openStaticApp(app_id: StaticAppID) {
   window.expandable = config.expandable!;
   assignWindowFocus(window);
   desktop.windows.push(window);
+  saveOpenWindows();
   return window;
 }
 

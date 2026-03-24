@@ -1,8 +1,12 @@
 mod commands;
 mod state;
 
+use ai_launcher_core::shield::launcher::BrowserLauncher;
+use commands::shield::ShieldLauncherState;
 use state::AppState;
 use std::path::PathBuf;
+use std::sync::Arc;
+use tokio::sync::Mutex;
 
 /// Cross-platform base directory
 fn get_base_dir() -> PathBuf {
@@ -20,7 +24,12 @@ fn get_base_dir() -> PathBuf {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let base_dir = get_base_dir();
-    let app_state = AppState::new(base_dir).expect("Failed to initialize AppState");
+    let app_state = AppState::new(base_dir.clone()).expect("Failed to initialize AppState");
+
+    // Shield browser launcher (async-safe)
+    let shield_launcher = ShieldLauncherState {
+        launcher: Arc::new(Mutex::new(BrowserLauncher::new(&base_dir))),
+    };
 
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -36,6 +45,7 @@ pub fn run() {
             Ok(())
         })
         .manage(app_state)
+        .manage(shield_launcher)
         .invoke_handler(tauri::generate_handler![
             // system
             commands::system::health_check,
@@ -56,6 +66,17 @@ pub fn run() {
             // sandbox
             commands::sandbox::verify_sandbox,
             commands::sandbox::get_disk_usage,
+            // shield browser
+            commands::shield::list_shield_profiles,
+            commands::shield::get_shield_profile,
+            commands::shield::create_shield_profile,
+            commands::shield::delete_shield_profile,
+            commands::shield::rename_shield_profile,
+            commands::shield::get_shield_status,
+            commands::shield::launch_shield_profile,
+            commands::shield::stop_shield_profile,
+            commands::shield::download_shield_engine,
+            commands::shield::is_shield_engine_downloaded,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

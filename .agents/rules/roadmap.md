@@ -1,5 +1,5 @@
 ---
-trigger: always_on
+trigger: model_decision
 ---
 
 # Future Plan: Agent OS, Gateway & Licensing

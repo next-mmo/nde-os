@@ -12,8 +12,20 @@ export async function ensureCleanApp() {
 }
 
 export async function openLauncher(page: Page) {
-  await expect(page.locator('[data-window="ai-launcher"]')).toBeVisible({ timeout: 15000 });
-  await expect(page.getByText("AI Launcher").first()).toBeVisible();
+  const win = page.locator('[data-window="ai-launcher"]');
+
+  // If the launcher was closed by a previous test, reload to reset desktop state
+  const visible = await win.isVisible().catch(() => false);
+  if (!visible) {
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await page.waitForTimeout(2000);
+  }
+
+  await expect(win).toBeVisible({ timeout: 15000 });
+  await expect(win.locator("header.window-drag-handle strong").first()).toBeVisible({ timeout: 5000 });
+  // Dispatch pointerdown to bring window to front (raise z-index above other windows)
+  await win.evaluate((el) => (el as HTMLElement).dispatchEvent(new PointerEvent('pointerdown', { bubbles: true })));
+  await page.waitForTimeout(200);
 }
 
 export function dock(page: Page): Locator {

@@ -1,3 +1,7 @@
+---
+trigger: model_decision
+---
+
 # Plugin Specification
 
 Version: 1.0
@@ -28,18 +32,18 @@ Runs code at specific app lifecycle events.
 
 **Available hooks:**
 
-| Hook | Trigger | Payload |
-|------|---------|---------|
-| `pre_install` | Before sandbox creation | `{ app_id, manifest }` |
-| `post_install` | After successful install | `{ app_id, manifest, workspace }` |
-| `pre_launch` | Before process spawn | `{ app_id, launch_cmd, env_vars }` |
-| `post_launch` | After process started | `{ app_id, pid, port }` |
-| `pre_stop` | Before kill signal | `{ app_id, pid }` |
-| `post_stop` | After process stopped | `{ app_id }` |
-| `pre_uninstall` | Before workspace removal | `{ app_id, workspace }` |
-| `post_uninstall` | After cleanup | `{ app_id }` |
-| `on_error` | On any error | `{ app_id, error, phase }` |
-| `on_health_fail` | Health check failed | `{ app_id, url, status }` |
+| Hook             | Trigger                  | Payload                            |
+| ---------------- | ------------------------ | ---------------------------------- |
+| `pre_install`    | Before sandbox creation  | `{ app_id, manifest }`             |
+| `post_install`   | After successful install | `{ app_id, manifest, workspace }`  |
+| `pre_launch`     | Before process spawn     | `{ app_id, launch_cmd, env_vars }` |
+| `post_launch`    | After process started    | `{ app_id, pid, port }`            |
+| `pre_stop`       | Before kill signal       | `{ app_id, pid }`                  |
+| `post_stop`      | After process stopped    | `{ app_id }`                       |
+| `pre_uninstall`  | Before workspace removal | `{ app_id, workspace }`            |
+| `post_uninstall` | After cleanup            | `{ app_id }`                       |
+| `on_error`       | On any error             | `{ app_id, error, phase }`         |
+| `on_health_fail` | Health check failed      | `{ app_id, url, status }`          |
 
 ### `monitor` — Background Tasks
 
@@ -90,7 +94,11 @@ Adds new sources for discovering and installing apps.
       "description": "Search HuggingFace Spaces",
       "params": [
         { "name": "q", "type": "string", "description": "Search query" },
-        { "name": "sdk", "type": "string", "enum": ["gradio", "streamlit", "docker"] }
+        {
+          "name": "sdk",
+          "type": "string",
+          "enum": ["gradio", "streamlit", "docker"]
+        }
       ]
     },
     {
@@ -101,7 +109,11 @@ Adds new sources for discovering and installing apps.
   ],
   "deps": ["huggingface-hub"],
   "config_schema": {
-    "hf_token": { "type": "string", "secret": true, "description": "HuggingFace API token" }
+    "hf_token": {
+      "type": "string",
+      "secret": true,
+      "description": "HuggingFace API token"
+    }
   }
 }
 ```
@@ -148,13 +160,13 @@ Adds custom panels to the web dashboard.
 
 **UI Slots:**
 
-| Slot | Location |
-|------|----------|
-| `sidebar` | Right sidebar panel |
-| `tab` | New tab in main navigation |
-| `header` | Header bar widget |
+| Slot       | Location                    |
+| ---------- | --------------------------- |
+| `sidebar`  | Right sidebar panel         |
+| `tab`      | New tab in main navigation  |
+| `header`   | Header bar widget           |
 | `app_card` | Injected into each app card |
-| `modal` | Popup dialog |
+| `modal`    | Popup dialog                |
 
 ---
 
@@ -163,30 +175,30 @@ Adds custom panels to the web dashboard.
 ```jsonc
 {
   // Required
-  "id": "my-plugin",                     // Unique identifier
-  "name": "My Plugin",                   // Display name
-  "version": "1.0.0",                    // Semver
+  "id": "my-plugin", // Unique identifier
+  "name": "My Plugin", // Display name
+  "version": "1.0.0", // Semver
   "type": "hook|monitor|provider|middleware|ui",
   "description": "What this plugin does",
-  "entry": "main.py",                    // Entry point file
+  "entry": "main.py", // Entry point file
 
   // Required for execution
-  "language": "python|rust|shell|html",  // Runtime language
+  "language": "python|rust|shell|html", // Runtime language
 
   // Optional
   "author": "username",
   "homepage": "https://...",
   "license": "MIT",
-  "deps": ["pynvml", "requests"],        // Python dependencies
-  "rust_deps": { "tokio": "1" },         // Rust dependencies (for rust plugins)
-  "min_launcher_version": "0.2.0",       // Minimum AI Launcher version
+  "deps": ["pynvml", "requests"], // Python dependencies
+  "rust_deps": { "tokio": "1" }, // Rust dependencies (for rust plugins)
+  "min_launcher_version": "0.2.0", // Minimum AI Launcher version
 
   // Type-specific
   "hooks": ["post_install", "on_error"], // For hook type
-  "interval_seconds": 5,                 // For monitor type
-  "intercept": ["all"],                  // For middleware type
-  "priority": 100,                       // For middleware type (lower = first)
-  "ui_slot": "sidebar",                  // For ui type
+  "interval_seconds": 5, // For monitor type
+  "intercept": ["all"], // For middleware type
+  "priority": 100, // For middleware type (lower = first)
+  "ui_slot": "sidebar", // For ui type
 
   // API extensions
   "api_routes": [
@@ -194,10 +206,8 @@ Adds custom panels to the web dashboard.
       "method": "GET",
       "path": "/api/plugins/{plugin_id}/...",
       "description": "What this endpoint does",
-      "params": [
-        { "name": "q", "type": "string" }
-      ]
-    }
+      "params": [{ "name": "q", "type": "string" }],
+    },
   ],
 
   // User configuration
@@ -210,9 +220,9 @@ Adds custom panels to the web dashboard.
       "description": "What this option does",
       "min": 0,
       "max": 100,
-      "enum": ["a", "b", "c"]
-    }
-  }
+      "enum": ["a", "b", "c"],
+    },
+  },
 }
 ```
 
@@ -253,21 +263,27 @@ curl -X PUT http://localhost:8080/api/plugins/gpu-monitor/config \
 ## Built-in Plugins
 
 ### `gpu-monitor`
+
 Real-time NVIDIA GPU monitoring. Shows utilization, temperature, VRAM, power draw.
 
 ### `model-downloader`
+
 Background model downloading with progress tracking. Supports HuggingFace, CivitAI, direct URLs. Shared model storage across apps.
 
 ### `disk-cleaner`
+
 Identifies and cleans uv caches, unused venvs, old logs, and orphaned workspaces.
 
 ### `log-viewer`
+
 Aggregates stdout/stderr from all running apps into a searchable, filterable log stream.
 
 ### `port-manager`
+
 Prevents port conflicts between apps. Auto-assigns available ports. Shows port usage map.
 
 ### `backup-restore`
+
 Exports/imports app configs, models, and workspace snapshots. Supports local and S3.
 
 ---
@@ -275,6 +291,7 @@ Exports/imports app configs, models, and workspace snapshots. Supports local and
 ## Example: Writing a Hook Plugin
 
 `plugins/my-hook/plugin.json`:
+
 ```json
 {
   "id": "my-hook",
@@ -289,6 +306,7 @@ Exports/imports app configs, models, and workspace snapshots. Supports local and
 ```
 
 `plugins/my-hook/hook.py`:
+
 ```python
 import json
 import sys
@@ -307,6 +325,7 @@ if __name__ == "__main__":
 ## Example: Writing a Monitor Plugin
 
 `plugins/gpu-monitor/plugin.json`:
+
 ```json
 {
   "id": "gpu-monitor",
@@ -317,13 +336,12 @@ if __name__ == "__main__":
   "language": "python",
   "interval_seconds": 5,
   "deps": ["pynvml"],
-  "api_routes": [
-    { "method": "GET", "path": "/api/plugins/gpu-monitor/stats" }
-  ]
+  "api_routes": [{ "method": "GET", "path": "/api/plugins/gpu-monitor/stats" }]
 }
 ```
 
 `plugins/gpu-monitor/monitor.py`:
+
 ```python
 import json
 import pynvml
