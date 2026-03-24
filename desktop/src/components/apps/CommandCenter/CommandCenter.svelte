@@ -176,6 +176,5 @@
       <span>Python: {$systemInfo.python_version ?? "N/A"}</span>
     </div>
   {/if}
-</section>id var(--system-color-border);
-  }
-</style>
+</section>
+
