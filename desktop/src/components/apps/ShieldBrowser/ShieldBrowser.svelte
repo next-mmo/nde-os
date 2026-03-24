@@ -23,43 +23,136 @@
     installed_engines: { engine: string; version: string }[];
   }
 
+  interface AvailableEngine {
+    engine: string;
+    name: string;
+    description: string;
+    available: boolean;
+    icon: string;
+  }
+
   let profiles = $state<ShieldProfile[]>([]);
   let status = $state<ShieldStatus | null>(null);
+  let availableEngines = $state<AvailableEngine[]>([]);
   let loading = $state(true);
-  let view = $state<"profiles" | "create">("profiles");
+  let view = $state<"setup" | "profiles" | "create">("profiles");
   let selectedProfile = $state<ShieldProfile | null>(null);
 
   // Create form
   let newName = $state("");
-  let newEngine = $state("wayfern");
-  let newVersion = $state("latest");
+  let newEngine = $state("camoufox");
+  let newVersion = $state("");
+  let resolvingVersion = $state(false);
+
+  // Setup state
+  let setupStep = $state<"choose" | "installing">("choose");
+  let setupEngine = $state("camoufox");
+  let setupVersion = $state("");
+  let setupError = $state("");
 
   let downloading = $state(false);
+  let downloadProgress = $state("");
   let launching = $state(false);
 
-  $effect(() => { refresh(); });
+  $effect(() => { init(); });
 
-  async function refresh() {
+  async function init() {
     loading = true;
     try {
+      // Load engines list
+      availableEngines = await invoke<AvailableEngine[]>("get_available_engines");
+
+      // Load data
       profiles = await invoke<ShieldProfile[]>("list_shield_profiles");
       status = await invoke<ShieldStatus>("get_shield_status");
-      // Refresh selected profile if it exists
-      if (selectedProfile) {
-        const updated = profiles.find(p => p.id === selectedProfile!.id);
-        if (updated) selectedProfile = updated;
+
+      // Determine initial view
+      const hasEngines = status.installed_engines.length > 0;
+      if (!hasEngines) {
+        view = "setup";
+        // Pre-resolve latest version
+        resolveSetupVersion();
+      } else {
+        view = "profiles";
+        // Pre-resolve version for create form
+        resolveCreateVersion();
       }
     } catch (e) {
-      console.error("Failed to load shield data:", e);
+      console.error("Failed to init shield:", e);
       profiles = [];
       status = { total_profiles: 0, running_profiles: 0, installed_engines: [] };
+      view = "setup";
     } finally {
       loading = false;
     }
   }
 
+  async function refresh() {
+    try {
+      profiles = await invoke<ShieldProfile[]>("list_shield_profiles");
+      status = await invoke<ShieldStatus>("get_shield_status");
+      if (selectedProfile) {
+        const updated = profiles.find(p => p.id === selectedProfile!.id);
+        if (updated) selectedProfile = updated;
+      }
+    } catch (e) {
+      console.error("Failed to refresh:", e);
+    }
+  }
+
+  async function resolveSetupVersion() {
+    try {
+      setupVersion = await invoke<string>("resolve_engine_version", { engine: setupEngine });
+    } catch (e) {
+      setupVersion = "";
+      setupError = `Failed to resolve version: ${e}`;
+    }
+  }
+
+  async function resolveCreateVersion() {
+    resolvingVersion = true;
+    try {
+      newVersion = await invoke<string>("resolve_engine_version", { engine: newEngine });
+    } catch (e) {
+      newVersion = "";
+    } finally {
+      resolvingVersion = false;
+    }
+  }
+
+  async function installEngine() {
+    if (!setupVersion) {
+      setupError = "No version resolved. Check your internet connection.";
+      return;
+    }
+    setupStep = "installing";
+    setupError = "";
+    downloading = true;
+    downloadProgress = "Downloading Camoufox binary (~530 MB)...";
+    try {
+      await invoke("download_shield_engine", {
+        engine: setupEngine,
+        version: setupVersion,
+      });
+      downloadProgress = "Installation complete!";
+      await refresh();
+      // Transition to profiles after short delay
+      setTimeout(() => {
+        view = "profiles";
+        downloading = false;
+        downloadProgress = "";
+        resolveCreateVersion();
+      }, 800);
+    } catch (e: unknown) {
+      setupError = `Download failed: ${e}`;
+      setupStep = "choose";
+      downloading = false;
+      downloadProgress = "";
+    }
+  }
+
   async function createProfile() {
-    if (!newName.trim()) return;
+    if (!newName.trim() || !newVersion) return;
     try {
       await invoke("create_shield_profile", {
         name: newName.trim(),
@@ -81,19 +174,21 @@
       if (selectedProfile?.id === id) selectedProfile = null;
       await refresh();
     } catch (e: unknown) {
-      alert(`Failed to delete profile: ${e}`);
+      alert(`Failed to delete: ${e}`);
     }
   }
 
   async function downloadEngine(engine: string, version: string) {
     downloading = true;
+    downloadProgress = "Downloading engine binary...";
     try {
       await invoke("download_shield_engine", { engine, version });
       await refresh();
     } catch (e: unknown) {
-      alert(`Failed to download engine: ${e}`);
+      alert(`Download failed: ${e}`);
     } finally {
       downloading = false;
+      downloadProgress = "";
     }
   }
 
@@ -104,7 +199,7 @@
       console.log(`Profile launched on CDP port: ${cdpPort}`);
       await refresh();
     } catch (e: unknown) {
-      alert(`Failed to launch profile: ${e}`);
+      alert(`Failed to launch: ${e}`);
     } finally {
       launching = false;
     }
@@ -115,7 +210,7 @@
       await invoke("stop_shield_profile", { id });
       await refresh();
     } catch (e: unknown) {
-      alert(`Failed to stop profile: ${e}`);
+      alert(`Failed to stop: ${e}`);
     }
   }
 
@@ -124,198 +219,314 @@
     return status.installed_engines.some(e => e.engine === engine && e.version === version);
   }
 
-  function engineIcon(engine: string) {
-    return engine === "wayfern" ? "🌐" : "🦊";
-  }
-
-  function engineLabel(engine: string) {
-    return engine === "wayfern" ? "Wayfern (Chromium)" : "Camoufox (Firefox)";
-  }
-
-  function formatDate(epoch: number) {
-    return new Date(epoch * 1000).toLocaleDateString();
-  }
+  function engineIcon(engine: string) { return engine === "wayfern" ? "🌐" : "🦊"; }
+  function engineLabel(engine: string) { return engine === "wayfern" ? "Wayfern (Chromium)" : "Camoufox (Firefox)"; }
+  function formatDate(epoch: number) { return new Date(epoch * 1000).toLocaleDateString(); }
 </script>
 
 <section class="shield-app">
-  <!-- Header -->
-  <div class="header">
-    <div>
-      <p class="eyebrow">Anti-Detect Browser</p>
-      <h2>🛡️ Shield Browser</h2>
+  {#if loading}
+    <div class="loading-screen">
+      <div class="spinner"></div>
+      <p>Initializing Shield Browser...</p>
     </div>
-    <div class="header-actions">
-      {#if view === "create"}
-        <button class="action-btn" onclick={() => view = "profiles"}>← Back</button>
-      {:else}
-        <button class="action-btn primary" onclick={() => view = "create"}>+ New Profile</button>
-        <button class="action-btn" onclick={refresh} disabled={loading}>{loading ? "..." : "↻"}</button>
+
+  {:else if view === "setup"}
+    <!-- ═══ Onboarding Setup ═══ -->
+    <div class="setup-screen">
+      <div class="setup-hero">
+        <span class="setup-icon">🛡️</span>
+        <h2>Set Up Shield Browser</h2>
+        <p class="setup-subtitle">Install a browser engine to create anti-detect profiles with unique fingerprints.</p>
+      </div>
+
+      {#if setupStep === "choose"}
+        <div class="engine-cards">
+          {#each availableEngines as eng (eng.engine)}
+            <button
+              class="engine-card"
+              class:selected={setupEngine === eng.engine}
+              class:disabled={!eng.available}
+              onclick={() => { if (eng.available) { setupEngine = eng.engine; resolveSetupVersion(); } }}
+              disabled={!eng.available}
+            >
+              <span class="engine-card-icon">{eng.icon}</span>
+              <div class="engine-card-body">
+                <h4>{eng.name} {#if !eng.available}<span class="coming-soon">Coming Soon</span>{/if}</h4>
+                <p>{eng.description}</p>
+              </div>
+              {#if eng.available && setupEngine === eng.engine}
+                <span class="checkmark">✓</span>
+              {/if}
+            </button>
+          {/each}
+        </div>
+
+        {#if setupVersion}
+          <div class="setup-meta">
+            <p>Latest version: <strong>v{setupVersion}</strong></p>
+          </div>
+        {/if}
+
+        {#if setupError}
+          <div class="setup-error">{setupError}</div>
+        {/if}
+
+        <button
+          class="install-btn"
+          onclick={installEngine}
+          disabled={!setupVersion || downloading}
+        >
+          {setupVersion ? `Install Camoufox v${setupVersion}` : "Resolving latest version..."}
+        </button>
+
+        <button class="skip-btn" onclick={() => { view = "profiles"; resolveCreateVersion(); }}>
+          Skip setup →
+        </button>
+
+      {:else if setupStep === "installing"}
+        <div class="install-progress">
+          <div class="spinner large"></div>
+          <p class="progress-text">{downloadProgress}</p>
+          {#if setupError}
+            <div class="setup-error">{setupError}</div>
+            <button class="action-btn" onclick={() => { setupStep = "choose"; setupError = ""; }}>← Try Again</button>
+          {/if}
+        </div>
       {/if}
     </div>
-  </div>
 
-  <!-- Status Bar -->
-  {#if status}
-    <div class="status-bar">
-      <div class="status-item">
-        <span class="status-value">{status.total_profiles}</span>
-        <span class="status-label">Profiles</span>
+  {:else}
+    <!-- ═══ Header ═══ -->
+    <div class="header">
+      <div>
+        <p class="eyebrow">Anti-Detect Browser</p>
+        <h2>🛡️ Shield Browser</h2>
       </div>
-      <div class="status-item">
-        <span class="status-value running">{status.running_profiles}</span>
-        <span class="status-label">Running</span>
-      </div>
-      <div class="status-item">
-        <span class="status-value">{status.installed_engines.length}</span>
-        <span class="status-label">Engines</span>
+      <div class="header-actions">
+        {#if view === "create"}
+          <button class="action-btn" onclick={() => view = "profiles"}>← Back</button>
+        {:else}
+          <button class="action-btn primary" onclick={() => { resolveCreateVersion(); view = "create"; }}>+ New Profile</button>
+          <button class="action-btn" onclick={refresh}>↻</button>
+        {/if}
       </div>
     </div>
-  {/if}
 
-  <!-- Main Content -->
-  <div class="main-content">
-    {#if view === "create"}
-      <!-- Create Profile Form -->
-      <div class="create-form">
-        <h3>Create New Profile</h3>
-        <div class="form-field">
-          <label for="profile-name">Profile Name</label>
-          <input id="profile-name" type="text" placeholder="e.g., US Chrome Business" bind:value={newName} />
+    <!-- ═══ Status Bar ═══ -->
+    {#if status}
+      <div class="status-bar">
+        <div class="status-item">
+          <span class="status-value">{status.total_profiles}</span>
+          <span class="status-label">Profiles</span>
         </div>
-        <div class="form-field">
-          <label for="engine-select">Browser Engine</label>
-          <select id="engine-select" bind:value={newEngine}>
-            <option value="wayfern">🌐 Wayfern — Chromium (C++ fingerprint patches)</option>
-            <option value="camoufox">🦊 Camoufox — Firefox (C++ fingerprint patches)</option>
-          </select>
+        <div class="status-item">
+          <span class="status-value running">{status.running_profiles}</span>
+          <span class="status-label">Running</span>
         </div>
-        <div class="form-field">
-          <label for="version-input">Engine Version</label>
-          <input id="version-input" type="text" placeholder="latest" bind:value={newVersion} />
-        </div>
-        <div class="engine-info">
-          {#if newEngine === "wayfern"}
-            <p>🌐 <strong>Wayfern</strong> — Chromium-based with patched canvas, WebGL, audio, and navigator APIs at the C++ level. Undetectable by most anti-bot systems.</p>
-          {:else}
-            <p>🦊 <strong>Camoufox</strong> — Firefox-based with native fingerprint generation via Playwright. Includes timezone, locale, WebRTC, and geolocation spoofing.</p>
-          {/if}
-        </div>
-        <button class="create-btn" onclick={createProfile} disabled={!newName.trim()}>Create Profile</button>
-      </div>
-    {:else}
-      <!-- Profile List + Detail -->
-      <div class="profiles-layout">
-        <div class="profile-list">
-          {#if loading}
-            <div class="loading-state">Loading profiles...</div>
-          {:else if profiles.length === 0}
-            <div class="empty-state">
-              <span class="empty-icon">🛡️</span>
-              <h3>No Profiles Yet</h3>
-              <p>Create your first anti-detect browser profile to get started.</p>
-              <button class="action-btn primary" onclick={() => view = "create"}>+ Create Profile</button>
-            </div>
-          {:else}
-            {#each profiles as profile (profile.id)}
-              <button
-                class="profile-card"
-                class:selected={selectedProfile?.id === profile.id}
-                class:running={profile.is_running}
-                onclick={() => selectedProfile = profile}
-              >
-                <div class="profile-icon">{engineIcon(profile.engine)}</div>
-                <div class="profile-info">
-                  <span class="profile-name">{profile.name}</span>
-                  <span class="profile-engine">{engineLabel(profile.engine)} v{profile.engine_version}</span>
-                </div>
-                <div class="profile-status">
-                  {#if profile.is_running}
-                    <span class="status-dot running" title="Running"></span>
-                  {:else}
-                    <span class="status-dot idle" title="Idle"></span>
-                  {/if}
-                </div>
-              </button>
-            {/each}
-          {/if}
-        </div>
-
-        <!-- Detail Panel -->
-        <div class="detail-panel">
-          {#if selectedProfile}
-            <div class="detail-header">
-              <h3>{engineIcon(selectedProfile.engine)} {selectedProfile.name}</h3>
-              {#if selectedProfile.is_running}
-                <span class="badge running">Running</span>
-              {:else}
-                <span class="badge idle">Idle</span>
-              {/if}
-            </div>
-            <div class="detail-grid">
-              <div class="detail-row">
-                <span class="detail-key">Engine</span>
-                <span class="detail-val">{engineLabel(selectedProfile.engine)}</span>
-              </div>
-              <div class="detail-row">
-                <span class="detail-key">Version</span>
-                <span class="detail-val">{selectedProfile.engine_version}</span>
-              </div>
-              <div class="detail-row">
-                <span class="detail-key">Created</span>
-                <span class="detail-val">{formatDate(selectedProfile.created_at)}</span>
-              </div>
-              {#if selectedProfile.last_launch}
-                <div class="detail-row">
-                  <span class="detail-key">Last Launch</span>
-                  <span class="detail-val">{formatDate(selectedProfile.last_launch)}</span>
-                </div>
-              {/if}
-              <div class="detail-row">
-                <span class="detail-key">Proxy</span>
-                <span class="detail-val">{selectedProfile.has_proxy ? "✅ Configured" : "⚠️ None"}</span>
-              </div>
-              <div class="detail-row">
-                <span class="detail-key">Fingerprint OS</span>
-                <span class="detail-val">{selectedProfile.fingerprint_os ?? "Auto"}</span>
-              </div>
-            </div>
-            {#if selectedProfile.tags.length > 0}
-              <div class="detail-tags">
-                {#each selectedProfile.tags as tag}
-                  <span class="tag">{tag}</span>
-                {/each}
-              </div>
-            {/if}
-            <div class="detail-actions">
-              {#if selectedProfile.is_running}
-                <button class="action-btn danger" onclick={() => stopProfile(selectedProfile!.id)}>⏹ Stop</button>
-              {:else}
-                {#if isEngineInstalled(selectedProfile.engine, selectedProfile.engine_version)}
-                  <button class="action-btn primary" onclick={() => launchProfile(selectedProfile!.id)} disabled={launching}>
-                    {launching ? "Launching..." : "▶ Launch"}
-                  </button>
-                {:else}
-                  <button class="action-btn primary" onclick={() => downloadEngine(selectedProfile!.engine, selectedProfile!.engine_version)} disabled={downloading}>
-                    {downloading ? "Downloading..." : "⬇ Download Engine"}
-                  </button>
-                {/if}
-                <button class="action-btn danger" onclick={() => deleteProfile(selectedProfile!.id)}>Delete</button>
-              {/if}
-            </div>
-          {:else}
-            <div class="no-selection">
-              <span>🛡️</span>
-              <p>Select a profile to view details and manage fingerprint, proxy, and engine settings.</p>
-            </div>
-          {/if}
+        <div class="status-item">
+          <span class="status-value">{status.installed_engines.length}</span>
+          <span class="status-label">Engines</span>
         </div>
       </div>
     {/if}
-  </div>
+
+    <!-- ═══ Main Content ═══ -->
+    <div class="main-content">
+      {#if view === "create"}
+        <div class="create-form">
+          <h3>Create New Profile</h3>
+          <div class="form-field">
+            <label for="profile-name">Profile Name</label>
+            <input id="profile-name" type="text" placeholder="e.g., US Firefox Business" bind:value={newName} />
+          </div>
+          <div class="form-field">
+            <label for="engine-select">Browser Engine</label>
+            <select id="engine-select" bind:value={newEngine} onchange={resolveCreateVersion}>
+              {#each availableEngines.filter(e => e.available) as eng (eng.engine)}
+                <option value={eng.engine}>{eng.icon} {eng.name}</option>
+              {/each}
+            </select>
+          </div>
+          <div class="form-field">
+            <label for="version-input">Engine Version</label>
+            <input id="version-input" type="text" bind:value={newVersion}
+              placeholder={resolvingVersion ? "Resolving..." : "Version"}
+              readonly={resolvingVersion} />
+          </div>
+          <div class="engine-info">
+            {#each availableEngines.filter(e => e.engine === newEngine) as eng}
+              <p>{eng.icon} <strong>{eng.name}</strong> — {eng.description}</p>
+            {/each}
+          </div>
+          <button class="create-btn" onclick={createProfile} disabled={!newName.trim() || !newVersion || resolvingVersion}>
+            {resolvingVersion ? "Resolving version..." : "Create Profile"}
+          </button>
+        </div>
+
+      {:else}
+        <div class="profiles-layout">
+          <div class="profile-list">
+            {#if profiles.length === 0}
+              <div class="empty-state">
+                <span class="empty-icon">🛡️</span>
+                <h3>No Profiles Yet</h3>
+                <p>Create your first anti-detect browser profile to get started.</p>
+                <button class="action-btn primary" onclick={() => { resolveCreateVersion(); view = "create"; }}>+ Create Profile</button>
+              </div>
+            {:else}
+              {#each profiles as profile (profile.id)}
+                <button
+                  class="profile-card"
+                  class:selected={selectedProfile?.id === profile.id}
+                  class:running={profile.is_running}
+                  onclick={() => selectedProfile = profile}
+                >
+                  <div class="profile-icon">{engineIcon(profile.engine)}</div>
+                  <div class="profile-info">
+                    <span class="profile-name">{profile.name}</span>
+                    <span class="profile-engine">{engineLabel(profile.engine)} v{profile.engine_version}</span>
+                  </div>
+                  <div class="profile-status">
+                    {#if profile.is_running}
+                      <span class="status-dot running" title="Running"></span>
+                    {:else}
+                      <span class="status-dot idle" title="Idle"></span>
+                    {/if}
+                  </div>
+                </button>
+              {/each}
+            {/if}
+          </div>
+
+          <!-- Detail Panel -->
+          <div class="detail-panel">
+            {#if selectedProfile}
+              <div class="detail-header">
+                <h3>{engineIcon(selectedProfile.engine)} {selectedProfile.name}</h3>
+                {#if selectedProfile.is_running}
+                  <span class="badge running">Running</span>
+                {:else}
+                  <span class="badge idle">Idle</span>
+                {/if}
+              </div>
+              <div class="detail-grid">
+                <div class="detail-row">
+                  <span class="detail-key">Engine</span>
+                  <span class="detail-val">{engineLabel(selectedProfile.engine)}</span>
+                </div>
+                <div class="detail-row">
+                  <span class="detail-key">Version</span>
+                  <span class="detail-val">{selectedProfile.engine_version}</span>
+                </div>
+                <div class="detail-row">
+                  <span class="detail-key">Created</span>
+                  <span class="detail-val">{formatDate(selectedProfile.created_at)}</span>
+                </div>
+                {#if selectedProfile.last_launch}
+                  <div class="detail-row">
+                    <span class="detail-key">Last Launch</span>
+                    <span class="detail-val">{formatDate(selectedProfile.last_launch)}</span>
+                  </div>
+                {/if}
+                <div class="detail-row">
+                  <span class="detail-key">Proxy</span>
+                  <span class="detail-val">{selectedProfile.has_proxy ? "✅ Configured" : "⚠️ None"}</span>
+                </div>
+                <div class="detail-row">
+                  <span class="detail-key">Fingerprint OS</span>
+                  <span class="detail-val">{selectedProfile.fingerprint_os ?? "Auto"}</span>
+                </div>
+              </div>
+              {#if selectedProfile.tags.length > 0}
+                <div class="detail-tags">
+                  {#each selectedProfile.tags as tag}
+                    <span class="tag">{tag}</span>
+                  {/each}
+                </div>
+              {/if}
+              <div class="detail-actions">
+                {#if selectedProfile.is_running}
+                  <button class="action-btn danger" onclick={() => stopProfile(selectedProfile!.id)}>⏹ Stop</button>
+                {:else}
+                  {#if isEngineInstalled(selectedProfile.engine, selectedProfile.engine_version)}
+                    <button class="action-btn primary" onclick={() => launchProfile(selectedProfile!.id)} disabled={launching}>
+                      {launching ? "Launching..." : "▶ Launch"}
+                    </button>
+                  {:else}
+                    <button class="action-btn primary" onclick={() => downloadEngine(selectedProfile!.engine, selectedProfile!.engine_version)} disabled={downloading}>
+                      {downloading ? downloadProgress : "⬇ Download Engine"}
+                    </button>
+                  {/if}
+                  <button class="action-btn danger" onclick={() => deleteProfile(selectedProfile!.id)}>Delete</button>
+                {/if}
+              </div>
+            {:else}
+              <div class="no-selection">
+                <span>🛡️</span>
+                <p>Select a profile to view details and manage fingerprint, proxy, and engine settings.</p>
+              </div>
+            {/if}
+          </div>
+        </div>
+      {/if}
+    </div>
+  {/if}
 </section>
 
 <style>
-  .shield-app { height: 100%; overflow: hidden; padding: 1.1rem; display: grid; grid-template-rows: auto auto 1fr; gap: 0.85rem; }
+  .shield-app { height: 100%; overflow: hidden; display: grid; grid-template-rows: 1fr; }
+
+  /* ─── Loading ─── */
+  .loading-screen { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1rem; color: var(--system-color-text-muted); }
+
+  .spinner { width: 24px; height: 24px; border: 3px solid var(--system-color-border); border-top-color: var(--system-color-primary); border-radius: 50%; animation: spin 0.8s linear infinite; }
+  .spinner.large { width: 40px; height: 40px; border-width: 4px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ─── Setup/Onboarding ─── */
+  .setup-screen { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1.5rem; padding: 2rem; max-width: 560px; margin: 0 auto; }
+  .setup-hero { text-align: center; }
+  .setup-icon { font-size: 3.5rem; display: block; margin-bottom: 0.5rem; }
+  .setup-hero h2 { margin: 0; font-size: 1.5rem; }
+  .setup-subtitle { margin: 0.5rem 0 0; color: var(--system-color-text-muted); font-size: 0.88rem; line-height: 1.5; }
+
+  .engine-cards { display: flex; flex-direction: column; gap: 0.6rem; width: 100%; }
+  .engine-card {
+    display: flex; align-items: flex-start; gap: 0.8rem; padding: 0.9rem 1rem;
+    border-radius: 0.85rem; border: 2px solid var(--system-color-border);
+    background: var(--system-color-panel); color: var(--system-color-text);
+    text-align: left; cursor: pointer; transition: all 0.15s; position: relative;
+  }
+  .engine-card:hover:not(:disabled) { border-color: hsla(var(--system-color-primary-hsl) / 0.4); }
+  .engine-card.selected { border-color: var(--system-color-primary); background: hsla(var(--system-color-primary-hsl) / 0.06); }
+  .engine-card.disabled { opacity: 0.5; cursor: not-allowed; }
+  .engine-card-icon { font-size: 1.8rem; flex-shrink: 0; margin-top: 0.1rem; }
+  .engine-card-body h4 { margin: 0 0 0.25rem; font-size: 0.92rem; }
+  .engine-card-body p { margin: 0; font-size: 0.78rem; color: var(--system-color-text-muted); line-height: 1.45; }
+  .coming-soon { font-size: 0.65rem; font-weight: 500; padding: 0.1rem 0.45rem; border-radius: 999px; background: hsla(var(--system-color-dark-hsl) / 0.1); color: var(--system-color-text-muted); vertical-align: middle; margin-left: 0.3rem; }
+  .checkmark { position: absolute; top: 0.7rem; right: 0.8rem; color: var(--system-color-primary); font-size: 1.1rem; font-weight: 700; }
+
+  .setup-meta { font-size: 0.82rem; color: var(--system-color-text-muted); }
+  .setup-meta p { margin: 0; }
+  .setup-error { padding: 0.6rem 0.9rem; border-radius: 0.6rem; background: hsl(0 85% 95%); color: hsl(0 75% 40%); font-size: 0.82rem; width: 100%; }
+
+  .install-btn {
+    width: 100%; padding: 0.75rem; border-radius: 0.75rem; border: none;
+    background: var(--system-color-primary); color: white; font-size: 0.92rem; font-weight: 600;
+    cursor: pointer; transition: filter 0.12s;
+  }
+  .install-btn:hover:not(:disabled) { filter: brightness(1.1); }
+  .install-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  .skip-btn { background: none; border: none; color: var(--system-color-text-muted); font-size: 0.8rem; cursor: pointer; padding: 0.3rem; }
+  .skip-btn:hover { color: var(--system-color-text); }
+
+  .install-progress { display: flex; flex-direction: column; align-items: center; gap: 1rem; padding: 2rem; }
+  .progress-text { font-size: 0.88rem; color: var(--system-color-text-muted); }
+
+  /* ─── Header + Status (profiles view) ─── */
+  .shield-app:has(.header) { grid-template-rows: auto auto 1fr; gap: 0.85rem; padding: 1.1rem; }
   .header { display: flex; justify-content: space-between; align-items: center; }
   .eyebrow { margin: 0; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.14em; color: var(--system-color-text-muted); }
   h2 { margin: 0.3rem 0 0; }
@@ -331,7 +542,6 @@
   .action-btn.danger { background: hsl(0 75% 55%); color: white; border-color: transparent; }
   .action-btn.danger:hover { filter: brightness(1.1); }
 
-  /* Status Bar */
   .status-bar {
     display: flex; gap: 1rem; padding: 0.7rem 1rem; border-radius: 0.8rem;
     border: 1px solid var(--system-color-border); background: var(--system-color-panel);
@@ -341,10 +551,9 @@
   .status-value.running { color: hsl(142 70% 45%); }
   .status-label { font-size: 0.72rem; color: var(--system-color-text-muted); text-transform: uppercase; letter-spacing: 0.1em; }
 
-  /* Main Content */
   .main-content { overflow: hidden; min-height: 0; }
 
-  /* Profile List */
+  /* ─── Profile List ─── */
   .profiles-layout { display: grid; grid-template-columns: 1fr 1.4fr; gap: 0.85rem; height: 100%; overflow: hidden; }
   .profile-list { overflow-y: auto; display: flex; flex-direction: column; gap: 0.35rem; padding-right: 0.3rem; }
   .profile-card {
@@ -363,16 +572,14 @@
   .status-dot.running { background: hsl(142 70% 45%); box-shadow: 0 0 6px hsl(142 70% 45% / 0.5); }
   .status-dot.idle { background: var(--system-color-text-muted); opacity: 0.4; }
 
-  /* Detail Panel */
+  /* ─── Detail Panel ─── */
   .detail-panel {
     overflow-y: auto; border-radius: 1rem; padding: 1rem;
     border: 1px solid var(--system-color-border); background: var(--system-color-panel);
   }
   .detail-header { display: flex; justify-content: space-between; align-items: center; }
   .detail-header h3 { margin: 0; font-size: 1rem; }
-  .badge {
-    padding: 0.15rem 0.55rem; border-radius: 999px; font-size: 0.7rem; font-weight: 600;
-  }
+  .badge { padding: 0.15rem 0.55rem; border-radius: 999px; font-size: 0.7rem; font-weight: 600; }
   .badge.running { background: hsla(142 70% 45% / 0.15); color: hsl(142 70% 35%); }
   .badge.idle { background: hsla(var(--system-color-dark-hsl) / 0.08); color: var(--system-color-text-muted); }
   .detail-grid { margin-top: 1rem; display: flex; flex-direction: column; gap: 0.5rem; }
@@ -383,12 +590,11 @@
   .tag { padding: 0.15rem 0.5rem; font-size: 0.7rem; border-radius: 999px; background: hsla(var(--system-color-primary-hsl) / 0.1); color: var(--system-color-primary); }
   .detail-actions { margin-top: 1rem; display: flex; gap: 0.5rem; justify-content: flex-end; }
 
-  /* No Selection */
   .no-selection { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; gap: 0.5rem; color: var(--system-color-text-muted); }
   .no-selection span { font-size: 2.5rem; }
   .no-selection p { font-size: 0.85rem; text-align: center; max-width: 20rem; }
 
-  /* Create Form */
+  /* ─── Create Form ─── */
   .create-form { max-width: 480px; margin: 0 auto; }
   .create-form h3 { margin: 0 0 1rem; }
   .form-field { display: flex; flex-direction: column; gap: 0.3rem; margin-bottom: 0.85rem; }
@@ -410,9 +616,7 @@
   .create-btn:hover:not(:disabled) { filter: brightness(1.1); }
   .create-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
-  /* States */
-  .loading-state, .empty-state { text-align: center; padding: 2rem; color: var(--system-color-text-muted); }
-  .empty-state { display: flex; flex-direction: column; align-items: center; gap: 0.5rem; padding: 3rem; }
+  .empty-state { text-align: center; display: flex; flex-direction: column; align-items: center; gap: 0.5rem; padding: 3rem; color: var(--system-color-text-muted); }
   .empty-icon { font-size: 2.5rem; }
   .empty-state h3 { margin: 0; color: var(--system-color-text); font-size: 1rem; }
   .empty-state p { margin: 0; font-size: 0.82rem; max-width: 18rem; }

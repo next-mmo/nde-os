@@ -66,6 +66,13 @@ pub fn run() {
             // sandbox
             commands::sandbox::verify_sandbox,
             commands::sandbox::get_disk_usage,
+            // filesystem
+            commands::filesystem::list_directory,
+            commands::filesystem::get_home_dir,
+            commands::filesystem::open_file,
+            commands::filesystem::create_folder,
+            commands::filesystem::delete_entry,
+            commands::filesystem::rename_entry,
             // shield browser
             commands::shield::list_shield_profiles,
             commands::shield::get_shield_profile,
@@ -77,6 +84,8 @@ pub fn run() {
             commands::shield::stop_shield_profile,
             commands::shield::download_shield_engine,
             commands::shield::is_shield_engine_downloaded,
+            commands::shield::resolve_engine_version,
+            commands::shield::get_available_engines,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

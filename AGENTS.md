@@ -1,8 +1,10 @@
-# AI Launcher (NDE-OS) — Agent Rules
+# NDE-OS — Agent Rules
+
+> **⚠️ Heavy Development** — APIs, manifests, and UI change without notice. Not production-ready.
 
 ## What This Is
 
-Sandboxed AI app launcher (like Pinokio, Openclaw) autonomous agent looping gateway chat with a macOS-style web desktop. Users install & run AI apps (Stable Diffusion, ComfyUI, Ollama, Whisper, etc.) from a manifest catalog — each app gets a filesystem-jailed workspace with its own `uv`-managed Python venv.
+**NDE-OS is a sandboxed virtual operating system for AI applications** — a self-contained desktop environment that **never touches the host OS**. All files, env vars, and processes are jailed to the NDE-OS workspace. Think Pinokio / Openclaw, but with a macOS-style virtual desktop, autonomous agent gateway, and zero host footprint. Users install & run AI apps (Stable Diffusion, ComfyUI, Ollama, Whisper, etc.) from a manifest catalog — each app gets a filesystem-jailed workspace with its own `uv`-managed Python venv.
 
 **Stack**: Rust backend (sandbox + app lifecycle + REST API) → Tauri 2 bridge, Tanstack Query → Svelte 5 desktop UI.
 

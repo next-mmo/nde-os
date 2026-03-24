@@ -84,6 +84,12 @@ export const apps_config = {
     height: 760,
     dock_breaks_before: true,
   }),
+  "file-explorer": create_app_config({
+    title: "File Explorer",
+    width: 1100,
+    height: 760,
+    dock_breaks_before: true,
+  }),
   launchpad: create_app_config({
     title: "Launchpad",
     should_open_window: false,

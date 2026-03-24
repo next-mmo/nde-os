@@ -185,10 +185,24 @@ pub fn is_shield_engine_downloaded(
     Ok(engine_mgr.is_downloaded(&engine_type, &version))
 }
 
+// ─── Onboarding Commands ───────────────────────────────────────────
+
+#[tauri::command]
+pub async fn resolve_engine_version(engine: String) -> Result<String, String> {
+    let engine_type = BrowserEngine::from_str(&engine).map_err(|e: anyhow::Error| e.to_string())?;
+    launcher::resolve_latest_version(&engine_type)
+        .await
+        .map_err(|e: anyhow::Error| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_available_engines() -> Vec<launcher::AvailableEngine> {
+    launcher::get_available_engines()
+}
+
 // ─── Managed State ─────────────────────────────────────────────────
 
 /// Tauri-managed state for the browser launcher (async-safe).
 pub struct ShieldLauncherState {
     pub launcher: Arc<Mutex<BrowserLauncher>>,
 }
-

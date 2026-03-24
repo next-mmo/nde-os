@@ -2,15 +2,25 @@
   <em>🤖 Built with ❤️ by <strong>Opus 4.6</strong> · <strong>Codex 4.2</strong> · <strong>Gemini Pro 3.1</strong></em>
 </p>
 
+<p align="center">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MPL--2.0-blue.svg" alt="MPL-2.0 License"></a>
+</p>
+
+> [!WARNING]
+> **🚧 Heavy Development — Expect Breaking Changes**
+> NDE-OS is under active, heavy development. APIs, manifests, and UI may change without notice. **Not production-ready yet.** Contributions and feedback welcome!
+
 ---
 
-# 🖥️ NDE-OS
+# 🖥️ NDE-OS — A Virtual OS That Never Touches Yours
 
-**A sandboxed OS environment for AI applications — in your browser.**
+**A fully sandboxed virtual operating system for AI applications.**
 
-NDE-OS combines a **macOS-style web desktop** with a **Rust-powered sandbox backend** to give users a familiar, secure environment for installing and running AI apps. Each app lives in its own filesystem jail with an isolated Python virtual environment managed by [uv](https://docs.astral.sh/uv/).
+NDE-OS is a **self-contained virtual desktop environment** — it looks like an OS, feels like an OS, but runs **entirely inside its own sandbox**. Your host system's files, environment, and configuration are **never read, modified, or accessed**. Every AI app gets its own filesystem jail, its own Python venv (via [uv](https://docs.astral.sh/uv/)), and its own set of environment variables — all scoped to the NDE-OS workspace.
 
-> **Cross-platform. Mac, Linux + Windows native. No WSL required.**
+> 🔐 **Zero host footprint** — NDE-OS jails `HOME`, `TMPDIR`, `APPDATA`, `XDG_*`, and `PATH` to its own workspace. Your real system is invisible to every app running inside.
+>
+> 🖥️ **Cross-platform** — Mac, Linux, and Windows native. No WSL, no Docker, no VM required.
 
 ---
 
@@ -252,4 +262,4 @@ cargo build      # Build the backend
 
 ## License
 
-MIT
+This project is licensed under the [Mozilla Public License 2.0](LICENSE).

@@ -219,42 +219,103 @@ fn kill_process(pid: u32) {
 
 // ─── Download URL Helpers ──────────────────────────────────────────
 
+/// Resolve "latest" to an actual version tag from GitHub releases.
+pub async fn resolve_latest_version(engine: &BrowserEngine) -> Result<String> {
+    match engine {
+        BrowserEngine::Camoufox => {
+            let client = reqwest::Client::builder()
+                .user_agent("NDE-OS-Shield/1.0")
+                .build()
+                .context("Failed to build HTTP client")?;
+
+            let resp = client
+                .get("https://api.github.com/repos/daijro/camoufox/releases/latest")
+                .send()
+                .await
+                .context("Failed to fetch latest Camoufox release from GitHub")?;
+
+            if !resp.status().is_success() {
+                anyhow::bail!("GitHub API returned status {}", resp.status());
+            }
+
+            let json: serde_json::Value = resp
+                .json()
+                .await
+                .context("Failed to parse GitHub release JSON")?;
+
+            let tag = json["tag_name"]
+                .as_str()
+                .context("Missing tag_name in GitHub release")?;
+
+            // Strip leading 'v' if present: "v135.0.1-beta.24" -> "135.0.1-beta.24"
+            let version = tag.strip_prefix('v').unwrap_or(tag);
+            Ok(version.to_string())
+        }
+        BrowserEngine::Wayfern => {
+            anyhow::bail!("Wayfern engine is not yet available for download. Coming soon.")
+        }
+    }
+}
+
 /// Get the download URL for an engine version on the current platform.
 pub fn get_download_url(engine: &BrowserEngine, version: &str) -> Result<String> {
     let (os, arch) = get_platform_info();
 
     match engine {
         BrowserEngine::Camoufox => {
-            let (os_name, arch_name) = match (os.as_str(), arch.as_str()) {
-                ("windows", "x64") => ("win", "x86_64"),
-                ("windows", "arm64") => ("win", "arm64"),
-                ("linux", "x64") => ("lin", "x86_64"),
-                ("linux", "arm64") => ("lin", "arm64"),
-                ("macos", "x64") => ("mac", "x86_64"),
-                ("macos", "arm64") => ("mac", "arm64"),
-                _ => anyhow::bail!("Unsupported platform for Camoufox: {os}/{arch}"),
+            // Real Camoufox release asset pattern (verified against GitHub):
+            // camoufox-{version}-{os}.{arch}.zip
+            // Example: camoufox-135.0.1-beta.24-win.x86_64.zip
+            let os_name = match os.as_str() {
+                "windows" => "win",
+                "linux" => "lin",
+                "macos" => "mac",
+                _ => anyhow::bail!("Unsupported OS for Camoufox: {os}"),
             };
 
-            // Camoufox GitHub releases: https://github.com/daijro/camoufox/releases
+            let arch_name = match arch.as_str() {
+                "x64" => "x86_64",
+                "arm64" => "arm64",
+                _ => anyhow::bail!("Unsupported architecture for Camoufox: {arch}"),
+            };
+
             Ok(format!(
                 "https://github.com/daijro/camoufox/releases/download/v{version}/camoufox-{version}-{os_name}.{arch_name}.zip"
             ))
         }
         BrowserEngine::Wayfern => {
-            let platform_key = format!("{os}-{arch}");
-            let ext = match os.as_str() {
-                "windows" => "zip",
-                "macos" => "dmg",
-                "linux" => "tar.xz",
-                _ => "zip",
-            };
-
-            // Wayfern downloads from download.wayfern.com
-            Ok(format!(
-                "https://download.wayfern.com/wayfern-{version}-{platform_key}.{ext}"
-            ))
+            anyhow::bail!("Wayfern engine is not yet available for download. Coming soon.")
         }
     }
+}
+
+/// Returns metadata about available engines for the UI.
+pub fn get_available_engines() -> Vec<AvailableEngine> {
+    vec![
+        AvailableEngine {
+            engine: "camoufox".into(),
+            name: "Camoufox".into(),
+            description: "Firefox-based with native C++ fingerprint spoofing. Supports canvas, WebGL, audio, timezone, locale, WebRTC, and geolocation.".into(),
+            available: true,
+            icon: "🦊".into(),
+        },
+        AvailableEngine {
+            engine: "wayfern".into(),
+            name: "Wayfern".into(),
+            description: "Chromium-based with patched canvas, WebGL, and navigator APIs at the C++ level. Coming soon.".into(),
+            available: false,
+            icon: "🌐".into(),
+        },
+    ]
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct AvailableEngine {
+    pub engine: String,
+    pub name: String,
+    pub description: String,
+    pub available: bool,
+    pub icon: String,
 }
 
 fn get_platform_info() -> (String, String) {
@@ -285,17 +346,18 @@ mod tests {
 
     #[test]
     fn test_camoufox_download_url() {
-        let url = get_download_url(&BrowserEngine::Camoufox, "132.0.2").unwrap();
+        let url = get_download_url(&BrowserEngine::Camoufox, "135.0.1-beta.24").unwrap();
         assert!(url.contains("camoufox"));
-        assert!(url.contains("132.0.2"));
+        assert!(url.contains("135.0.1-beta.24"));
         assert!(url.contains("github.com/daijro/camoufox"));
+        assert!(url.ends_with(".zip"));
     }
 
     #[test]
-    fn test_wayfern_download_url() {
-        let url = get_download_url(&BrowserEngine::Wayfern, "133.0.6943.2").unwrap();
-        assert!(url.contains("wayfern"));
-        assert!(url.contains("133.0.6943.2"));
-        assert!(url.contains("download.wayfern.com"));
+    fn test_wayfern_download_not_available() {
+        let result = get_download_url(&BrowserEngine::Wayfern, "133.0");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Coming soon"));
     }
 }
+

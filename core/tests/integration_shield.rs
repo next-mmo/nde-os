@@ -222,9 +222,10 @@ fn shield_browser_engine_display_names() {
 
 #[test]
 fn shield_download_url_camoufox() {
-    let url = launcher::get_download_url(&BrowserEngine::Camoufox, "132.0.2").unwrap();
+    let url = launcher::get_download_url(&BrowserEngine::Camoufox, "135.0.1-beta.24").unwrap();
     assert!(url.starts_with("https://github.com/daijro/camoufox/releases/"));
-    assert!(url.contains("132.0.2"));
+    assert!(url.contains("135.0.1-beta.24"));
+    assert!(url.ends_with(".zip"));
     // Should contain platform-specific identifiers
     assert!(
         url.contains("win") || url.contains("lin") || url.contains("mac"),
@@ -233,14 +234,10 @@ fn shield_download_url_camoufox() {
 }
 
 #[test]
-fn shield_download_url_wayfern() {
-    let url = launcher::get_download_url(&BrowserEngine::Wayfern, "133.0.6943.2").unwrap();
-    assert!(url.starts_with("https://download.wayfern.com/"));
-    assert!(url.contains("133.0.6943.2"));
-    assert!(
-        url.contains("windows") || url.contains("linux") || url.contains("macos"),
-        "URL should contain platform: {url}"
-    );
+fn shield_download_url_wayfern_not_available() {
+    let result = launcher::get_download_url(&BrowserEngine::Wayfern, "133.0");
+    assert!(result.is_err(), "Wayfern should not be available for download");
+    assert!(result.unwrap_err().to_string().contains("Coming soon"));
 }
 
 #[test]
