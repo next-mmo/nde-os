@@ -31,10 +31,10 @@ pub struct GgufVerifyResult {
     pub error: Option<String>,
 }
 
-/// Default small model for first-run.
+/// Default small model for first-run — bundled in core/models/.
 const DEFAULT_MODEL_URL: &str =
-    "https://huggingface.co/TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF/resolve/main/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf";
-const DEFAULT_MODEL_FILENAME: &str = "tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf";
+    "https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/qwen2.5-0.5b-instruct-q4_k_m.gguf";
+const DEFAULT_MODEL_FILENAME: &str = "qwen2.5-0.5b-instruct-q4_k_m.gguf";
 
 /// llama.cpp release to auto-download.
 const LLAMA_CPP_VERSION: &str = "b4679";
@@ -68,9 +68,18 @@ impl GgufProvider {
             default_filename = download_url.split('/').last().unwrap_or(DEFAULT_MODEL_FILENAME).to_string();
         }
 
+        // Resolve model path: explicit path > bundled core/models > data_dir/models
         let model_path = match model_path {
             Some(p) if !p.is_empty() => PathBuf::from(p),
-            _ => data_dir.join("models").join(default_filename),
+            _ => {
+                // Check bundled models directory first (core/models/)
+                let bundled = Self::find_bundled_model(&default_filename);
+                if let Some(bp) = bundled {
+                    bp
+                } else {
+                    data_dir.join("models").join(&default_filename)
+                }
+            }
         };
         
         let model_name = model_path
@@ -93,28 +102,95 @@ impl GgufProvider {
         }
     }
 
-    /// List all .gguf model files found in the standard models directory.
-    pub fn list_local_models(data_dir: &Path) -> Vec<LocalGgufModel> {
-        let models_dir = data_dir.join("models");
-        let mut models = Vec::new();
+    /// Search for a model file in the bundled core/models/ directory.
+    /// This looks relative to the executable path and common project layouts.
+    fn find_bundled_model(filename: &str) -> Option<PathBuf> {
+        // Try paths relative to the current exe
+        let candidates: Vec<PathBuf> = vec![
+            // Running from project root (dev mode)
+            PathBuf::from("core/models").join(filename),
+            // Running from target/debug or target/release
+            PathBuf::from("../../core/models").join(filename),
+        ];
 
-        if let Ok(entries) = std::fs::read_dir(&models_dir) {
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if path.extension().and_then(|e| e.to_str()) == Some("gguf") {
-                    if let Ok(meta) = std::fs::metadata(&path) {
-                        let size = meta.len();
-                        let size_display = if size >= 1_073_741_824 {
-                            format!("{:.1} GB", size as f64 / 1_073_741_824.0)
-                        } else {
-                            format!("{:.0} MB", size as f64 / 1_048_576.0)
-                        };
-                        models.push(LocalGgufModel {
-                            filename: path.file_name().unwrap_or_default().to_string_lossy().to_string(),
-                            path: path.to_string_lossy().to_string(),
-                            size_bytes: size,
-                            size_display,
-                        });
+        // Also try relative to the executable location
+        if let Ok(exe) = std::env::current_exe() {
+            if let Some(exe_dir) = exe.parent() {
+                let extras = vec![
+                    exe_dir.join("core/models").join(filename),
+                    exe_dir.join("../../core/models").join(filename),
+                    exe_dir.join("../../../core/models").join(filename),
+                ];
+                for p in extras {
+                    if p.exists() {
+                        if let Ok(canon) = p.canonicalize() {
+                            tracing::info!(path = %canon.display(), "Found bundled model");
+                            return Some(canon);
+                        }
+                    }
+                }
+            }
+        }
+
+        for p in candidates {
+            if p.exists() {
+                if let Ok(canon) = p.canonicalize() {
+                    tracing::info!(path = %canon.display(), "Found bundled model");
+                    return Some(canon);
+                }
+            }
+        }
+        None
+    }
+
+    /// List all .gguf model files found in the data models dir AND bundled core/models/.
+    pub fn list_local_models(data_dir: &Path) -> Vec<LocalGgufModel> {
+        let mut models = Vec::new();
+        let mut seen_filenames = std::collections::HashSet::new();
+
+        // Directories to scan: data_dir/models + bundled core/models/
+        let mut dirs_to_scan: Vec<PathBuf> = vec![data_dir.join("models")];
+
+        // Add bundled model directories
+        let bundled_dirs = vec![
+            PathBuf::from("core/models"),
+            PathBuf::from("../../core/models"),
+        ];
+        if let Ok(exe) = std::env::current_exe() {
+            if let Some(exe_dir) = exe.parent() {
+                dirs_to_scan.push(exe_dir.join("core/models"));
+                dirs_to_scan.push(exe_dir.join("../../core/models"));
+                dirs_to_scan.push(exe_dir.join("../../../core/models"));
+            }
+        }
+        dirs_to_scan.extend(bundled_dirs);
+
+        for dir in &dirs_to_scan {
+            if let Ok(entries) = std::fs::read_dir(dir) {
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    if path.extension().and_then(|e| e.to_str()) == Some("gguf") {
+                        let fname = path.file_name().unwrap_or_default().to_string_lossy().to_string();
+                        if seen_filenames.contains(&fname) {
+                            continue; // deduplicate by filename
+                        }
+                        if let Ok(meta) = std::fs::metadata(&path) {
+                            let size = meta.len();
+                            let size_display = if size >= 1_073_741_824 {
+                                format!("{:.1} GB", size as f64 / 1_073_741_824.0)
+                            } else {
+                                format!("{:.0} MB", size as f64 / 1_048_576.0)
+                            };
+                            // Canonicalize the path for consistency
+                            let abs_path = path.canonicalize().unwrap_or(path.clone());
+                            seen_filenames.insert(fname.clone());
+                            models.push(LocalGgufModel {
+                                filename: fname,
+                                path: abs_path.to_string_lossy().to_string(),
+                                size_bytes: size,
+                                size_display,
+                            });
+                        }
                     }
                 }
             }
@@ -387,7 +463,6 @@ impl GgufProvider {
             .arg("--ctx-size").arg("4096")
             .arg("--n-gpu-layers").arg("99")
             .arg("--host").arg("127.0.0.1")
-            .arg("--jinja") // Required for tool calling support
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
             .spawn()
@@ -554,7 +629,9 @@ impl LlmProvider for GgufProvider {
         let body = ChatRequest {
             model: self.model_name.clone(),
             messages: to_oai_messages(messages),
-            tools: to_oai_tools(tools),
+            // Skip tools for GGUF models — most small models don't support tool calling
+            // and sending tools causes llama-server to crash without --jinja flag
+            tools: vec![],
             max_tokens: Some(2048),
         };
 
@@ -686,13 +763,13 @@ impl GgufModelRecommendation {
         let ram_gb = ram_bytes.saturating_mul(10).checked_div(1024 * 1024 * 1024).unwrap_or(0) as f64 / 10.0;
         let mut models = vec![];
 
-        // 1. TinyLlama 1.1B - extremely light, for minimum spec
+        // 1. Qwen 2.5 0.5B — bundled, instant use, no download needed
         models.push(GgufModelRecommendation {
-            id: "tinyllama-1.1b".to_string(),
-            name: "TinyLlama 1.1B Chat".to_string(),
-            url: "https://huggingface.co/TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF/resolve/main/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf".to_string(),
-            description: "Ultra-fast, small model. Good for low RAM devices or basic tasks.".to_string(),
-            size_gb: 0.67,
+            id: "qwen2.5-0.5b-instruct".to_string(),
+            name: "Qwen 2.5 0.5B Instruct".to_string(),
+            url: "https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/qwen2.5-0.5b-instruct-q4_k_m.gguf".to_string(),
+            description: "Ultra-light bundled model. Instant start, no download. Good for basic tasks.".to_string(),
+            size_gb: 0.46,
             recommended_ram_gb: 2,
         });
 
@@ -718,7 +795,19 @@ impl GgufModelRecommendation {
             });
         }
 
-        // 4. Llama-3 8B
+        // 4. Qwen 3.5 9B — bundled, high quality
+        if ram_gb >= 6.0 {
+            models.push(GgufModelRecommendation {
+                id: "qwen3.5-9b".to_string(),
+                name: "Qwen 3.5 9B".to_string(),
+                url: "https://huggingface.co/Qwen/Qwen3.5-9B-GGUF/resolve/main/Qwen3.5-9B-Q4_K_M.gguf".to_string(),
+                description: "Bundled high-quality 9B model. Excellent reasoning and coding capability.".to_string(),
+                size_gb: 5.24,
+                recommended_ram_gb: 8,
+            });
+        }
+
+        // 5. Llama-3 8B
         if ram_gb >= 6.5 {
             models.push(GgufModelRecommendation {
                 id: "llama-3-8b".to_string(),
@@ -727,18 +816,6 @@ impl GgufModelRecommendation {
                 description: "Heavyweight 8B model. High intelligence for complex chat.".to_string(),
                 size_gb: 4.92,
                 recommended_ram_gb: 8,
-            });
-        }
-        
-        // 5. Mixtral 8x7B (very large)
-        if ram_gb >= 24.0 {
-            models.push(GgufModelRecommendation {
-                id: "mixtral-8x7b".to_string(),
-                name: "Mixtral 8x7B Instruct".to_string(),
-                url: "https://huggingface.co/TheBloke/Mixtral-8x7B-Instruct-v0.1-GGUF/resolve/main/mixtral-8x7b-instruct-v0.1.Q4_K_M.gguf".to_string(),
-                description: "Massive MoE model. Excellent performance matching GPT-3.5.".to_string(),
-                size_gb: 26.44,
-                recommended_ram_gb: 32,
             });
         }
 
