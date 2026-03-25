@@ -178,6 +178,12 @@ export interface PluginStatus {
   hooks: HookType[];
 }
 
+export interface PluginLogEntry {
+  timestamp: string;
+  stream: "stdout" | "stderr" | "system";
+  message: string;
+}
+
 // ── Channel / Gateway types ──────────────────────────────────────────────────
 
 export type ChannelType = "rest" | "telegram" | "discord" | "slack" | "web_chat" | "cli";

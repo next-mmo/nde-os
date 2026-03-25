@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cargo check:*)",
+      "Bash(cargo test:*)",
+      "Bash(wc -l /c/Users/dila/Downloads/ai-launcher-v0.2/ai-launcher/core/src/mcp/*.rs /c/Users/dila/Downloads/ai-launcher-v0.2/ai-launcher/core/src/skills/*.rs /c/Users/dila/Downloads/ai-launcher-v0.2/ai-launcher/core/src/knowledge/*.rs /c/Users/dila/Downloads/ai-launcher-v0.2/ai-launcher/core/src/channels/*.rs /c/Users/dila/Downloads/ai-launcher-v0.2/ai-launcher/core/src/tools/builtin/*.rs /c/Users/dila/Downloads/ai-launcher-v0.2/ai-launcher/core/src/shield/*.rs)"
+    ]
+  }
+}

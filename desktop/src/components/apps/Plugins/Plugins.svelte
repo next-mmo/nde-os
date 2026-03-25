@@ -2,12 +2,17 @@
 
 <script lang="ts">
   import * as api from "$lib/api/backend";
-  import type { PluginStatus } from "$lib/api/types";
+  import type { PluginStatus, PluginLogEntry } from "$lib/api/types";
 
   let plugins = $state<PluginStatus[]>([]);
   let loading = $state(true);
   let discovering = $state(false);
   let actionLoading = $state<Record<string, boolean>>({});
+
+  // Log viewer state
+  let expandedLogs = $state<Record<string, boolean>>({});
+  let pluginLogs = $state<Record<string, PluginLogEntry[]>>({});
+  let logLoading = $state<Record<string, boolean>>({});
 
   const TYPE_ICONS: Record<string, string> = {
     monitor: "📊", hook: "🪝", provider: "🔌", tool: "🔧", ui_panel: "🖼️", daemon: "👻",
@@ -15,6 +20,11 @@
   const STATE_COLORS: Record<string, string> = {
     discovered: "var(--system-color-text-muted)", installed: "var(--system-color-warning)",
     running: "var(--system-color-success)", stopped: "var(--system-color-text-muted)", error: "var(--system-color-danger)",
+  };
+  const STREAM_COLORS: Record<string, string> = {
+    stdout: "hsl(210 80% 65%)",
+    stderr: "hsl(0 70% 65%)",
+    system: "hsl(270 60% 65%)",
   };
 
   $effect(() => { refresh(); });
@@ -38,8 +48,35 @@
       else if (action === "start") await api.startPlugin(id);
       else await api.stopPlugin(id);
       await refresh();
+      // Auto-refresh logs if panel is open
+      if (expandedLogs[id]) await fetchLogs(id);
     } catch (e: any) { console.error(e); }
     finally { actionLoading = { ...actionLoading, [id]: false }; }
+  }
+
+  async function toggleLogs(id: string) {
+    const next = !expandedLogs[id];
+    expandedLogs = { ...expandedLogs, [id]: next };
+    if (next) await fetchLogs(id);
+  }
+
+  async function fetchLogs(id: string) {
+    logLoading = { ...logLoading, [id]: true };
+    try {
+      const logs = await api.getPluginLogs(id);
+      pluginLogs = { ...pluginLogs, [id]: logs };
+    } catch {
+      pluginLogs = { ...pluginLogs, [id]: [] };
+    } finally {
+      logLoading = { ...logLoading, [id]: false };
+    }
+  }
+
+  async function handleClearLogs(id: string) {
+    try {
+      await api.clearPluginLogs(id);
+      pluginLogs = { ...pluginLogs, [id]: [] };
+    } catch (e: any) { console.error(e); }
   }
 </script>
 
@@ -111,7 +148,46 @@
                 {actionLoading[plugin.id] ? "..." : "⏹ Stop"}
               </button>
             {/if}
+
+            <button
+              class="act-btn logs-btn"
+              class:active={expandedLogs[plugin.id]}
+              onclick={() => toggleLogs(plugin.id)}
+              title="View Logs"
+            >
+              📋 Logs
+            </button>
           </div>
+
+          <!-- Log Panel -->
+          {#if expandedLogs[plugin.id]}
+            <div class="log-panel">
+              <div class="log-toolbar">
+                <span class="log-title">Plugin Logs</span>
+                <div class="log-toolbar-actions">
+                  <button class="log-tool-btn" onclick={() => fetchLogs(plugin.id)} disabled={logLoading[plugin.id]}>
+                    {logLoading[plugin.id] ? "..." : "↻"}
+                  </button>
+                  <button class="log-tool-btn" onclick={() => handleClearLogs(plugin.id)}>🗑</button>
+                </div>
+              </div>
+              <div class="log-content">
+                {#if logLoading[plugin.id] && (!pluginLogs[plugin.id] || pluginLogs[plugin.id].length === 0)}
+                  <div class="log-empty">Loading logs...</div>
+                {:else if !pluginLogs[plugin.id] || pluginLogs[plugin.id].length === 0}
+                  <div class="log-empty">No logs yet.</div>
+                {:else}
+                  {#each pluginLogs[plugin.id] as entry}
+                    <div class="log-line">
+                      <span class="log-time">{entry.timestamp.split("T")[1]?.replace("Z", "") ?? entry.timestamp}</span>
+                      <span class="log-stream" style="color: {STREAM_COLORS[entry.stream] ?? 'inherit'}">[{entry.stream}]</span>
+                      <span class="log-msg" class:log-err={entry.stream === "stderr"}>{entry.message}</span>
+                    </div>
+                  {/each}
+                {/if}
+              </div>
+            </div>
+          {/if}
         </article>
       {/each}
     </div>
@@ -156,10 +232,53 @@
   .act-btn.install { background: hsla(var(--system-color-primary-hsl) / 0.15); color: var(--system-color-primary); }
   .act-btn.start { background: hsla(160 60% 50% / 0.15); color: hsl(160 60% 50%); }
   .act-btn.stop { background: hsla(0 70% 55% / 0.15); color: hsl(0 70% 60%); }
+  .act-btn.logs-btn { background: hsla(210 60% 50% / 0.12); color: hsl(210 60% 65%); }
+  .act-btn.logs-btn.active { background: hsla(210 60% 50% / 0.25); }
   .loading, .empty-state { text-align: center; padding: 2rem 1rem; color: var(--system-color-text-muted); }
   .empty-state { display: flex; flex-direction: column; align-items: center; gap: 0.5rem; }
   .empty-icon { font-size: 3rem; }
   .empty-state h3 { margin: 0; color: var(--system-color-text); }
   .empty-state p { margin: 0; max-width: 320px; font-size: 0.85rem; }
   .empty-state code { padding: 0.15rem 0.4rem; border-radius: 0.3rem; background: hsla(var(--system-color-dark-hsl) / 0.1); font-size: 0.82rem; }
+
+  /* Log Panel */
+  .log-panel {
+    margin-top: 0.3rem;
+    border-radius: 0.75rem;
+    border: 1px solid hsla(210 60% 50% / 0.15);
+    background: hsla(220 20% 8% / 0.6);
+    overflow: hidden;
+  }
+  .log-toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.4rem 0.65rem;
+    border-bottom: 1px solid hsla(210 60% 50% / 0.1);
+    background: hsla(220 20% 12% / 0.4);
+  }
+  .log-title { font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: var(--system-color-text-muted); }
+  .log-toolbar-actions { display: flex; gap: 0.3rem; }
+  .log-tool-btn {
+    padding: 0.2rem 0.5rem; border: none; border-radius: 0.4rem; cursor: pointer;
+    font-size: 0.72rem; background: hsla(210 30% 50% / 0.1); color: var(--system-color-text-muted);
+    transition: background 0.15s;
+  }
+  .log-tool-btn:hover { background: hsla(210 30% 50% / 0.2); }
+  .log-content {
+    max-height: 14rem;
+    overflow-y: auto;
+    padding: 0.4rem 0.5rem;
+    font-family: "SF Mono", "Cascadia Code", "Fira Code", monospace;
+    font-size: 0.7rem;
+    line-height: 1.55;
+  }
+  .log-content::-webkit-scrollbar { width: 5px; }
+  .log-content::-webkit-scrollbar-thumb { background: hsla(210 30% 50% / 0.2); border-radius: 999px; }
+  .log-empty { color: var(--system-color-text-muted); text-align: center; padding: 1rem; font-family: inherit; font-size: 0.78rem; }
+  .log-line { display: flex; gap: 0.5rem; padding: 0.05rem 0; white-space: nowrap; }
+  .log-time { color: hsla(210 30% 60% / 0.5); flex-shrink: 0; }
+  .log-stream { flex-shrink: 0; font-weight: 600; font-size: 0.65rem; min-width: 3.5rem; text-align: right; }
+  .log-msg { white-space: pre-wrap; word-break: break-all; color: var(--system-color-text); }
+  .log-msg.log-err { color: hsl(0 70% 65%); }
 </style>

@@ -92,3 +92,28 @@ pub fn stop_plugin(
         Err(e) => err(500, &e.to_string()),
     }
 }
+
+/// GET /api/plugins/{id}/logs — get plugin logs.
+pub fn get_plugin_logs(id: &str, engine: &Mutex<PluginEngine>) -> Response<Cursor<Vec<u8>>> {
+    match engine.lock() {
+        Ok(e) => match e.logs(id) {
+            Some(logs) => ok(&format!("Logs for plugin '{}'", id), logs),
+            None => err(404, &format!("Plugin '{}' not found", id)),
+        },
+        Err(_) => err(500, "Plugin engine lock failed"),
+    }
+}
+
+/// DELETE /api/plugins/{id}/logs — clear plugin logs.
+pub fn clear_plugin_logs(id: &str, engine: &Mutex<PluginEngine>) -> Response<Cursor<Vec<u8>>> {
+    match engine.lock() {
+        Ok(e) => {
+            if e.clear_logs(id) {
+                ok(&format!("Logs cleared for plugin '{}'", id), "cleared")
+            } else {
+                err(404, &format!("Plugin '{}' not found", id))
+            }
+        }
+        Err(_) => err(500, "Plugin engine lock failed"),
+    }
+}

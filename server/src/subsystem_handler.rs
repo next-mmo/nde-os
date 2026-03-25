@@ -133,37 +133,33 @@ pub fn configure_channel(req: &mut tiny_http::Request, data_dir: &Path) -> Respo
 
 // ── MCP ─────────────────────────────────────────────────────────────────────
 
-/// GET /api/mcp/tools — list discovered MCP tools.
+/// GET /api/mcp/tools — list all MCP-exposed tools from core builtin server.
 pub fn list_mcp_tools() -> Response<Cursor<Vec<u8>>> {
-    // Return built-in agent tools as MCP-style definitions
-    let tools = serde_json::json!([
-        { "name": "read_file", "description": "Read a file from the sandboxed workspace", "parameters": { "type": "object", "properties": { "path": { "type": "string" } } } },
-        { "name": "write_file", "description": "Write content to a file in the sandbox", "parameters": { "type": "object", "properties": { "path": { "type": "string" }, "content": { "type": "string" } } } },
-        { "name": "list_directory", "description": "List directory contents in the sandbox", "parameters": { "type": "object", "properties": { "path": { "type": "string" } } } },
-        { "name": "run_command", "description": "Execute a shell command inside the sandbox", "parameters": { "type": "object", "properties": { "command": { "type": "string" } } } },
-        { "name": "search_knowledge", "description": "Search the knowledge graph", "parameters": { "type": "object", "properties": { "query": { "type": "string" } } } },
-        { "name": "store_memory", "description": "Store a key-value pair in working memory", "parameters": { "type": "object", "properties": { "key": { "type": "string" }, "value": { "type": "string" } } } },
-        { "name": "recall_memory", "description": "Recall a value from working memory", "parameters": { "type": "object", "properties": { "key": { "type": "string" } } } },
-        { "name": "http_request", "description": "Make an HTTP request", "parameters": { "type": "object", "properties": { "url": { "type": "string" }, "method": { "type": "string" } } } },
-        { "name": "install_app", "description": "Install an AI app from the catalog", "parameters": { "type": "object", "properties": { "app_id": { "type": "string" } } } },
-        { "name": "launch_app", "description": "Launch an installed AI app", "parameters": { "type": "object", "properties": { "app_id": { "type": "string" } } } },
-        { "name": "stop_app", "description": "Stop a running AI app", "parameters": { "type": "object", "properties": { "app_id": { "type": "string" } } } },
-        { "name": "system_info", "description": "Get system information (OS, CPU, RAM, GPU)", "parameters": { "type": "object", "properties": {} } }
-    ]);
-    ok("MCP tools", tools)
+    let tools = ai_launcher_core::mcp::builtin::builtin_tool_definitions();
+    ok(&format!("{} MCP tools", tools.len()), tools)
 }
 
 /// GET /api/mcp/servers — list MCP server connections.
 pub fn list_mcp_servers() -> Response<Cursor<Vec<u8>>> {
-    let servers = serde_json::json!([
-        {
-            "name": "nde-os-builtin",
-            "transport": "stdio",
-            "tools_count": 12,
-            "is_connected": true
-        }
-    ]);
+    let servers = ai_launcher_core::mcp::builtin::builtin_server_info();
     ok("MCP servers", servers)
+}
+
+// ── Agent Tools ─────────────────────────────────────────────────────────────
+
+/// GET /api/agent/tools — list all built-in agent tools from the tool registry.
+pub fn list_agent_tools() -> Response<Cursor<Vec<u8>>> {
+    let registry = ai_launcher_core::tools::builtin::default_registry();
+    let defs: Vec<serde_json::Value> = registry
+        .definitions()
+        .into_iter()
+        .map(|d| serde_json::json!({
+            "name": d.name,
+            "description": d.description,
+            "parameters": d.parameters,
+        }))
+        .collect();
+    ok(&format!("{} agent tools", defs.len()), defs)
 }
 
 // ── Skills ──────────────────────────────────────────────────────────────────

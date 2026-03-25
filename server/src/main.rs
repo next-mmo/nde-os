@@ -8,6 +8,7 @@ mod stream_handler;
 mod subsystem_handler;
 
 use agent_handler::AgentState;
+use ai_launcher_core::agent::manager::{AgentManager, ManagerConfig};
 use ai_launcher_core::app_manager::AppManager;
 use ai_launcher_core::llm::manager::LlmManager;
 use ai_launcher_core::plugins::PluginEngine;
@@ -40,6 +41,7 @@ fn route(
     plugin_engine: &Mutex<PluginEngine>,
     llm_manager: Arc<Mutex<LlmManager>>,
     data_dir: &std::path::Path,
+    agent_manager: &Arc<tokio::sync::Mutex<AgentManager>>,
 ) -> tiny_http::Response<std::io::Cursor<Vec<u8>>> {
     let method = req.method().clone();
     let url = req.url().to_string();
@@ -71,7 +73,14 @@ fn route(
         // Agent chat API
         (Method::Post, "/api/agent/chat") => return agent_handler::agent_chat(req, agent, &llm_manager),
         (Method::Post, "/api/agent/chat/stream") => {
-            return stream_handler::handle_stream_chat(req, rt, agent, &llm_manager);
+            return stream_handler::handle_stream_chat(req, rt, agent, &llm_manager, Some(agent_manager));
+        }
+        // Task-based agent API (Phase 3)
+        (Method::Post, "/api/agent/tasks") => {
+            return stream_handler::spawn_task(req, rt, agent_manager);
+        }
+        (Method::Get, "/api/agent/tasks") => {
+            return stream_handler::list_tasks(agent_manager, rt);
         }
         (Method::Get, "/api/agent/conversations") => return agent_handler::list_conversations(agent),
         (Method::Get, "/api/agent/config") => return agent_handler::agent_config(agent, &llm_manager),
@@ -103,6 +112,23 @@ fn route(
         _ => {}
     }
 
+    // Agent task routes: /api/agent/tasks/{id}/...
+    if path.starts_with("/api/agent/tasks/") {
+        let parts: Vec<&str> = path.trim_start_matches('/').split('/').collect();
+        return match (method.clone(), parts.as_slice()) {
+            (Method::Get, ["api", "agent", "tasks", id]) => {
+                stream_handler::get_task(id, agent_manager, rt)
+            }
+            (Method::Get, ["api", "agent", "tasks", id, "stream"]) => {
+                stream_handler::stream_task(id, rt, agent_manager)
+            }
+            (Method::Post, ["api", "agent", "tasks", id, "cancel"]) => {
+                stream_handler::cancel_task(id, rt, agent_manager)
+            }
+            _ => err(404, &format!("Not found: {}", path)),
+        };
+    }
+
     // Agent conversation messages: /api/agent/conversations/{id}/messages
     if path.starts_with("/api/agent/conversations/") {
         let parts: Vec<&str> = path.trim_start_matches('/').split('/').collect();
@@ -127,6 +153,12 @@ fn route(
             }
             (Method::Post, ["api", "plugins", id, "stop"]) => {
                 plugin_handler::stop_plugin(id, rt, plugin_engine)
+            }
+            (Method::Get, ["api", "plugins", id, "logs"]) => {
+                plugin_handler::get_plugin_logs(id, plugin_engine)
+            }
+            (Method::Delete, ["api", "plugins", id, "logs"]) => {
+                plugin_handler::clear_plugin_logs(id, plugin_engine)
             }
             _ => err(404, &format!("Not found: {}", path)),
         };
@@ -276,6 +308,57 @@ fn main() {
 
     let llm_manager = Arc::new(Mutex::new(llm_mgr));
 
+    // Phase 3: Agent Manager (24/7 task runtime)
+    let agent_manager = {
+        let agent_state_ref = agent.lock().unwrap();
+        let mut agent_config = agent_state_ref.config.clone();
+        drop(agent_state_ref);
+        // Sync with active LLM provider
+        agent_handler::sync_model_config(&mut agent_config, &llm_manager);
+
+        let mut mgr_config = ManagerConfig::default();
+        mgr_config.executor.audit_dir = base_dir.join("audit");
+        std::fs::create_dir_all(&mgr_config.executor.audit_dir).ok();
+
+        match AgentManager::new(mgr_config, agent_config, &base_dir) {
+            Ok(mgr) => {
+                println!("  Agent Mgr:   initialized (task-based runtime)");
+                Arc::new(tokio::sync::Mutex::new(mgr))
+            }
+            Err(e) => {
+                eprintln!("  Agent Mgr:   FAILED — {}", e);
+                eprintln!("               (falling back to legacy per-request runtime)");
+                // Create a dummy config to avoid crash — manager will error on spawn
+                let fallback_config = ai_launcher_core::agent::config::AgentConfig::default();
+                let mgr_config = ManagerConfig::default();
+                // Try with absolute workspace path
+                let mut fb_config = fallback_config;
+                fb_config.workspace = base_dir.join("workspace").to_string_lossy().into();
+                let mut fb_mgr_config = mgr_config;
+                fb_mgr_config.executor.audit_dir = base_dir.join("audit");
+                match AgentManager::new(fb_mgr_config, fb_config, &base_dir) {
+                    Ok(mgr) => Arc::new(tokio::sync::Mutex::new(mgr)),
+                    Err(_) => {
+                        // Last resort: we need to provide something
+                        panic!("Cannot initialize AgentManager even with defaults: {}", e);
+                    }
+                }
+            }
+        }
+    };
+
+    // Boot the agent manager (recover crashed tasks, start heartbeat)
+    {
+        let mgr = agent_manager.clone();
+        let rt_ref = rt.clone();
+        rt_ref.block_on(async {
+            let m = mgr.lock().await;
+            if let Err(e) = m.on_boot().await {
+                eprintln!("  Agent boot error: {}", e);
+            }
+        });
+    }
+
     let server = Server::http("0.0.0.0:8080").expect("Failed to bind :8080");
 
     let os = std::env::consts::OS;
@@ -310,10 +393,17 @@ fn main() {
     println!();
     println!("  Agent:");
     println!("    POST   /api/agent/chat");
-    println!("    POST   /api/agent/chat/stream          ← Phase 2: SSE streaming");
+    println!("    POST   /api/agent/chat/stream          <- real SSE streaming");
     println!("    GET    /api/agent/conversations");
     println!("    GET    /api/agent/conversations/{{id}}/messages");
     println!("    GET    /api/agent/config");
+    println!();
+    println!("  Agent Tasks (Phase 3):");
+    println!("    POST   /api/agent/tasks                <- spawn task");
+    println!("    GET    /api/agent/tasks                <- list tasks");
+    println!("    GET    /api/agent/tasks/{{id}}           <- task status");
+    println!("    GET    /api/agent/tasks/{{id}}/stream    <- real SSE stream");
+    println!("    POST   /api/agent/tasks/{{id}}/cancel    <- cancel task");
     println!();
     println!("  Plugins:");
     println!("    GET    /api/plugins");
@@ -322,6 +412,8 @@ fn main() {
     println!("    POST   /api/plugins/{{id}}/install");
     println!("    POST   /api/plugins/{{id}}/start");
     println!("    POST   /api/plugins/{{id}}/stop");
+    println!("    GET    /api/plugins/{{id}}/logs");
+    println!("    DELETE /api/plugins/{{id}}/logs");
     println!();
     println!("  Models:");
     println!("    GET    /api/models");
@@ -365,6 +457,7 @@ fn main() {
                 let plugin_engine = plugin_engine.clone();
                 let llm_manager = llm_manager.clone();
                 let base_dir = base_dir.clone();
+                let agent_manager = agent_manager.clone();
 
                 std::thread::spawn(move || {
                     let response = route(
@@ -375,6 +468,7 @@ fn main() {
                         &plugin_engine,
                         llm_manager,
                         &base_dir,
+                        &agent_manager,
                     );
                     if let Err(e) = request.respond(response) {
                         eprintln!("Response error: {}", e);

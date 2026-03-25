@@ -5,6 +5,6 @@ pub mod engine;
 pub mod hooks;
 pub mod manifest;
 
-pub use engine::PluginEngine;
+pub use engine::{PluginEngine, PluginLogEntry};
 pub use hooks::{HookContext, HookResult, HookType};
 pub use manifest::{PluginManifest, PluginType};

@@ -1,4 +1,12 @@
 pub mod config;
+pub mod executor;
+pub mod guardian;
+pub mod heartbeat;
+pub mod manager;
+pub mod models;
+pub mod protocol;
+pub mod scheduler;
+pub mod store;
 
 use crate::llm::{self, LlmProvider, LlmResponse, Message};
 use crate::sandbox::Sandbox;
@@ -6,7 +14,14 @@ use crate::tools::ToolRegistry;
 use anyhow::{anyhow, Result};
 use config::AgentConfig;
 
-/// Core agent runtime: state machine driving LLM ↔ tool loop.
+// Re-exports for convenience
+pub use manager::AgentManager;
+pub use models::{AgentTask, TaskFilter, TaskState};
+pub use protocol::AgentEvent;
+
+/// Core agent runtime: state machine driving LLM <-> tool loop.
+/// Kept for backward compat (CLI single-turn use).
+/// For server/desktop, use `AgentManager` instead.
 pub struct AgentRuntime {
     pub config: AgentConfig,
     provider: Box<dyn LlmProvider>,
@@ -67,7 +82,7 @@ impl AgentRuntime {
 
             self.append_assistant_message(&resp);
 
-            // No tool calls → return text
+            // No tool calls -> return text
             if resp.tool_calls.is_empty() {
                 return Ok(resp.content.unwrap_or_default());
             }

@@ -78,6 +78,11 @@ export const apps_config = {
     width: 960,
     height: 680,
   }),
+  architecture: create_app_config({
+    title: "Architecture",
+    width: 1200,
+    height: 800,
+  }),
   "shield-browser": create_app_config({
     title: "Shield Browser",
     width: 1100,

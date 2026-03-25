@@ -53,9 +53,13 @@ fn default_tools() -> Vec<String> {
         "conversation_save".into(), "conversation_search".into(),
         // Knowledge
         "knowledge_store".into(), "knowledge_query".into(),
+        // Web (Phase 3)
+        "web_browse".into(), "web_search".into(), "http_fetch".into(),
+        // Git (Phase 3)
+        "git".into(),
         // System
         "app_list".into(), "app_install".into(), "app_launch".into(), "app_stop".into(),
-        "system_info".into(), "http_fetch".into(), "skill_list".into(),
+        "system_info".into(), "skill_list".into(),
     ]
 }
 

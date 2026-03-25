@@ -2,9 +2,61 @@ use super::hooks::{HookContext, HookResult, HookType};
 use super::manifest::{PluginManifest, PluginType};
 use anyhow::{anyhow, Context, Result};
 use serde::Serialize;
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
+use std::io::BufRead;
 use std::path::{Path, PathBuf};
-use std::process::Child;
+use std::process::{Child, Stdio};
+use std::sync::{Arc, Mutex};
+use std::time::SystemTime;
+
+/// Maximum log lines kept per plugin (ring buffer).
+const MAX_LOG_LINES: usize = 500;
+
+/// Thread-safe log buffer shared between the engine and reader threads.
+type SharedLogBuffer = Arc<Mutex<VecDeque<PluginLogEntry>>>;
+
+/// A single log entry from a plugin.
+#[derive(Debug, Clone, Serialize)]
+pub struct PluginLogEntry {
+    /// ISO-8601 timestamp
+    pub timestamp: String,
+    /// "stdout", "stderr", or "system"
+    pub stream: String,
+    /// The log line content
+    pub message: String,
+}
+
+impl PluginLogEntry {
+    fn now(stream: &str, message: impl Into<String>) -> Self {
+        let ts = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap_or_default();
+        // Simple ISO-ish timestamp without chrono
+        let secs = ts.as_secs();
+        Self {
+            timestamp: format!(
+                "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z",
+                1970 + secs / 31_536_000,
+                (secs % 31_536_000) / 2_592_000 + 1,
+                (secs % 2_592_000) / 86_400 + 1,
+                (secs % 86_400) / 3600,
+                (secs % 3600) / 60,
+                secs % 60,
+            ),
+            stream: stream.to_string(),
+            message: message.into(),
+        }
+    }
+}
+
+fn push_log(buf: &SharedLogBuffer, stream: &str, message: impl Into<String>) {
+    if let Ok(mut logs) = buf.lock() {
+        if logs.len() >= MAX_LOG_LINES {
+            logs.pop_front();
+        }
+        logs.push_back(PluginLogEntry::now(stream, message));
+    }
+}
 
 /// A loaded and potentially running plugin.
 struct LoadedPlugin {
@@ -12,6 +64,7 @@ struct LoadedPlugin {
     state: PluginState,
     plugin_dir: PathBuf,
     process: Option<Child>,
+    logs: SharedLogBuffer,
 }
 
 /// Lifecycle state of a plugin.
@@ -128,6 +181,14 @@ impl PluginEngine {
                         let id = manifest.id.clone();
                         manifests.push(manifest.clone());
 
+                        let log_buf: SharedLogBuffer =
+                            Arc::new(Mutex::new(VecDeque::with_capacity(MAX_LOG_LINES)));
+                        push_log(
+                            &log_buf,
+                            "system",
+                            format!("Plugin '{}' v{} discovered", manifest.name, manifest.version),
+                        );
+
                         self.plugins.insert(
                             id,
                             LoadedPlugin {
@@ -135,6 +196,7 @@ impl PluginEngine {
                                 state: PluginState::Discovered,
                                 plugin_dir: path,
                                 process: None,
+                                logs: log_buf,
                             },
                         );
                     }
@@ -163,11 +225,18 @@ impl PluginEngine {
             return Ok(()); // Already installed
         }
 
+        push_log(&plugin.logs, "system", "Installing plugin...");
+
         // Install Python deps via uv if it's a Python plugin
         if plugin.manifest.language == super::manifest::Language::Python
             && !plugin.manifest.deps.is_empty()
         {
             let venv_dir = plugin.plugin_dir.join(".venv");
+            push_log(
+                &plugin.logs,
+                "system",
+                format!("Creating venv at {}", venv_dir.display()),
+            );
             tracing::info!(
                 plugin = plugin_id,
                 deps = ?plugin.manifest.deps,
@@ -176,21 +245,36 @@ impl PluginEngine {
 
             // Create venv
             let uv_cmd = if cfg!(windows) { "uv.exe" } else { "uv" };
-            let status = std::process::Command::new(uv_cmd)
+            let output = std::process::Command::new(uv_cmd)
                 .arg("venv")
                 .arg(&venv_dir)
                 .current_dir(&plugin.plugin_dir)
-                .status()
+                .output()
                 .context("Failed to create plugin venv via uv")?;
 
-            if !status.success() {
+            // Capture venv creation output
+            for line in String::from_utf8_lossy(&output.stdout).lines() {
+                push_log(&plugin.logs, "stdout", line);
+            }
+            for line in String::from_utf8_lossy(&output.stderr).lines() {
+                push_log(&plugin.logs, "stderr", line);
+            }
+
+            if !output.status.success() {
                 plugin.state = PluginState::Error;
+                push_log(&plugin.logs, "system", "ERROR: Failed to create venv");
                 return Err(anyhow!("Failed to create venv for plugin '{}'", plugin_id));
             }
 
             // Install deps
+            let deps_display = plugin.manifest.deps.join(", ");
+            push_log(
+                &plugin.logs,
+                "system",
+                format!("Installing dependencies: {}", deps_display),
+            );
             let pip_args: Vec<&str> = plugin.manifest.deps.iter().map(|s| s.as_str()).collect();
-            let status = std::process::Command::new(uv_cmd)
+            let output = std::process::Command::new(uv_cmd)
                 .arg("pip")
                 .arg("install")
                 .args(&pip_args)
@@ -206,11 +290,19 @@ impl PluginEngine {
                         .to_string(),
                 )
                 .current_dir(&plugin.plugin_dir)
-                .status()
+                .output()
                 .context("Failed to install plugin deps via uv")?;
 
-            if !status.success() {
+            for line in String::from_utf8_lossy(&output.stdout).lines() {
+                push_log(&plugin.logs, "stdout", line);
+            }
+            for line in String::from_utf8_lossy(&output.stderr).lines() {
+                push_log(&plugin.logs, "stderr", line);
+            }
+
+            if !output.status.success() {
                 plugin.state = PluginState::Error;
+                push_log(&plugin.logs, "system", "ERROR: Failed to install dependencies");
                 return Err(anyhow!(
                     "Failed to install dependencies for plugin '{}'",
                     plugin_id
@@ -219,6 +311,7 @@ impl PluginEngine {
         }
 
         plugin.state = PluginState::Installed;
+        push_log(&plugin.logs, "system", "Plugin installed successfully");
         tracing::info!(plugin = plugin_id, "Plugin installed");
         Ok(())
     }
@@ -242,6 +335,11 @@ impl PluginEngine {
 
         let entry_path = plugin.plugin_dir.join(entry);
         if !entry_path.exists() {
+            push_log(
+                &plugin.logs,
+                "system",
+                format!("ERROR: Entry point not found: {}", entry_path.display()),
+            );
             return Err(anyhow!(
                 "Plugin entry point not found: {}",
                 entry_path.display()
@@ -271,9 +369,17 @@ impl PluginEngine {
             }
         };
 
-        let child = std::process::Command::new(&cmd)
+        push_log(
+            &plugin.logs,
+            "system",
+            format!("Starting: {} {}", cmd, args.join(" ")),
+        );
+
+        let mut child = std::process::Command::new(&cmd)
             .args(&args)
             .current_dir(&plugin.plugin_dir)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
             .env(
                 "PLUGIN_ID",
                 &plugin.manifest.id,
@@ -290,6 +396,48 @@ impl PluginEngine {
             .with_context(|| format!("Failed to start plugin '{}'", plugin_id))?;
 
         let pid = child.id();
+
+        // Spawn stdout reader thread
+        if let Some(stdout) = child.stdout.take() {
+            let buf = plugin.logs.clone();
+            let id = plugin_id.to_string();
+            std::thread::Builder::new()
+                .name(format!("plugin-stdout-{}", id))
+                .spawn(move || {
+                    let reader = std::io::BufReader::new(stdout);
+                    for line in reader.lines() {
+                        match line {
+                            Ok(l) => push_log(&buf, "stdout", l),
+                            Err(_) => break,
+                        }
+                    }
+                })
+                .ok();
+        }
+
+        // Spawn stderr reader thread
+        if let Some(stderr) = child.stderr.take() {
+            let buf = plugin.logs.clone();
+            let id = plugin_id.to_string();
+            std::thread::Builder::new()
+                .name(format!("plugin-stderr-{}", id))
+                .spawn(move || {
+                    let reader = std::io::BufReader::new(stderr);
+                    for line in reader.lines() {
+                        match line {
+                            Ok(l) => push_log(&buf, "stderr", l),
+                            Err(_) => break,
+                        }
+                    }
+                })
+                .ok();
+        }
+
+        push_log(
+            &plugin.logs,
+            "system",
+            format!("Plugin started (PID: {})", pid),
+        );
         plugin.process = Some(child);
         plugin.state = PluginState::Running;
         tracing::info!(
@@ -308,6 +456,8 @@ impl PluginEngine {
             .get_mut(plugin_id)
             .ok_or_else(|| anyhow!("Plugin '{}' not found", plugin_id))?;
 
+        push_log(&plugin.logs, "system", "Stopping plugin...");
+
         if let Some(ref mut child) = plugin.process {
             let _ = child.kill();
             let _ = child.wait();
@@ -315,6 +465,7 @@ impl PluginEngine {
 
         plugin.process = None;
         plugin.state = PluginState::Stopped;
+        push_log(&plugin.logs, "system", "Plugin stopped");
         tracing::info!(plugin = plugin_id, "Plugin stopped");
         Ok(())
     }
@@ -375,6 +526,27 @@ impl PluginEngine {
         self.plugins.keys().cloned().collect()
     }
 
+    /// Get logs for a specific plugin.
+    pub fn logs(&self, plugin_id: &str) -> Option<Vec<PluginLogEntry>> {
+        self.plugins.get(plugin_id).map(|p| {
+            p.logs
+                .lock()
+                .map(|buf| buf.iter().cloned().collect())
+                .unwrap_or_default()
+        })
+    }
+
+    /// Clear logs for a specific plugin.
+    pub fn clear_logs(&self, plugin_id: &str) -> bool {
+        if let Some(p) = self.plugins.get(plugin_id) {
+            if let Ok(mut buf) = p.logs.lock() {
+                buf.clear();
+                return true;
+            }
+        }
+        false
+    }
+
     /// Get contributed tool definitions from all running plugins.
     pub fn contributed_tools(&self) -> Vec<crate::llm::ToolDef> {
         self.plugins
@@ -421,6 +593,8 @@ mod tests {
             }"#,
         )
         .unwrap();
+        // Create a dummy entry point so start() won't fail on missing file
+        std::fs::write(plugin_dir.join("main.py"), "print('hello')").unwrap();
 
         let mut engine = PluginEngine::new(&dir);
         let manifests = engine.discover().unwrap();
@@ -430,6 +604,12 @@ mod tests {
         let status = engine.status();
         assert_eq!(status.len(), 1);
         assert_eq!(status[0].state, PluginState::Discovered);
+
+        // Verify logs were captured
+        let logs = engine.logs("test-plugin").unwrap();
+        assert!(!logs.is_empty());
+        assert_eq!(logs[0].stream, "system");
+        assert!(logs[0].message.contains("discovered"));
 
         std::fs::remove_dir_all(dir).ok();
     }

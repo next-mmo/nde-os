@@ -13,6 +13,7 @@ import type {
   ProviderStatus,
   ProviderConfig,
   PluginStatus,
+  PluginLogEntry,
   ChannelStatus,
   McpTool,
   McpServerInfo,
@@ -91,6 +92,8 @@ async function httpFallback<T>(command: string, args?: Record<string, unknown>):
     install_plugin:  { method: "POST",   url: `/api/plugins/${args?.pluginId}/install` },
     start_plugin:    { method: "POST",   url: `/api/plugins/${args?.pluginId}/start` },
     stop_plugin:     { method: "POST",   url: `/api/plugins/${args?.pluginId}/stop` },
+    plugin_logs:     { method: "GET",    url: `/api/plugins/${args?.pluginId}/logs` },
+    clear_plugin_logs: { method: "DELETE", url: `/api/plugins/${args?.pluginId}/logs` },
     // Channels
     list_channels:   { method: "GET",    url: `/api/channels` },
     configure_channel: { method: "POST", url: `/api/channels/${args?.name}/configure`, body: { channel_type: args?.channel_type, enabled: args?.enabled, token: args?.token } },
@@ -319,6 +322,14 @@ export async function startPlugin(pluginId: string): Promise<string> {
 
 export async function stopPlugin(pluginId: string): Promise<string> {
   return smartInvoke<string>("stop_plugin", { pluginId });
+}
+
+export async function getPluginLogs(pluginId: string): Promise<PluginLogEntry[]> {
+  return smartInvoke<PluginLogEntry[]>("plugin_logs", { pluginId });
+}
+
+export async function clearPluginLogs(pluginId: string): Promise<string> {
+  return smartInvoke<string>("clear_plugin_logs", { pluginId });
 }
 
 // ── Channels ──

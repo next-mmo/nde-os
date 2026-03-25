@@ -22,6 +22,7 @@ tracing = "0.1"
 futures = "0.3"
 # Phase 2 additions
 tokio-stream = "0.1"
+tokio-util = "0.7"
 async-stream = "0.3"
 pin-project-lite = "0.2"
 zip = { version = "2", default-features = false, features = ["deflate"] }

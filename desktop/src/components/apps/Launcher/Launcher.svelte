@@ -34,6 +34,7 @@
   import Skills from "🍎/components/apps/Skills/Skills.svelte";
   import Knowledge from "🍎/components/apps/Knowledge/Knowledge.svelte";
   import CodeEditor from "🍎/components/apps/CodeEditor/CodeEditor.svelte";
+  import Architecture from "🍎/components/apps/Architecture/Architecture.svelte";
   import OpenWithMenu from "🍎/components/Desktop/OpenWithMenu.svelte";
   import {
     desktop,
@@ -94,6 +95,7 @@
     { id: "skills", label: "Skills" },
     { id: "knowledge", label: "Knowledge" },
     { id: "code-editor", label: "Code Editor" },
+    { id: "architecture", label: "Architecture" },
   ];
 
   type PendingAction =
@@ -555,6 +557,8 @@
           <div class="embedded-app"><Knowledge /></div>
         {:else if desktop.launcher_section === "code-editor"}
           <div class="embedded-app"><CodeEditor /></div>
+        {:else if desktop.launcher_section === "architecture"}
+          <div class="embedded-app"><Architecture /></div>
         {:else if desktop.launcher_section === "catalog"}
           <div class="panel catalog-panel">
             <div class="panel-header catalog-header">
