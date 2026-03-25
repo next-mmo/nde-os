@@ -70,6 +70,10 @@
   {#await import("🍎/components/apps/FileExplorer/FileExplorer.svelte") then { default: FileExplorer }}
     <FileExplorer />
   {/await}
+{:else if window.app_id === "figma-render"}
+  {#await import("🍎/components/apps/FigmaRender/FigmaRender.svelte") then { default: FigmaRender }}
+    <FigmaRender />
+  {/await}
 {:else}
   {#await import("🍎/components/apps/Placeholder/Placeholder.svelte") then { default: Placeholder }}
     <Placeholder app_id={window.app_id} />

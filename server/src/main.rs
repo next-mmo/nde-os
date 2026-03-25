@@ -205,7 +205,19 @@ fn main() {
     );
 
     // Phase 2: Plugin engine
-    let plugins_dir = base_dir.join("plugins");
+    // In dev mode (running from repo root), use repo plugins/ directly for hot reload.
+    // In production, fall back to base_dir/plugins.
+    let plugins_dir = {
+        let repo_plugins = std::env::current_dir()
+            .unwrap_or_default()
+            .join("plugins");
+        if repo_plugins.exists() && repo_plugins.is_dir() {
+            println!("  [plugins] Dev mode: using repo plugins/ at {}", repo_plugins.display());
+            repo_plugins
+        } else {
+            base_dir.join("plugins")
+        }
+    };
     std::fs::create_dir_all(&plugins_dir).ok();
     let plugin_engine = Arc::new(Mutex::new(PluginEngine::new(&plugins_dir)));
 
