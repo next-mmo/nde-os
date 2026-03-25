@@ -336,9 +336,12 @@ export async function collapseDesktop() {
     await win.setMinSize(new LogicalSize(TAB_WIDTH, TAB_HEIGHT));
     await win.setSize(new LogicalSize(TAB_WIDTH, TAB_HEIGHT));
 
-    // Restore saved Y or default to center-right
+    // Restore saved Y or default to center-right; validate within screen bounds
+    const centerY = screenH / 2 - TAB_HEIGHT / 2;
     const savedY = loadFabY();
-    const y = savedY ?? (screenH / 2 - TAB_HEIGHT / 2);
+    const y = (savedY !== null && savedY >= 40 && savedY <= screenH - TAB_HEIGHT - 40)
+      ? savedY
+      : centerY;
     await win.setPosition(new LogicalPosition(screenW - TAB_WIDTH, y));
 
     await win.setAlwaysOnTop(true);
