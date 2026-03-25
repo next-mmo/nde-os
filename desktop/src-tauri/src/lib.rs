@@ -87,6 +87,12 @@ pub fn run() {
             commands::shield::remove_shield_engine,
             commands::shield::resolve_engine_version,
             commands::shield::get_available_engines,
+            // figma json
+            commands::figma_json::convert_figma_json,
+            commands::figma_json::resolve_document_styles,
+            commands::figma_json::fetch_figma_file,
+            commands::figma_json::build_figma_llm_prompt,
+            commands::figma_json::get_figma_sample,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

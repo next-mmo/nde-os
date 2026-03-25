@@ -18,6 +18,9 @@ pub mod security;
 pub mod plugins;
 pub mod mcp;
 
+// Figma JSON Render Engine
+pub mod figma_json;
+
 // Shield Browser (anti-detect)
 pub mod shield;
 

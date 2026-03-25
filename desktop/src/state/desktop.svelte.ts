@@ -3,7 +3,7 @@ import type { InstalledApp } from "$lib/api/types";
 
 export type WindowAppID = Exclude<StaticAppID, "launchpad">;
 export type ThemeScheme = "light" | "dark";
-export type LauncherSection = "overview" | "catalog" | "installed" | "running" | "server" | "command-center" | "chat" | "model-settings" | "plugins" | "channels" | "mcp-tools" | "skills" | "knowledge" | "code-editor" | "architecture";
+export type LauncherSection = "overview" | "catalog" | "installed" | "running" | "server" | "command-center" | "chat" | "playground" | "model-settings" | "plugins" | "channels" | "mcp-tools" | "skills" | "knowledge" | "code-editor" | "architecture";
 export type SessionMode = "embedded" | "windowed" | "drawer-left" | "drawer-right" | "fullscreen";
 export type DesktopIconPosition = { x: number; y: number };
 
@@ -147,7 +147,7 @@ function getSavedTheme(): ThemeScheme {
 function getSavedLauncherSection(): LauncherSection {
   try {
     const saved = localStorage.getItem("ai-launcher:launcher-section");
-    const validSections: LauncherSection[] = ["overview", "catalog", "installed", "running", "server", "command-center", "chat", "model-settings", "plugins", "channels", "mcp-tools", "skills", "knowledge", "code-editor", "architecture"];
+    const validSections: LauncherSection[] = ["overview", "catalog", "installed", "running", "server", "command-center", "chat", "playground", "model-settings", "plugins", "channels", "mcp-tools", "skills", "knowledge", "code-editor", "architecture"];
     if (validSections.includes(saved as LauncherSection)) {
       return saved as LauncherSection;
     }

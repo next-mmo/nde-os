@@ -1,5 +1,6 @@
 pub mod apps;
 pub mod catalog;
+pub mod figma_json;
 pub mod filesystem;
 pub mod lifecycle;
 pub mod sandbox;

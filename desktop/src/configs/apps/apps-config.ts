@@ -95,6 +95,11 @@ export const apps_config = {
     height: 760,
     dock_breaks_before: true,
   }),
+  "figma-render": create_app_config({
+    title: "Figma Render",
+    width: 960,
+    height: 680,
+  }),
   launchpad: create_app_config({
     title: "Launchpad",
     should_open_window: false,

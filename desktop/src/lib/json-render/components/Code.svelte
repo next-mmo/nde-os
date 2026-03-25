@@ -1,0 +1,2 @@
+<script lang="ts"> let p = $props(); </script>
+<pre style="margin:0;padding:0.75rem 1rem;border-radius:0.5rem;background:hsla(0 0% 0%/0.3);font-family:monospace;font-size:0.78rem;overflow-x:auto;white-space:pre-wrap;color:hsl(145 65% 70%)"><code>{p.code}</code></pre>
