@@ -84,6 +84,7 @@ fn route(
         }
         (Method::Get, "/api/agent/conversations") => return agent_handler::list_conversations(agent),
         (Method::Get, "/api/agent/config") => return agent_handler::agent_config(agent, &llm_manager),
+        (Method::Get, "/api/agent/tools") => return subsystem_handler::list_agent_tools(),
         // Plugin API
         (Method::Get, "/api/plugins") => return plugin_handler::list_plugins(plugin_engine),
         (Method::Post, "/api/plugins/discover") => return plugin_handler::discover_plugins(rt, plugin_engine),
@@ -397,6 +398,7 @@ fn main() {
     println!("    GET    /api/agent/conversations");
     println!("    GET    /api/agent/conversations/{{id}}/messages");
     println!("    GET    /api/agent/config");
+    println!("    GET    /api/agent/tools");
     println!();
     println!("  Agent Tasks (Phase 3):");
     println!("    POST   /api/agent/tasks                <- spawn task");
