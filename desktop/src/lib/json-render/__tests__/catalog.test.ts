@@ -6,7 +6,7 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { validateSpec, buildUserPrompt } from "@json-render/core";
+import { validateSpec, buildUserPrompt, createSpecStreamCompiler } from "@json-render/core";
 import { catalog, systemPrompt } from "../catalog";
 
 // ── Catalog definition ───────────────────────────────────────────────
@@ -95,7 +95,7 @@ describe("spec validation", () => {
         },
       },
     };
-    const result = validateSpec(spec, catalog);
+    const result = validateSpec(spec);
     expect(result.valid).toBe(true);
     expect(result.issues).toHaveLength(0);
   });
@@ -113,7 +113,7 @@ describe("spec validation", () => {
         },
       },
     };
-    const result = validateSpec(spec, catalog);
+    const result = validateSpec(spec);
     expect(result.valid).toBe(true);
   });
 
@@ -128,7 +128,7 @@ describe("spec validation", () => {
         },
       },
     };
-    const result = validateSpec(spec, catalog);
+    const result = validateSpec(spec);
     // Root references a non-existent element
     expect(result.valid).toBe(false);
   });
@@ -169,7 +169,7 @@ describe("spec validation", () => {
         },
       },
     };
-    const result = validateSpec(spec, catalog);
+    const result = validateSpec(spec);
     expect(result.valid).toBe(true);
   });
 
@@ -203,7 +203,7 @@ describe("spec validation", () => {
         },
       },
     };
-    const result = validateSpec(spec, catalog);
+    const result = validateSpec(spec);
     expect(result.valid).toBe(true);
   });
 });
@@ -212,7 +212,6 @@ describe("spec validation", () => {
 
 describe("spec streaming compiler", () => {
   it("createSpecStreamCompiler exists and is callable", () => {
-    const { createSpecStreamCompiler } = require("@json-render/core") as any;
     expect(typeof createSpecStreamCompiler).toBe("function");
     const compiler = createSpecStreamCompiler();
     expect(typeof compiler.push).toBe("function");
@@ -221,7 +220,6 @@ describe("spec streaming compiler", () => {
   });
 
   it("compiler resets cleanly", () => {
-    const { createSpecStreamCompiler } = require("@json-render/core") as any;
     const compiler = createSpecStreamCompiler();
     compiler.push('{"root": "a"}');
     compiler.reset();
@@ -234,7 +232,7 @@ describe("spec streaming compiler", () => {
 
 describe("buildUserPrompt", () => {
   it("generates a user prompt from catalog", () => {
-    const prompt = buildUserPrompt(catalog, "Show system health dashboard with CPU, RAM metrics");
+    const prompt = buildUserPrompt({ prompt: "Show system health dashboard with CPU, RAM metrics" });
     expect(typeof prompt).toBe("string");
     expect(prompt.length).toBeGreaterThan(0);
   });
@@ -245,7 +243,7 @@ describe("buildUserPrompt", () => {
 describe("edge cases", () => {
   it("validates empty spec", () => {
     const spec = { root: "", elements: {} };
-    const result = validateSpec(spec, catalog);
+    const result = validateSpec(spec);
     // Empty root is invalid
     expect(result.valid).toBe(false);
   });
@@ -281,7 +279,7 @@ describe("edge cases", () => {
         },
       },
     };
-    const result = validateSpec(spec, catalog);
+    const result = validateSpec(spec);
     expect(result.valid).toBe(true);
   });
 
@@ -316,7 +314,7 @@ describe("edge cases", () => {
         },
       },
     };
-    const result = validateSpec(spec, catalog);
+    const result = validateSpec(spec);
     expect(result.valid).toBe(true);
   });
 
@@ -361,7 +359,7 @@ describe("edge cases", () => {
         },
       },
     };
-    const result = validateSpec(spec, catalog);
+    const result = validateSpec(spec);
     expect(result.valid).toBe(true);
   });
 });

@@ -27,6 +27,7 @@
   import SessionSurface from "🍎/components/apps/Launcher/SessionSurface.svelte";
   import CommandCenter from "🍎/components/apps/CommandCenter/CommandCenter.svelte";
   import Chat from "🍎/components/apps/Chat/Chat.svelte";
+  import JsonPlayground from "🍎/components/apps/JsonPlayground/JsonPlayground.svelte";
   import ModelSettings from "🍎/components/apps/ModelSettings/ModelSettings.svelte";
   import Plugins from "🍎/components/apps/Plugins/Plugins.svelte";
   import Channels from "🍎/components/apps/Channels/Channels.svelte";
@@ -87,6 +88,7 @@
 
   const appSections: { id: LauncherSection; label: string }[] = [
     { id: "chat", label: "Chat" },
+    { id: "playground", label: "JSON Playground" },
     { id: "model-settings", label: "LLM Providers" },
     { id: "plugins", label: "Plugins" },
     { id: "channels", label: "Channels" },
@@ -541,6 +543,8 @@
           <CommandCenter />
         {:else if desktop.launcher_section === "chat"}
           <div class="embedded-app"><Chat /></div>
+        {:else if desktop.launcher_section === "playground"}
+          <div class="embedded-app"><JsonPlayground /></div>
         {:else if desktop.launcher_section === "model-settings"}
           <div class="embedded-app"><ModelSettings /></div>
         {:else if desktop.launcher_section === "plugins"}

@@ -128,7 +128,7 @@ async function runTest(model: string, prompt: string): Promise<{ pass: boolean; 
     const elementCount = Object.keys(spec.elements).length;
 
     // Validate with @json-render/core
-    const result = validateSpec(spec, catalog);
+    const result = validateSpec(spec);
     if (!result.valid) {
       const issueStrs = result.issues.map((i: any) =>
         typeof i === "string" ? i : `${i.path ?? ""}: ${i.message ?? JSON.stringify(i)}`
@@ -162,6 +162,7 @@ async function main() {
 
     for (const prompt of USER_PROMPTS) {
       const shortPrompt = prompt.slice(0, 60) + (prompt.length > 60 ? "..." : "");
+      // @ts-ignore
       process.stdout.write(`  ${shortPrompt} ... `);
 
       const result = await runTest(model, prompt);
@@ -180,7 +181,7 @@ async function main() {
   console.log(`\n${"─".repeat(55)}`);
   console.log(`Results: ${passed} passed, ${failed} failed (${passed + failed} total)`);
   console.log(`${"─".repeat(55)}\n`);
-
+  // @ts-ignore
   process.exit(failed > 0 ? 1 : 0);
 }
 

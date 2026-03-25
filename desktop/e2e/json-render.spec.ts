@@ -21,6 +21,7 @@ test.describe("json-render — AI spec → rendered UI", () => {
     const result = await page.evaluate(async () => {
       try {
         // Dynamic import in the browser context
+        // @ts-ignore
         const mod = await import("/src/lib/json-render/catalog.ts");
         return {
           hasCatalog: !!mod.catalog,
