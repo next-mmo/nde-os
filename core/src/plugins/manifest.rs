@@ -65,10 +65,13 @@ pub enum PluginType {
     Provider,
     /// Standalone agent tool
     Tool,
-    /// Desktop panel/widget
+    /// Desktop panel/widget (accepts both "ui_panel" and "ui" in JSON)
+    #[serde(alias = "ui")]
     UiPanel,
     /// Long-running background service
     Daemon,
+    /// Request interceptor (auth, logging, rate limiting)
+    Middleware,
 }
 
 /// Language of the plugin entry point.

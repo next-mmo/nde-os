@@ -111,14 +111,20 @@ impl EngineManager {
         Ok(result)
     }
 
-    /// Download and extract an engine version.
+    /// Download and extract an engine version with progress reporting.
+    /// The `on_progress` callback receives `(bytes_downloaded, total_bytes)`.
+    /// `total_bytes` is 0 if the server didn't send a Content-Length header.
     /// Returns the installation directory path.
-    pub async fn download_engine(
+    pub async fn download_engine<F>(
         &self,
         engine: &BrowserEngine,
         version: &str,
         download_url: &str,
-    ) -> Result<PathBuf> {
+        on_progress: F,
+    ) -> Result<PathBuf>
+    where
+        F: Fn(u64, u64) + Send + 'static,
+    {
         let install_dir = self.engine_install_dir(engine, version);
 
         if self.is_downloaded(engine, version) {
@@ -140,7 +146,7 @@ impl EngineManager {
         std::fs::create_dir_all(&install_dir)
             .context("Failed to create engine installation directory")?;
 
-        // Download to a temporary file
+        // Download with streaming progress
         let client = reqwest::Client::new();
         let response = client
             .get(download_url)
@@ -156,14 +162,21 @@ impl EngineManager {
             );
         }
 
-        let bytes = response
-            .bytes()
-            .await
-            .context("Failed to read download response")?;
+        let total_size = response.content_length().unwrap_or(0);
+        let mut downloaded: u64 = 0;
+        let mut bytes_buf = Vec::with_capacity(total_size as usize);
+
+        // Stream chunks and report progress
+        let mut stream = response;
+        while let Some(chunk) = stream.chunk().await.context("Failed to read download chunk")? {
+            downloaded += chunk.len() as u64;
+            bytes_buf.extend_from_slice(&chunk);
+            on_progress(downloaded, total_size);
+        }
 
         // Determine archive type from URL and extract
         let archive_path = install_dir.join("_download_archive");
-        std::fs::write(&archive_path, &bytes)
+        std::fs::write(&archive_path, &bytes_buf)
             .context("Failed to write downloaded archive")?;
 
         // Extract based on file extension in URL

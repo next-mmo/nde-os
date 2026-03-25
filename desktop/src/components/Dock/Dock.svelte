@@ -1,7 +1,6 @@
 <svelte:options runes={true} />
 
 <script lang="ts">
-  import { elevation } from "🍎/actions";
   import { apps_config } from "🍎/configs/apps/apps-config";
   import DockItem from "🍎/components/Dock/DockItem.svelte";
   import { desktop } from "🍎/state/desktop.svelte";
@@ -36,8 +35,7 @@
 </script>
 
 <section 
-  class="flex justify-center pt-2 pb-4 pointer-events-none transition-transform duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] {desktop.dock_auto_hide ? 'fixed bottom-0 left-0 right-0 z-[1000] translate-y-[calc(100%-10px)] hover:translate-y-0 focus-within:translate-y-0' : ''}" 
-  use:elevation={"dock"}
+  class="flex justify-center pt-2 pb-4 pointer-events-none transition-transform duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] {desktop.dock_auto_hide ? 'translate-y-[calc(100%-10px)] hover:translate-y-0 focus-within:translate-y-0' : ''}" 
 >
   <div
     class="pointer-events-auto flex items-end gap-1 px-2.5 py-1.5 rounded-[1.25rem] bg-white/40 dark:bg-black/30 backdrop-blur-xl border border-white/40 dark:border-white/10 shadow-[inset_0_1px_1px_rgba(255,255,255,0.4),0_18px_50px_rgba(0,0,0,0.28)]"

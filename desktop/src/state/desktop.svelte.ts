@@ -164,7 +164,11 @@ function getSavedDockAutoHide(): boolean {
 }
 
 function getSavedCollapsed(): boolean {
-  // Always start collapsed on launch — user clicks FAB to expand
+  try {
+    const saved = localStorage.getItem("ai-launcher:collapsed");
+    if (saved === "true" || saved === "false") return saved === "true";
+  } catch {}
+  // First-ever launch defaults to collapsed (FAB)
   return true;
 }
 
@@ -181,7 +185,7 @@ const createWindow = (
   height,
   z_index: 0,
   minimized: false,
-  fullscreen: false,
+  fullscreen: true,
   resizable: true,
   expandable: true,
   closable: true,
@@ -224,6 +228,7 @@ export function toggleDockAutoHide() {
 
 export async function expandDesktop() {
   desktop.collapsed = false;
+  try { localStorage.setItem("ai-launcher:collapsed", "false"); } catch {}
 
   // Save current FAB position before expanding
   try {
@@ -313,6 +318,7 @@ export async function collapseDesktop() {
   await saveMainWindowGeometry();
 
   desktop.collapsed = true;
+  try { localStorage.setItem("ai-launcher:collapsed", "true"); } catch {}
 
   // Shrink to right-edge tab
   try {
@@ -364,13 +370,14 @@ export function bootDesktop() {
 
   // Restore previously open windows from localStorage
   const savedAppIds = loadOpenWindows();
+  const hasSavedState = savedAppIds.length > 0;
   const validStaticIds = Object.keys(apps_config) as StaticAppID[];
   const appsToRestore = savedAppIds.filter(
     (id) => validStaticIds.includes(id as StaticAppID) && id !== "launchpad",
   );
 
-  // Always ensure the launcher is present
-  if (!appsToRestore.includes("ai-launcher")) {
+  // Only force the launcher open on first startup (no saved state)
+  if (!hasSavedState && !appsToRestore.includes("ai-launcher")) {
     appsToRestore.unshift("ai-launcher");
   }
 
@@ -387,7 +394,7 @@ export function bootDesktop() {
     win.expandable = config.expandable!;
     const savedGeo = loadWindowGeometry(appId);
     // Restore saved fullscreen state; default ai-launcher to fullscreen on first run
-    win.fullscreen = typeof savedGeo?.fullscreen === 'boolean' ? savedGeo.fullscreen : (appId === "ai-launcher");
+    win.fullscreen = typeof savedGeo?.fullscreen === 'boolean' ? savedGeo.fullscreen : true;
     assignWindowFocus(win);
     desktop.windows.push(win);
   }
@@ -424,9 +431,6 @@ export function closeWindow(window_id: string) {
       session.mode = "embedded";
       desktop.workspace_view = { kind: "session", session_id: session.id };
     }
-  }
-  if (!desktop.windows.some((item) => item.app_id === "ai-launcher")) {
-    bootDesktop();
   }
   saveOpenWindows();
 }

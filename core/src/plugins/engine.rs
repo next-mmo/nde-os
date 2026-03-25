@@ -47,6 +47,8 @@ pub struct PluginStatus {
 pub struct PluginEngine {
     plugins: HashMap<String, LoadedPlugin>,
     plugins_dir: PathBuf,
+    /// Additional directories to scan for plugins (e.g. bundled plugins shipped with the binary).
+    extra_dirs: Vec<PathBuf>,
 }
 
 impl PluginEngine {
@@ -54,58 +56,95 @@ impl PluginEngine {
         Self {
             plugins: HashMap::new(),
             plugins_dir: plugins_dir.to_path_buf(),
+            extra_dirs: Vec::new(),
         }
     }
 
-    /// Discover plugins from the plugins directory.
-    /// Looks for plugin.json in each subdirectory.
+    /// Register an additional directory to scan for plugins.
+    pub fn add_search_dir(&mut self, dir: PathBuf) {
+        if dir.exists() && dir.is_dir() && !self.extra_dirs.contains(&dir) {
+            self.extra_dirs.push(dir);
+        }
+    }
+
+    /// Discover plugins from all registered directories.
+    /// Looks for plugin.json in each subdirectory of the primary and extra dirs.
     pub fn discover(&mut self) -> Result<Vec<PluginManifest>> {
         let mut manifests = Vec::new();
 
-        if !self.plugins_dir.exists() {
-            return Ok(manifests);
-        }
+        // Collect all directories to scan: primary + extras
+        let mut dirs_to_scan = vec![self.plugins_dir.clone()];
+        dirs_to_scan.extend(self.extra_dirs.clone());
 
-        for entry in std::fs::read_dir(&self.plugins_dir)? {
-            let entry = entry?;
-            let path = entry.path();
-
-            if !path.is_dir() {
+        for scan_dir in &dirs_to_scan {
+            if !scan_dir.exists() {
                 continue;
             }
 
-            let manifest_path = path.join("plugin.json");
-            if !manifest_path.exists() {
-                continue;
-            }
-
-            match PluginManifest::from_file(&manifest_path) {
-                Ok(manifest) => {
-                    tracing::info!(
-                        plugin = %manifest.id,
-                        name = %manifest.name,
-                        "Discovered plugin"
-                    );
-
-                    let id = manifest.id.clone();
-                    manifests.push(manifest.clone());
-
-                    self.plugins.insert(
-                        id,
-                        LoadedPlugin {
-                            manifest,
-                            state: PluginState::Discovered,
-                            plugin_dir: path,
-                            process: None,
-                        },
-                    );
-                }
+            let entries = match std::fs::read_dir(scan_dir) {
+                Ok(e) => e,
                 Err(e) => {
                     tracing::warn!(
-                        path = %manifest_path.display(),
+                        dir = %scan_dir.display(),
                         error = %e,
-                        "Failed to load plugin manifest"
+                        "Failed to read plugin directory"
                     );
+                    continue;
+                }
+            };
+
+            for entry in entries {
+                let entry = entry?;
+                let path = entry.path();
+
+                if !path.is_dir() {
+                    continue;
+                }
+
+                let manifest_path = path.join("plugin.json");
+                if !manifest_path.exists() {
+                    continue;
+                }
+
+                match PluginManifest::from_file(&manifest_path) {
+                    Ok(manifest) => {
+                        // Skip duplicates (user-installed takes priority over bundled)
+                        if self.plugins.contains_key(&manifest.id) {
+                            tracing::debug!(
+                                plugin = %manifest.id,
+                                dir = %scan_dir.display(),
+                                "Skipping duplicate plugin (already loaded)"
+                            );
+                            continue;
+                        }
+
+                        tracing::info!(
+                            plugin = %manifest.id,
+                            name = %manifest.name,
+                            dir = %scan_dir.display(),
+                            "Discovered plugin"
+                        );
+
+                        let id = manifest.id.clone();
+                        manifests.push(manifest.clone());
+
+                        self.plugins.insert(
+                            id,
+                            LoadedPlugin {
+                                manifest,
+                                state: PluginState::Discovered,
+                                plugin_dir: path,
+                                process: None,
+                            },
+                        );
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            path = %manifest_path.display(),
+                            error = %e,
+                            "Failed to load plugin manifest"
+                        );
+                    }
                 }
             }
         }

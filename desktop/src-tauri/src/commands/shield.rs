@@ -5,6 +5,7 @@ use ai_launcher_core::shield::launcher::{self, BrowserLauncher};
 use crate::state::AppState;
 use serde::Serialize;
 use std::sync::Arc;
+use tauri::Emitter;
 use tokio::sync::Mutex;
 
 // ─── Response Types ────────────────────────────────────────────────
@@ -45,10 +46,28 @@ impl From<ShieldProfile> for ShieldProfileResponse {
 // ─── Profile Commands ──────────────────────────────────────────────
 
 #[tauri::command]
-pub fn list_shield_profiles(state: tauri::State<'_, AppState>) -> Result<Vec<ShieldProfileResponse>, String> {
+pub async fn list_shield_profiles(
+    state: tauri::State<'_, AppState>,
+    launcher_state: tauri::State<'_, ShieldLauncherState>,
+) -> Result<Vec<ShieldProfileResponse>, String> {
     let mgr = ProfileManager::new(&state.base_dir);
     let profiles = mgr.list_profiles().map_err(|e| e.to_string())?;
-    Ok(profiles.into_iter().map(ShieldProfileResponse::from).collect())
+
+    // Cross-reference with the in-memory launcher state for authoritative
+    // running status (on-disk metadata can be stale after crashes or races).
+    let launcher = launcher_state.launcher.lock().await;
+    let running_ids = launcher.running_profiles().await;
+    drop(launcher);
+
+    Ok(profiles
+        .into_iter()
+        .map(|p| {
+            let actually_running = running_ids.contains(&p.id);
+            let mut resp = ShieldProfileResponse::from(p);
+            resp.is_running = actually_running;
+            resp
+        })
+        .collect())
 }
 
 #[tauri::command]
@@ -90,14 +109,20 @@ pub fn rename_shield_profile(
 }
 
 #[tauri::command]
-pub fn get_shield_status(state: tauri::State<'_, AppState>) -> Result<ShieldStatusResponse, String> {
+pub async fn get_shield_status(
+    state: tauri::State<'_, AppState>,
+    launcher_state: tauri::State<'_, ShieldLauncherState>,
+) -> Result<ShieldStatusResponse, String> {
     let profile_mgr = ProfileManager::new(&state.base_dir);
     let engine_mgr = EngineManager::new(&state.base_dir);
 
     let profiles = profile_mgr.list_profiles().map_err(|e| e.to_string())?;
     let engines = engine_mgr.list_downloaded().map_err(|e| e.to_string())?;
 
-    let running_count = profiles.iter().filter(|p| p.is_running()).count();
+    // Use in-memory launcher state for authoritative running count
+    let launcher = launcher_state.launcher.lock().await;
+    let running_count = launcher.running_profiles().await.len();
+    drop(launcher);
 
     Ok(ShieldStatusResponse {
         total_profiles: profiles.len(),
@@ -129,13 +154,21 @@ pub struct InstalledEngine {
 
 #[tauri::command]
 pub async fn launch_shield_profile(
+    app: tauri::AppHandle,
     launcher_state: tauri::State<'_, ShieldLauncherState>,
     id: String,
     url: Option<String>,
 ) -> Result<u16, String> {
     let launcher = launcher_state.launcher.lock().await;
     let port = launcher
-        .launch_profile(&id, url.as_deref())
+        .launch_profile(
+            &id,
+            url.as_deref(),
+            Some(move |profile_id: String| {
+                log::info!("Emitting shield-profile-stopped for '{}'", profile_id);
+                let _ = app.emit("shield-profile-stopped", profile_id);
+            }),
+        )
         .await
         .map_err(|e: anyhow::Error| e.to_string())?;
     Ok(port)
@@ -155,8 +188,16 @@ pub async fn stop_shield_profile(
 
 // ─── Engine Download Command ───────────────────────────────────────
 
+#[derive(Clone, Serialize)]
+struct DownloadProgress {
+    downloaded: u64,
+    total: u64,
+    percent: u8,
+}
+
 #[tauri::command]
 pub async fn download_shield_engine(
+    app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
     engine: String,
     version: String,
@@ -166,8 +207,26 @@ pub async fn download_shield_engine(
         .map_err(|e: anyhow::Error| e.to_string())?;
 
     let engine_mgr = EngineManager::new(&state.base_dir);
+
+    let app_handle = app.clone();
+    let last_percent = std::sync::Arc::new(std::sync::atomic::AtomicU8::new(255));
     let install_dir = engine_mgr
-        .download_engine(&engine_type, &version, &download_url)
+        .download_engine(&engine_type, &version, &download_url, move |downloaded, total| {
+            let percent = if total > 0 {
+                ((downloaded as f64 / total as f64) * 100.0).min(100.0) as u8
+            } else {
+                0
+            };
+            // Only emit when percent actually changes to avoid excessive re-renders
+            let prev = last_percent.swap(percent, std::sync::atomic::Ordering::Relaxed);
+            if prev != percent {
+                let _ = app_handle.emit("shield-download-progress", DownloadProgress {
+                    downloaded,
+                    total,
+                    percent,
+                });
+            }
+        })
         .await
         .map_err(|e: anyhow::Error| e.to_string())?;
 
@@ -183,6 +242,17 @@ pub fn is_shield_engine_downloaded(
     let engine_type = BrowserEngine::from_str(&engine).map_err(|e: anyhow::Error| e.to_string())?;
     let engine_mgr = EngineManager::new(&state.base_dir);
     Ok(engine_mgr.is_downloaded(&engine_type, &version))
+}
+
+#[tauri::command]
+pub fn remove_shield_engine(
+    state: tauri::State<'_, AppState>,
+    engine: String,
+    version: String,
+) -> Result<(), String> {
+    let engine_type = BrowserEngine::from_str(&engine).map_err(|e: anyhow::Error| e.to_string())?;
+    let engine_mgr = EngineManager::new(&state.base_dir);
+    engine_mgr.remove_engine(&engine_type, &version).map_err(|e| e.to_string())
 }
 
 // ─── Onboarding Commands ───────────────────────────────────────────

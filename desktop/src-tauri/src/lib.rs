@@ -84,6 +84,7 @@ pub fn run() {
             commands::shield::stop_shield_profile,
             commands::shield::download_shield_engine,
             commands::shield::is_shield_engine_downloaded,
+            commands::shield::remove_shield_engine,
             commands::shield::resolve_engine_version,
             commands::shield::get_available_engines,
         ])

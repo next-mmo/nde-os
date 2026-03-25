@@ -44,11 +44,19 @@ impl BrowserLauncher {
     }
 
     /// Launch a browser profile. Returns the CDP port.
-    pub async fn launch_profile(
+    ///
+    /// An optional `on_exit` callback is invoked when the browser process exits
+    /// on its own (e.g. user closes the window). This lets the Tauri layer emit
+    /// an event so the frontend can refresh.
+    pub async fn launch_profile<F>(
         &self,
         profile_id: &str,
         url: Option<&str>,
-    ) -> Result<u16> {
+        on_exit: Option<F>,
+    ) -> Result<u16>
+    where
+        F: FnOnce(String) + Send + 'static,
+    {
         let profile_mgr = ProfileManager::new(&self.base_dir);
         let engine_mgr = EngineManager::new(&self.base_dir);
         let profile = profile_mgr.get_profile(profile_id)?;
@@ -105,7 +113,7 @@ impl BrowserLauncher {
         cmd.stdout(std::process::Stdio::null());
         cmd.stderr(std::process::Stdio::null());
 
-        let child = cmd.spawn()
+        let mut child = cmd.spawn()
             .with_context(|| format!("Failed to spawn {} process", profile.engine.display_name()))?;
 
         let process_id = child.id()
@@ -132,27 +140,71 @@ impl BrowserLauncher {
         // Update profile metadata
         profile_mgr.set_running(profile_id, process_id)?;
 
+        // Spawn a background task that waits for the browser process to exit.
+        // When camoufox is closed by the user, this task cleans up the instance
+        // map + profile metadata and fires the on_exit callback.
+        {
+            let instances = Arc::clone(&self.instances);
+            let base_dir = self.base_dir.clone();
+            let pid = profile_id.to_string();
+            tokio::spawn(async move {
+                let exit_status = child.wait().await;
+                tracing::info!(
+                    "Browser process for profile '{}' exited: {:?}",
+                    pid,
+                    exit_status
+                );
+
+                // Remove from running instances (returns Some if this was
+                // a natural exit, None if stop_profile already cleaned up)
+                let was_natural_exit = {
+                    let mut lock = instances.lock().await;
+                    lock.remove(&pid).is_some()
+                };
+
+                // Only clean up + notify if this was a natural exit
+                // (user closed camoufox). If stop_profile handled it,
+                // the instance was already removed above.
+                if was_natural_exit {
+                    let pmgr = ProfileManager::new(&base_dir);
+                    let _ = pmgr.set_stopped(&pid);
+
+                    if let Some(cb) = on_exit {
+                        cb(pid);
+                    }
+                }
+            });
+        }
+
         Ok(cdp_port)
     }
 
     /// Stop a running browser profile.
+    ///
+    /// If the browser already exited (e.g. user closed camoufox), this is a
+    /// no-op: the background watcher already cleaned up the instance map.
     pub async fn stop_profile(&self, profile_id: &str) -> Result<()> {
         let instance = {
             let mut instances = self.instances.lock().await;
             instances.remove(profile_id)
-                .context(format!("Profile '{profile_id}' is not running"))?
         };
 
-        tracing::info!(
-            "Stopping {} (PID {}) for profile '{}'",
-            instance.engine.display_name(),
-            instance.process_id,
-            profile_id
-        );
+        if let Some(inst) = instance {
+            tracing::info!(
+                "Stopping {} (PID {}) for profile '{}'",
+                inst.engine.display_name(),
+                inst.process_id,
+                profile_id
+            );
+            kill_process(inst.process_id);
+        } else {
+            tracing::info!(
+                "Profile '{}' already exited, ensuring metadata is cleaned up",
+                profile_id
+            );
+        }
 
-        kill_process(instance.process_id);
-
-        // Update profile metadata
+        // Always ensure profile metadata reflects stopped state
         let profile_mgr = ProfileManager::new(&self.base_dir);
         profile_mgr.set_stopped(profile_id)?;
 

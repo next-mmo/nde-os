@@ -151,7 +151,7 @@
 
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 <section
-  class="absolute grid grid-rows-[auto_1fr] rounded-xl overflow-hidden border border-black/10 dark:border-white/10 bg-white/50 dark:bg-gray-800/50 backdrop-blur-[26px] shadow-[0_16px_36px_rgba(0,0,0,0.22),0_48px_96px_rgba(0,0,0,0.18)] transition-shadow {isActive ? '!shadow-[0_20px_44px_rgba(0,0,0,0.3),0_56px_120px_rgba(0,0,0,0.24)] ring-1 ring-black/5 dark:ring-white/10' : ''} {window.fullscreen ? 'top-6! left-6! w-[calc(100vw-48px)]! h-[calc(100vh-126px)]! transform-none!' : ''}"
+  class="absolute grid grid-rows-[auto_1fr] rounded-xl overflow-hidden border border-black/10 dark:border-white/10 bg-white/50 dark:bg-gray-800/50 backdrop-blur-[26px] shadow-[0_16px_36px_rgba(0,0,0,0.22),0_48px_96px_rgba(0,0,0,0.18)] transition-shadow {isActive ? '!shadow-[0_20px_44px_rgba(0,0,0,0.3),0_56px_120px_rgba(0,0,0,0.24)] ring-1 ring-black/5 dark:ring-white/10' : ''} {window.fullscreen ? 'inset-0! w-full! h-full! transform-none! rounded-none!' : ''}"
   data-window={window.app_id}
   aria-label={window.title}
   tabindex="-1"

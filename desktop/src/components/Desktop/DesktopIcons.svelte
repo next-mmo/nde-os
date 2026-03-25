@@ -11,6 +11,11 @@
   } from "🍎/state/desktop.svelte";
   import ContextMenu, { type ContextMenuItem } from "🍎/components/Desktop/ContextMenu.svelte";
 
+  interface Props {
+    ondesktopcontextmenu?: (e: MouseEvent) => void;
+  }
+  let { ondesktopcontextmenu }: Props = $props();
+
   const GRID = 96;
   const ICON_W = 88;
   const DRAG_THRESHOLD = 5;
@@ -91,6 +96,14 @@
     iconCtx = null;
   }
 
+  function handleContainerContextMenu(e: MouseEvent) {
+    // If the right-click target is the container itself (empty desktop space),
+    // forward to the parent's desktop context menu handler
+    if (e.currentTarget === e.target) {
+      ondesktopcontextmenu?.(e);
+    }
+  }
+
   /* ---- Icon right-click context menu ---- */
   let iconCtx = $state<{ x: number; y: number; id: StaticAppID } | null>(null);
 
@@ -117,6 +130,7 @@
 <div
   class="absolute inset-0 z-0"
   onclick={handleClickOutside}
+  oncontextmenu={handleContainerContextMenu}
   onkeydown={undefined}
   onpointermove={onPointerMove}
   onpointerup={onPointerUp}

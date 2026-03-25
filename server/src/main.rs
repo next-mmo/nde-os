@@ -207,7 +207,30 @@ fn main() {
     // Phase 2: Plugin engine
     let plugins_dir = base_dir.join("plugins");
     std::fs::create_dir_all(&plugins_dir).ok();
-    let plugin_engine = Arc::new(Mutex::new(PluginEngine::new(&plugins_dir)));
+    let mut engine = PluginEngine::new(&plugins_dir);
+
+    // Register bundled plugins directory (shipped with the repo).
+    // In dev mode the server runs from the repo root via dev.sh,
+    // so `./plugins` relative to CWD contains built-in plugins.
+    // In production, look relative to the executable.
+    let cwd_plugins = std::env::current_dir()
+        .map(|d| d.join("plugins"))
+        .unwrap_or_default();
+    if cwd_plugins.exists() && cwd_plugins != plugins_dir {
+        engine.add_search_dir(cwd_plugins);
+    }
+
+    // Also check next to the executable (for release builds)
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(exe_dir) = exe.parent() {
+            let exe_plugins = exe_dir.join("plugins");
+            if exe_plugins.exists() && exe_plugins != plugins_dir {
+                engine.add_search_dir(exe_plugins);
+            }
+        }
+    }
+
+    let plugin_engine = Arc::new(Mutex::new(engine));
 
     // Auto-discover plugins on startup
     if let Ok(mut engine) = plugin_engine.lock() {
