@@ -107,9 +107,11 @@ fn route(
         // Skills
         (Method::Get, "/api/skills") => return subsystem_handler::list_skills(),
         // Knowledge
-        (Method::Get, "/api/knowledge") => return subsystem_handler::list_knowledge(),
+        (Method::Get, "/api/knowledge") => return subsystem_handler::list_knowledge(data_dir),
         // Memory
-        (Method::Get, "/api/memory") => return subsystem_handler::list_memory(),
+        (Method::Get, "/api/memory") => return subsystem_handler::list_memory(data_dir),
+        // OpenViking
+        (Method::Get, "/api/viking/status") => return subsystem_handler::viking_status(rt),
         _ => {}
     }
 
@@ -209,14 +211,14 @@ fn route(
     if path.starts_with("/api/knowledge/search") {
         let query = url.split("q=").nth(1).unwrap_or("");
         let decoded = urlencoding::decode(query).unwrap_or_default();
-        return subsystem_handler::search_knowledge(&decoded);
+        return subsystem_handler::search_knowledge(&decoded, data_dir);
     }
 
     // Memory by key: /api/memory/{key}
     if path.starts_with("/api/memory/") {
         let parts: Vec<&str> = path.trim_start_matches('/').split('/').collect();
         if let ["api", "memory", key] = parts.as_slice() {
-            return subsystem_handler::get_memory(key);
+            return subsystem_handler::get_memory(key, data_dir);
         }
     }
 
@@ -451,15 +453,18 @@ fn main() {
     println!("    GET    /api/mcp/servers");
     println!();
     println!("  Skills:");
-    println!("    GET    /api/skills");
+    println!("    GET    /api/skills                    <- real SkillLoader");
     println!();
     println!("  Knowledge:");
-    println!("    GET    /api/knowledge");
+    println!("    GET    /api/knowledge                 <- real KnowledgeGraph");
     println!("    GET    /api/knowledge/search?q={{query}}");
     println!();
     println!("  Memory:");
-    println!("    GET    /api/memory");
+    println!("    GET    /api/memory                    <- real KvStore");
     println!("    GET    /api/memory/{{key}}");
+    println!();
+    println!("  OpenViking:");
+    println!("    GET    /api/viking/status              <- context database");
     println!();
 
     loop {

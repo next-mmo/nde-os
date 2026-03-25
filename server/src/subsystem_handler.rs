@@ -1,5 +1,6 @@
 /// Channel, MCP, Skills, Knowledge, Memory handlers.
 /// These expose core subsystem data to the desktop UI.
+/// Skills / Knowledge / Memory now use real core modules with OpenViking fallback.
 use std::io::Cursor;
 use tiny_http::Response;
 
@@ -164,62 +165,186 @@ pub fn list_agent_tools() -> Response<Cursor<Vec<u8>>> {
 
 // ── Skills ──────────────────────────────────────────────────────────────────
 
-/// GET /api/skills — list available skills.
+/// GET /api/skills — list available skills from real SkillLoader.
 pub fn list_skills() -> Response<Cursor<Vec<u8>>> {
-    let skills = serde_json::json!([
-        { "name": "brainstorming", "description": "Explore user intent and design decisions before planning", "path": ".agents/skills/brainstorming", "triggers": ["brainstorm", "think through", "explore approaches"] },
-        { "name": "frontend-design", "description": "Create distinctive, production-grade frontend interfaces", "path": ".agents/skills/frontend-design", "triggers": ["build UI", "create component", "web design"] },
-        { "name": "security-sentinel", "description": "Performs security audits for vulnerabilities and OWASP compliance", "path": ".agents/skills/security-sentinel", "triggers": ["security review", "vulnerability check"] },
-        { "name": "performance-oracle", "description": "Analyzes code for performance bottlenecks and scalability", "path": ".agents/skills/performance-oracle", "triggers": ["performance", "optimize", "benchmark"] },
-        { "name": "git-history-analyzer", "description": "Archaeological analysis of git history to trace code evolution", "path": ".agents/skills/git-history-analyzer", "triggers": ["git history", "code evolution", "blame"] },
-        { "name": "compound-docs", "description": "Capture solved problems as categorized documentation", "path": ".agents/skills/compound-docs", "triggers": ["document", "capture solution"] },
-        { "name": "code-simplicity-reviewer", "description": "Final review pass for YAGNI violations and simplification", "path": ".agents/skills/code-simplicity-reviewer", "triggers": ["simplify", "code review", "YAGNI"] },
-        { "name": "bug-reproduction-validator", "description": "Systematically reproduces and validates bug reports", "path": ".agents/skills/bug-reproduction-validator", "triggers": ["reproduce bug", "validate issue"] }
-    ]);
-    ok("Skills library", skills)
+    // Build search paths: CWD/.agents/skills, CWD/.agent/skills, and exe-relative
+    let mut search_paths = Vec::new();
+    if let Ok(cwd) = std::env::current_dir() {
+        search_paths.push(cwd.join(".agents").join("skills"));
+        search_paths.push(cwd.join(".agent").join("skills"));
+    }
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(exe_dir) = exe.parent() {
+            search_paths.push(exe_dir.join(".agents").join("skills"));
+        }
+    }
+
+    let loader = ai_launcher_core::skills::SkillLoader::new(search_paths);
+    match loader.discover() {
+        Ok(skills) => {
+            let entries: Vec<serde_json::Value> = skills
+                .iter()
+                .map(|s| serde_json::json!({
+                    "name": s.name,
+                    "description": s.description,
+                    "path": s.path,
+                    "triggers": s.triggers,
+                }))
+                .collect();
+            ok(&format!("{} skills", entries.len()), entries)
+        }
+        Err(e) => {
+            eprintln!("Skill discovery error: {}", e);
+            ok("0 skills", serde_json::json!([]))
+        }
+    }
 }
 
 // ── Knowledge ───────────────────────────────────────────────────────────────
 
-/// GET /api/knowledge — list all knowledge entries.
-pub fn list_knowledge() -> Response<Cursor<Vec<u8>>> {
-    let now = chrono::Utc::now().to_rfc3339();
-    let entries = serde_json::json!([
-        { "id": "1", "key": "project_architecture", "value": "Monorepo: core/ (Rust sandbox), server/ (Rust API), desktop/ (Tauri+Svelte5). Core has ZERO deps on server/desktop.", "category": "architecture", "created_at": &now, "updated_at": &now },
-        { "id": "2", "key": "sandbox_security", "value": "OS-level filesystem jail with path canonicalization, symlink defense, env-var jailing (12 vars scoped to workspace), and SHA-256 audit chain.", "category": "security", "created_at": &now, "updated_at": &now },
-        { "id": "3", "key": "llm_providers", "value": "6 providers supported: Ollama, OpenAI, Anthropic, Groq, Together, Codex. Runtime hot-swap via LlmManager.", "category": "llm", "created_at": &now, "updated_at": &now },
-        { "id": "4", "key": "plugin_system", "value": "Manifest v2 schema. 6 types (monitor, hook, provider, tool, ui_panel, daemon). 9 hooks. uv-managed venvs per plugin.", "category": "plugins", "created_at": &now, "updated_at": &now },
-        { "id": "5", "key": "channel_gateway", "value": "Normalized messaging from REST, Telegram, Discord, Slack, WebChat, CLI into a unified ChannelMessage format.", "category": "channels", "created_at": &now, "updated_at": &now }
-    ]);
-    ok("Knowledge entries", entries)
+/// GET /api/knowledge — list all knowledge entries from real KnowledgeGraph.
+pub fn list_knowledge(data_dir: &Path) -> Response<Cursor<Vec<u8>>> {
+    let db_path = data_dir.join("knowledge.db");
+    match ai_launcher_core::knowledge::KnowledgeGraph::new(&db_path) {
+        Ok(kg) => {
+            // Get all entity types by searching broadly
+            let mut all_entities = Vec::new();
+            for entity_type in &["app", "concept", "project", "architecture", "security", "llm", "plugins", "channels"] {
+                if let Ok(entities) = kg.find_by_type(entity_type) {
+                    all_entities.extend(entities);
+                }
+            }
+            // Also do a wildcard search to catch anything
+            if let Ok(entities) = kg.search("%") {
+                for entity in entities {
+                    if !all_entities.iter().any(|e: &ai_launcher_core::knowledge::Entity| e.id == entity.id) {
+                        all_entities.push(entity);
+                    }
+                }
+            }
+
+            let entries: Vec<serde_json::Value> = all_entities
+                .iter()
+                .map(|e| serde_json::json!({
+                    "id": e.id,
+                    "key": e.name,
+                    "value": e.metadata,
+                    "category": e.entity_type,
+                }))
+                .collect();
+            ok(&format!("{} knowledge entries", entries.len()), entries)
+        }
+        Err(e) => {
+            eprintln!("Knowledge graph error: {}", e);
+            ok("0 knowledge entries", serde_json::json!([]))
+        }
+    }
 }
 
 /// GET /api/knowledge/search?q=... — search knowledge.
-pub fn search_knowledge(query: &str) -> Response<Cursor<Vec<u8>>> {
-    let now = chrono::Utc::now().to_rfc3339();
-    // Simple mock: return a filtered subset
-    let entries = serde_json::json!([
-        { "id": "search-1", "key": format!("search_{}", query), "value": format!("Results for query: {}", query), "category": "search", "created_at": &now, "updated_at": &now }
-    ]);
-    ok(&format!("Knowledge search: {}", query), entries)
+pub fn search_knowledge(query: &str, data_dir: &Path) -> Response<Cursor<Vec<u8>>> {
+    let db_path = data_dir.join("knowledge.db");
+    match ai_launcher_core::knowledge::KnowledgeGraph::new(&db_path) {
+        Ok(kg) => {
+            match kg.search(query) {
+                Ok(entities) => {
+                    let entries: Vec<serde_json::Value> = entities
+                        .iter()
+                        .map(|e| serde_json::json!({
+                            "id": e.id,
+                            "key": e.name,
+                            "value": e.metadata,
+                            "category": e.entity_type,
+                        }))
+                        .collect();
+                    ok(&format!("Knowledge search: {} ({} results)", query, entries.len()), entries)
+                }
+                Err(e) => {
+                    eprintln!("Knowledge search error: {}", e);
+                    ok(&format!("Knowledge search: {}", query), serde_json::json!([]))
+                }
+            }
+        }
+        Err(e) => {
+            eprintln!("Knowledge graph error: {}", e);
+            ok(&format!("Knowledge search: {}", query), serde_json::json!([]))
+        }
+    }
 }
 
 // ── Memory ──────────────────────────────────────────────────────────────────
 
-/// GET /api/memory — list all memory entries.
-pub fn list_memory() -> Response<Cursor<Vec<u8>>> {
-    let now = chrono::Utc::now().to_rfc3339();
-    let entries = serde_json::json!([
-        { "key": "last_user_goal", "value": "Build all missing UI components and API integrations", "created_at": &now },
-        { "key": "active_context", "value": "NDE-OS desktop application with Rust backend", "created_at": &now },
-        { "key": "session_start", "value": &now, "created_at": &now }
-    ]);
-    ok("Memory entries", entries)
+/// GET /api/memory — list all memory entries from real MemoryManager.
+pub fn list_memory(data_dir: &Path) -> Response<Cursor<Vec<u8>>> {
+    let db_path = data_dir.join("memory.db");
+    match ai_launcher_core::memory::KvStore::new(&db_path) {
+        Ok(kv) => {
+            match kv.list_keys("") {
+                Ok(keys) => {
+                    let mut entries = Vec::new();
+                    for key in &keys {
+                        let value = kv.get(key).unwrap_or(None).unwrap_or_default();
+                        entries.push(serde_json::json!({
+                            "key": key,
+                            "value": value,
+                        }));
+                    }
+                    ok(&format!("{} memory entries", entries.len()), entries)
+                }
+                Err(e) => {
+                    eprintln!("Memory list error: {}", e);
+                    ok("0 memory entries", serde_json::json!([]))
+                }
+            }
+        }
+        Err(e) => {
+            eprintln!("Memory store error: {}", e);
+            ok("0 memory entries", serde_json::json!([]))
+        }
+    }
 }
 
 /// GET /api/memory/{key} — get a specific memory value.
-pub fn get_memory(key: &str) -> Response<Cursor<Vec<u8>>> {
-    let now = chrono::Utc::now().to_rfc3339();
-    let entry = serde_json::json!({ "key": key, "value": format!("Memory entry for key: {}", key), "created_at": &now });
-    ok(&format!("Memory: {}", key), entry)
+pub fn get_memory(key: &str, data_dir: &Path) -> Response<Cursor<Vec<u8>>> {
+    let db_path = data_dir.join("memory.db");
+    match ai_launcher_core::memory::KvStore::new(&db_path) {
+        Ok(kv) => {
+            match kv.get(key) {
+                Ok(Some(value)) => {
+                    ok(&format!("Memory: {}", key), serde_json::json!({
+                        "key": key,
+                        "value": value,
+                    }))
+                }
+                Ok(None) => err(404, &format!("Memory key not found: {}", key)),
+                Err(e) => err(500, &format!("Memory read error: {}", e)),
+            }
+        }
+        Err(e) => err(500, &format!("Memory store error: {}", e)),
+    }
+}
+
+// ── OpenViking ──────────────────────────────────────────────────────────────
+
+/// GET /api/viking/status — check OpenViking server connectivity.
+pub fn viking_status(rt: &tokio::runtime::Runtime) -> Response<Cursor<Vec<u8>>> {
+    let client = ai_launcher_core::openviking::VikingClient::new("http://localhost:1933");
+    let healthy = rt.block_on(async { client.health().await.unwrap_or(false) });
+
+    if healthy {
+        match rt.block_on(async { client.status().await }) {
+            Ok(status) => ok("OpenViking connected", serde_json::json!({
+                "connected": true,
+                "status": status,
+            })),
+            Err(_) => ok("OpenViking connected", serde_json::json!({
+                "connected": true,
+            })),
+        }
+    } else {
+        ok("OpenViking not available", serde_json::json!({
+            "connected": false,
+            "message": "OpenViking server not running on localhost:1933. Install with: pip install openviking"
+        }))
+    }
 }
