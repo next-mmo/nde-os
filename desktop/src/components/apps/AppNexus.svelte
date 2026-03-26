@@ -78,6 +78,10 @@
   {#await import("🍎/components/apps/FigmaRender/FigmaRender.svelte") then { default: FigmaRender }}
     <FigmaRender />
   {/await}
+{:else if window.app_id === "screenshot"}
+  {#await import("🍎/components/apps/Screenshot/Screenshot.svelte") then { default: Screenshot }}
+    <Screenshot {window} />
+  {/await}
 {:else}
   {#await import("🍎/components/apps/Placeholder/Placeholder.svelte") then { default: Placeholder }}
     <Placeholder app_id={window.app_id} />

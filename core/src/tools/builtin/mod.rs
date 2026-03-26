@@ -25,6 +25,9 @@ mod system_info;
 mod http_fetch;
 mod skill_list;
 
+#[cfg(feature = "screenshot")]
+pub mod screenshot;
+
 // ── Web tools (Phase 3) ─────────────────────────────────────────────────────
 mod web_browse;
 mod web_search;
@@ -89,6 +92,9 @@ pub fn default_registry() -> ToolRegistry {
     reg.register(Box::new(app_tools::AppStopTool));
     reg.register(Box::new(system_info::SystemInfoTool));
     reg.register(Box::new(skill_list::SkillListTool));
+
+    #[cfg(feature = "screenshot")]
+    reg.register(Box::new(screenshot::ScreenshotTool));
 
     reg
 }

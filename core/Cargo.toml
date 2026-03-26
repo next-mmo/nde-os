@@ -36,3 +36,22 @@ flate2 = "1"
 [dev-dependencies]
 tempfile = "3"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "test-util"] }
+
+[features]
+default = ["screenshot"]
+screenshot = ["xcap", "image", "base64", "windows"]
+
+[dependencies.xcap]
+version = "0.3.3"
+optional = true
+
+[dependencies.image]
+version = "0.25.1"
+optional = true
+
+[dependencies.base64]
+version = "0.22"
+optional = true
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.58.0", features = ["Globalization", "Graphics_Imaging", "Media_Ocr", "Storage_Streams", "Foundation"], optional = true }

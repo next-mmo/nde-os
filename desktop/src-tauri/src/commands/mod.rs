@@ -6,3 +6,4 @@ pub mod lifecycle;
 pub mod sandbox;
 pub mod shield;
 pub mod system;
+pub mod screenshot;

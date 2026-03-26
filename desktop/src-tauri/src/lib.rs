@@ -93,6 +93,8 @@ pub fn run() {
             commands::figma_json::fetch_figma_file,
             commands::figma_json::build_figma_llm_prompt,
             commands::figma_json::get_figma_sample,
+            // screenshot
+            commands::screenshot::capture_screenshot,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

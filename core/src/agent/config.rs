@@ -59,7 +59,7 @@ fn default_tools() -> Vec<String> {
         "git".into(),
         // System
         "app_list".into(), "app_install".into(), "app_launch".into(), "app_stop".into(),
-        "system_info".into(), "skill_list".into(),
+        "system_info".into(), "skill_list".into(), "nde_screenshot".into(),
     ]
 }
 
@@ -165,7 +165,7 @@ mod tests {
         let config = AgentConfig::default();
         assert_eq!(config.max_iterations, 25);
         assert_eq!(config.model_provider, "gguf");
-        assert_eq!(config.enabled_tools.len(), 23);
+        assert_eq!(config.enabled_tools.len(), 27);
     }
 
     #[test]

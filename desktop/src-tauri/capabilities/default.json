@@ -28,6 +28,11 @@
     "core:window:allow-current-monitor",
     "core:window:allow-scale-factor",
     "shell:allow-open",
-    "dialog:default"
+    "dialog:default",
+    "core:event:allow-emit",
+    "core:event:allow-emit-to",
+    "core:event:allow-listen",
+    "core:event:allow-unlisten",
+    "core:webview:allow-create-webview-window"
   ]
 }

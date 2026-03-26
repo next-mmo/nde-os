@@ -73,3 +73,22 @@ Tests fail = task NOT done. **Only test what you touched** — run scoped tests 
 - **Fixtures**: All E2E specs import from `e2e/fixtures.ts` (provides CDP-connected `page`) and `e2e/helpers.ts`.
 - **Run**: `cd desktop && npx playwright test e2e/<spec>.spec.ts --reporter=list` (requires `./dev.sh` running).
 - **Never** use `page.goto("http://localhost:5174")` — the Tauri webview loads its own URL via the bridge.
+
+## 7. Global Definition of Done (DoD)
+
+Before marking any task, ticket, or feature as complete, the following system-wide criteria must be met to ensure zero-mistake execution, flawless user experience, and deep backend performance:
+
+### 7.1 Deep Rust Backend & Performance
+
+- **Production Ready**: Zero mocks, zero hacks, zero `TODO`s. Code must be robust and completely error-handled.
+- **Core Tests & Panics**: If `core/` or `server/` crates are modified, scoped unit tests (`cargo test -p <changed-crate> -- <test_name>`) MUST pass. Absolutely no panics allowed; use `anyhow::Result` everywhere.
+- **Deep Optimization**: Rust logic must be deeply optimized for memory and speed. Use the most efficient data structures. Keep `Arc<Mutex<>>` locks scoped to the absolute minimum necessary duration.
+- **Sandbox Integrity**: The NDE-OS sandbox constraints must be respected (verify with `curl -s http://localhost:8080/api/sandbox/test/verify` if touching sandbox domains). Canonicalize all paths to prevent traversal.
+
+### 7.2 Desktop UI & End-User Experience
+
+- **Goal Alignment**: Does the implemented feature perfectly align with the user's initial goal? Validate the end-to-end functionality from the user's perspective before declaring it done.
+- **UI/UX Quality (Svelte/Tailwind)**: Ensure the Svelte 5 frontend adheres to the macOS Ventura aesthetic (blur effects, smooth dock animations, shadcn-svelte components). No custom raw CSS.
+- **Desktop E2E Tests (Playwright)**: If `desktop/` UI or Tauri commands are modified, Playwright E2E tests MUST be written/updated and passing _inside_ the Tauri WebView2 sandbox.
+- **Tauri IPC Bridge**: IPC must be lightning-fast. Batch commands aggressively. Return serialized structs, never raw primitives. Ensure events stream progress instead of polling.
+- **Cross-Platform Parity**: Absolutely no hardcoded path strings (enforce `PathBuf::join()`). Safe and tested `cfg!(windows)` vs Unix subprocess execution gating. Both `HOME` and `USERPROFILE` explicitly accounted for.

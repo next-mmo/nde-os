@@ -373,8 +373,10 @@ fn config_defaults_are_sane() {
         "code_search", "code_edit", "code_symbols",
         "memory_store", "memory_recall", "conversation_save", "conversation_search",
         "knowledge_store", "knowledge_query",
+        "web_browse", "web_search", "http_fetch",
+        "git",
         "app_list", "app_install", "app_launch", "app_stop",
-        "system_info", "http_fetch", "skill_list",
+        "system_info", "skill_list", "nde_screenshot"
     ]);
     assert_eq!(config.workspace, "workspace");
     assert!(config.api_key.is_none());

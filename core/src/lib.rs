@@ -27,5 +27,8 @@ pub mod figma_json;
 // Shield Browser (anti-detect)
 pub mod shield;
 
+#[cfg(feature = "screenshot")]
+pub mod screenshot;
+
 #[cfg(test)]
 mod tests;

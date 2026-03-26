@@ -100,6 +100,11 @@ export const apps_config = {
     width: 960,
     height: 680,
   }),
+  screenshot: create_app_config({
+    title: "Screenshot Results",
+    width: 800,
+    height: 600,
+  }),
   launchpad: create_app_config({
     title: "Launchpad",
     should_open_window: false,

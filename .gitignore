@@ -19,3 +19,6 @@ assets.txt
 nul
 output.txt
 .claude
+test_int.log
+test_output.log
+build.log

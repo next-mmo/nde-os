@@ -39,7 +39,7 @@ export default defineConfig({
       command: serverCommand,
       port: 8080,
       reuseExistingServer: true,
-      timeout: 60000,
+      timeout: 120000,
       cwd: "..",
       env: {
         ...process.env,
