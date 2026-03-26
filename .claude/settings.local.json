@@ -3,7 +3,13 @@
     "allow": [
       "Bash(cargo check:*)",
       "Bash(cargo test:*)",
-      "Bash(wc -l /c/Users/dila/Downloads/ai-launcher-v0.2/ai-launcher/core/src/mcp/*.rs /c/Users/dila/Downloads/ai-launcher-v0.2/ai-launcher/core/src/skills/*.rs /c/Users/dila/Downloads/ai-launcher-v0.2/ai-launcher/core/src/knowledge/*.rs /c/Users/dila/Downloads/ai-launcher-v0.2/ai-launcher/core/src/channels/*.rs /c/Users/dila/Downloads/ai-launcher-v0.2/ai-launcher/core/src/tools/builtin/*.rs /c/Users/dila/Downloads/ai-launcher-v0.2/ai-launcher/core/src/shield/*.rs)"
+      "Bash(wc -l /c/Users/dila/Downloads/ai-launcher-v0.2/ai-launcher/core/src/mcp/*.rs /c/Users/dila/Downloads/ai-launcher-v0.2/ai-launcher/core/src/skills/*.rs /c/Users/dila/Downloads/ai-launcher-v0.2/ai-launcher/core/src/knowledge/*.rs /c/Users/dila/Downloads/ai-launcher-v0.2/ai-launcher/core/src/channels/*.rs /c/Users/dila/Downloads/ai-launcher-v0.2/ai-launcher/core/src/tools/builtin/*.rs /c/Users/dila/Downloads/ai-launcher-v0.2/ai-launcher/core/src/shield/*.rs)",
+      "Bash(bash dev.sh)",
+      "Bash(xargs ls:*)",
+      "Bash(find /c/Users/dila/Downloads/ai-launcher-v0.2/ai-launcher/plugins -name \"plugin.json\" -exec head -20 {} +)",
+      "Bash(xargs grep:*)",
+      "Bash(grep -r \"screenshot\\\\|Screenshot\" /c/Users/dila/Downloads/ai-launcher-v0.2/ai-launcher --include=*.rs)",
+      "Bash(grep -r \"ocr\\\\|OCR\" /c/Users/dila/Downloads/ai-launcher-v0.2/ai-launcher --include=*.rs)"
     ]
   }
 }
