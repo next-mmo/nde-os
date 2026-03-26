@@ -3,7 +3,7 @@ import type { InstalledApp } from "$lib/api/types";
 
 export type WindowAppID = Exclude<StaticAppID, "launchpad">;
 export type ThemeScheme = "light" | "dark";
-export type LauncherSection = "overview" | "catalog" | "installed" | "running" | "server" | "command-center" | "chat" | "playground" | "model-settings" | "plugins" | "channels" | "mcp-tools" | "skills" | "knowledge" | "code-editor" | "architecture";
+export type LauncherSection = "overview" | "catalog" | "installed" | "running" | "server" | "command-center" | "chat" | "vibe-studio" | "model-settings" | "plugins" | "channels" | "mcp-tools" | "skills" | "knowledge" | "code-editor" | "architecture";
 export type SessionMode = "embedded" | "windowed" | "drawer-left" | "drawer-right" | "fullscreen";
 export type DesktopIconPosition = { x: number; y: number };
 
@@ -26,7 +26,7 @@ export type BrowserState = {
   reload_key: number;
 };
 
-export type DesktopWindow = {
+export interface DesktopWindow {
   id: string;
   app_id: WindowAppID | "browser" | "chat";
   title: string;
@@ -40,7 +40,8 @@ export type DesktopWindow = {
   closable: boolean;
   session_id: string | null;
   browser: BrowserState | null;
-};
+  data?: any;
+}
 
 type WorkspaceView =
   | { kind: "dashboard" }
@@ -147,7 +148,7 @@ function getSavedTheme(): ThemeScheme {
 function getSavedLauncherSection(): LauncherSection {
   try {
     const saved = localStorage.getItem("ai-launcher:launcher-section");
-    const validSections: LauncherSection[] = ["overview", "catalog", "installed", "running", "server", "command-center", "chat", "playground", "model-settings", "plugins", "channels", "mcp-tools", "skills", "knowledge", "code-editor", "architecture"];
+    const validSections: LauncherSection[] = ["overview", "catalog", "installed", "running", "server", "command-center", "chat", "vibe-studio", "model-settings", "plugins", "channels", "mcp-tools", "skills", "knowledge", "code-editor", "architecture"];
     if (validSections.includes(saved as LauncherSection)) {
       return saved as LauncherSection;
     }

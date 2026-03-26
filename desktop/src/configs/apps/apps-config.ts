@@ -95,10 +95,10 @@ export const apps_config = {
     height: 760,
     dock_breaks_before: true,
   }),
-  "figma-render": create_app_config({
-    title: "Figma Render",
-    width: 960,
-    height: 680,
+  "vibe-studio": create_app_config({
+    title: "Vibe Code Studio",
+    width: 1280,
+    height: 800,
   }),
   screenshot: create_app_config({
     title: "Screenshot Results",

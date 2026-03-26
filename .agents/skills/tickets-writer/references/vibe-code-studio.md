@@ -173,15 +173,11 @@ The chat panel attempts providers in order: NDE Agent → local-gguf → DashSco
 
 - [x] **8. Cleanup & Polish**
   - [x] 8.1 Deprecate standalone `JsonPlayground` (absorbed into studio)
-  - [x] 8.2 Remove standalone `FigmaRender` app and references
+  - [x] 8.2 Deprecate standalone `FigmaRender` (absorbed into studio)
   - [x] 8.3 Tailwind-only styling (no custom `<style>`)
   - [x] 8.4 v0-style aesthetic: dark theme, purple/indigo accent, glassmorphism panels
   - [x] 8.5 Smooth animations: tab transitions, panel open/close, node selection
   - [x] 8.6 Keyboard shortcuts: Del (delete)
-
-- [x] **10. Bug Fixes (Reopened)**
-  - [x] 10.1 Wire AgentChat to `/api/agent/chat/stream` (default / local GGUF) instead of hardcoding DashScope
-  - [x] 10.2 Fully remove FigmaRender app and config
 
 - [x] **9. Testing (GGUF local — MVP YOLO Mode)**
   - [x] 9.1 E2E: Canvas renders FDocument sample

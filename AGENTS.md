@@ -92,3 +92,14 @@ Before marking any task, ticket, or feature as complete, the following system-wi
 - **Desktop E2E Tests (Playwright)**: If `desktop/` UI or Tauri commands are modified, Playwright E2E tests MUST be written/updated and passing _inside_ the Tauri WebView2 sandbox.
 - **Tauri IPC Bridge**: IPC must be lightning-fast. Batch commands aggressively. Return serialized structs, never raw primitives. Ensure events stream progress instead of polling.
 - **Cross-Platform Parity**: Absolutely no hardcoded path strings (enforce `PathBuf::join()`). Safe and tested `cfg!(windows)` vs Unix subprocess execution gating. Both `HOME` and `USERPROFILE` explicitly accounted for.
+
+## 8. Ticket & Task Status Flow
+
+When working on markdown tasks or tickets in `.agents/tasks/`, always adhere to this global status sequence. Do not deviate from these exact statuses.
+
+- **Status Flow**: `🔴 plan` ➔ `🟡 yolo mode` ➔ `🟢 done by AI` ➔ `✅ verified` OR `🔴 re-open`
+  - `🔴 plan`: The initial planning phase. Wait for user approval before starting (unless YOLO mode is requested/active).
+  - `🟡 yolo mode`: AI is actively generating code, working through the checklist autonomously without stopping.
+  - `🟢 done by AI`: AI has completed all checklist tasks and DoD items. Human manually reviews and tests. 
+  - `✅ verified`: Human has manually verified the feature works correctly.
+  - `🔴 re-open`: Human found issues; AI needs to pick the task back up and fix them.

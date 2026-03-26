@@ -50,17 +50,19 @@ export async function triggerScreenshotMode() {
       }
       
       if (windowId) {
-        const idx = desktop.windows.findIndex(w => w.id === windowId);
-        if (idx !== -1) {
-          desktop.windows[idx] = { ...desktop.windows[idx], data: { image: response.base64_image } } as any;
+        const win = desktop.windows.find(w => w.id === windowId);
+        if (win) {
+          if (!win.data) win.data = {};
+          win.data.image = response.base64_image;
         }
         focusWindow(windowId);
       } else {
         const win = openStaticApp("screenshot" as any);
         if (win) {
-          const idx = desktop.windows.findIndex(w => w.id === win.id);
-          if (idx !== -1) {
-            desktop.windows[idx] = { ...desktop.windows[idx], data: { image: response.base64_image } } as any;
+          const w = desktop.windows.find(x => x.id === win.id);
+          if (w) {
+            if (!w.data) w.data = {};
+            w.data.image = response.base64_image;
           }
         }
       }
@@ -69,12 +71,10 @@ export async function triggerScreenshotMode() {
       // Fallback for E2E testing environments if capability blocks or headless monitor fails
       const fallbackWin = openStaticApp("screenshot" as any);
       if (fallbackWin) {
-        const fallIdx = desktop.windows.findIndex(w => w.id === fallbackWin.id);
-        if (fallIdx !== -1) {
-          desktop.windows[fallIdx] = { 
-            ...desktop.windows[fallIdx], 
-            data: { image: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=" } 
-          } as any;
+        const fw = desktop.windows.find(w => w.id === fallbackWin.id);
+        if (fw) {
+          if (!fw.data) fw.data = {};
+          fw.data.image = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
         }
       }
     }

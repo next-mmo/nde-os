@@ -20,10 +20,10 @@ graph TD
     P1_Status --> Wait{User Approval?}:::approval
     
     Wait -- "Rejected/Changes" --> P1
-    Wait -- "'approved'" --> P2_Status
+    Wait -- "'approved' or 'YOLO'" --> P2_Status
     
     subgraph "Phase 2: Generate"
-        P2_Status[Update Status: 🟡 in-progress]:::phase --> P2_Gen[Generate Stack-Specific Code]:::phase
+        P2_Status[Update Status: 🟡 yolo mode]:::phase --> P2_Gen[Generate Stack-Specific Code]:::phase
         P2_Gen --> P2_Sync[Continuously Update Sub-Task Checklist]:::phase
     end
     
@@ -42,10 +42,15 @@ graph TD
     
     subgraph "Phase 4: Definition of Done (DoD)"
         P4_Local[Verify Local DoD Constraints]:::phase --> P4_Global[Verify AGENTS.md Global DoD]:::phase
-        P4_Global --> P4_Done[Update Status: 🟢 done + check items]:::phase
+        P4_Global --> P4_Done[Update Status: 🟢 done by AI]:::phase
     end
     
     P4_Done -.-> File
     
-    P4_Done --> End((Ticket Successfully Concluded))
+    P4_Done --> P5_Verify{Human Verification}:::approval
+    P5_Verify -- "Reject/Fixes" --> P2_Status
+    P5_Verify -- "Approved" --> P5_Final[Update Status: ✅ verified by human]:::phase
+    
+    P5_Final -.-> File
+    P5_Final --> End((Ticket Successfully Concluded))
 ```

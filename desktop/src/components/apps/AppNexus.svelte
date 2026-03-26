@@ -74,9 +74,9 @@
   {#await import("🍎/components/apps/Architecture/Architecture.svelte") then { default: Architecture }}
     <Architecture />
   {/await}
-{:else if window.app_id === "figma-render"}
-  {#await import("🍎/components/apps/FigmaRender/FigmaRender.svelte") then { default: FigmaRender }}
-    <FigmaRender />
+{:else if window.app_id === "vibe-studio"}
+  {#await import("🍎/components/apps/VibeCodeStudio/VibeCodeStudio.svelte") then { default: VibeCodeStudio }}
+    <VibeCodeStudio {window} />
   {/await}
 {:else if window.app_id === "screenshot"}
   {#await import("🍎/components/apps/Screenshot/Screenshot.svelte") then { default: Screenshot }}

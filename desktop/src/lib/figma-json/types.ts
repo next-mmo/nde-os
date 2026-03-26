@@ -73,6 +73,10 @@ export type FBaseNode = {
   id: string;
   /** Display name — visible in layer panel */
   name: string;
+  /** Relative X coordinate from parent (used for interactive dragging) */
+  x?: number;
+  /** Relative Y coordinate from parent (used for interactive dragging) */
+  y?: number;
   /** Whether this node is visible */
   visible?: boolean; // default true
   /** Opacity 0–1 */
