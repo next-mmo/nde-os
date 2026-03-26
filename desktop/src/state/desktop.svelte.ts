@@ -181,6 +181,14 @@ function getSavedIsLocked(): boolean {
   return false;
 }
 
+function getSavedWallpaper(): string {
+  try {
+    const saved = localStorage.getItem("ai-launcher:wallpaper");
+    if (saved) return saved;
+  } catch {}
+  return 'url("/wallpapers/ventura-1.webp")';
+}
+
 const createWindow = (
   app_id: WindowAppID | "browser" | "chat",
   title: string,
@@ -227,7 +235,17 @@ export const desktop = $state({
   icon_selection: new Set<string>(),
   hidden_icons: new Set<string>(loadHiddenIcons()),
   is_locked: getSavedIsLocked(),
+  spotlight_open: false,
+  notification_center_open: false,
+  wallpaper: getSavedWallpaper(),
 });
+
+export function setWallpaper(bg: string) {
+  desktop.wallpaper = bg;
+  try {
+    localStorage.setItem("ai-launcher:wallpaper", bg);
+  } catch {}
+}
 
 export function lockScreen() {
   desktop.is_locked = true;
@@ -437,6 +455,14 @@ export function toggleTheme() {
 
 export function toggleLaunchpad(force?: boolean) {
   desktop.launchpad_open = force ?? !desktop.launchpad_open;
+}
+
+export function toggleSpotlight(force?: boolean) {
+  desktop.spotlight_open = force ?? !desktop.spotlight_open;
+}
+
+export function toggleNotificationCenter(force?: boolean) {
+  desktop.notification_center_open = force ?? !desktop.notification_center_open;
 }
 
 export function focusWindow(window_id: string) {

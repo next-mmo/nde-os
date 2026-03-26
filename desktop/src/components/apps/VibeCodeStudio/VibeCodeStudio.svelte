@@ -54,7 +54,24 @@
           return true;
         }
         if ("children" in node && node.children) {
-          if (walk(node.children)) return true;
+          if (walk(node.children as FNode[])) return true;
+        }
+      }
+      return false;
+    }
+    walk(document.children);
+  }
+
+  function updateNodeSize(id: string, width: number, height: number) {
+    function walk(nodes: FNode[]): boolean {
+      for (const node of nodes) {
+        if (node.id === id) {
+          if ("width" in node) node.width = Math.round(width);
+          if ("height" in node) node.height = Math.round(height);
+          return true;
+        }
+        if ("children" in node && node.children) {
+          if (walk(node.children as FNode[])) return true;
         }
       }
       return false;
@@ -90,11 +107,43 @@
   }
 
   function applyChatPatch(patch: any) {
+    // Better handling of chat patches directly replacing nodes or appending them
     if (patch.op === "append" && Array.isArray(patch.nodes)) {
+      if (selectedNodeId) {
+        const parent = findNode(document.children, selectedNodeId);
+        if (parent && "children" in parent && Array.isArray(parent.children)) {
+           parent.children = [...parent.children, ...patch.nodes];
+           return;
+        }
+      }
       document.children = [...document.children, ...patch.nodes];
     } else if (patch.id) {
-      document.children = [...document.children, patch];
+       // Check if replacing existing
+       const existing = findNode(document.children, patch.id);
+       if (existing) {
+         Object.assign(existing, patch);
+       } else {
+         if (selectedNodeId) {
+            const parent = findNode(document.children, selectedNodeId);
+            if (parent && "children" in parent && Array.isArray(parent.children)) {
+               parent.children = [...parent.children, patch];
+               return;
+            }
+         }
+         document.children = [...document.children, patch];
+       }
     }
+  }
+
+  function findNode(nodes: FNode[], id: string): FNode | null {
+    for (const node of nodes) {
+      if (node.id === id) return node;
+      if ("children" in node && node.children) {
+        const found = findNode(node.children as FNode[], id);
+        if (found) return found;
+      }
+    }
+    return null;
   }
 
   function createNode(type: string) {
@@ -109,9 +158,45 @@
     } else {
       node = { ...base, type: "RECTANGLE", name: "Rectangle", width: 100, height: 100, fills: [{ type: "SOLID", color: { r: 0.5, g: 0.5, b: 0.5, a: 1 } }] } as FNode;
     }
+    
+    if (selectedNodeId) {
+      const parent = findNode(document.children, selectedNodeId);
+      if (parent && "children" in parent && Array.isArray(parent.children)) {
+        parent.children.push(node);
+        selectedNodeId = id;
+        return;
+      }
+    }
+    
     document.children.push(node);
     selectedNodeId = id;
   }
+
+  // Synchronization with IDE files
+  let lastStr = "";
+  $effect(() => {
+    if (activeFilePath && (activeFilePath.endsWith('.json') || activeFilePath.endsWith('.fj'))) {
+      if (fileContent && fileContent !== lastStr) {
+        try {
+          const parsed = JSON.parse(fileContent);
+          if (parsed.type === 'DOCUMENT') {
+            document = parsed;
+            lastStr = fileContent;
+          }
+        } catch (e) {}
+      }
+    }
+  });
+
+  $effect(() => {
+    if (activeFilePath && (activeFilePath.endsWith('.json') || activeFilePath.endsWith('.fj'))) {
+      const str = JSON.stringify(document, null, 2);
+      if (str !== lastStr) {
+        lastStr = str;
+        fileContent = str;
+      }
+    }
+  });
 </script>
 
 <svelte:window onkeydown={handleKeyDown} />
@@ -196,6 +281,7 @@
               bind:zoom
               onSelectNode={(id) => selectedNodeId = id}
               onUpdateNodePosition={updateNodePosition}
+              onUpdateNodeSize={updateNodeSize}
             />
             
             <!-- Toolbar -->

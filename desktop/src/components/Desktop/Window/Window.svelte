@@ -12,10 +12,11 @@
     events,
     position,
   } from "@neodrag/svelte";
-  import { toggleFullscreen as toggleFullscreenState } from "🍎/state/desktop.svelte";
+  import { toggleFullscreen as toggleFullscreenState, closeWindow } from "🍎/state/desktop.svelte";
   import { activeWindow, currentBrowserUrl, focusWindow, loadWindowGeometry, saveWindowGeometry, type DesktopWindow } from "🍎/state/desktop.svelte";
   import TrafficLights from "🍎/components/Desktop/Window/TrafficLights.svelte";
   import AppNexus from "🍎/components/apps/AppNexus.svelte";
+  import ContextMenu, { type ContextMenuItem } from "🍎/components/Desktop/ContextMenu.svelte";
 
   interface Props {
     window: DesktopWindow;
@@ -147,11 +148,25 @@
   const windowTitle = $derived(
     window.app_id === "browser" && window.browser ? currentBrowserUrl(window).replace(/^https?:\/\//, "") || "Browser" : window.title,
   );
+
+  let windowCtx = $state<{ x: number; y: number } | null>(null);
+
+  function handleContextMenu(e: MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    windowCtx = { x: e.clientX, y: e.clientY };
+  }
+
+  const windowMenuItems = $derived<ContextMenuItem[]>([
+    { kind: "action", icon: "⤢", label: window.fullscreen ? "Exit Full Screen" : "Enter Full Screen", action: () => { toggleFullscreenState(window.id); windowCtx = null; } },
+    { kind: "divider" },
+    { kind: "action", icon: "🔴", label: "Close Window", action: () => { closeWindow(window.id); windowCtx = null; } },
+  ]);
 </script>
 
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 <section
-  class="absolute grid grid-rows-[auto_1fr] rounded-xl overflow-hidden border border-black/10 dark:border-white/10 bg-white/50 dark:bg-gray-800/50 backdrop-blur-[26px] shadow-[0_16px_36px_rgba(0,0,0,0.22),0_48px_96px_rgba(0,0,0,0.18)] transition-shadow {isActive ? '!shadow-[0_20px_44px_rgba(0,0,0,0.3),0_56px_120px_rgba(0,0,0,0.24)] ring-1 ring-black/5 dark:ring-white/10' : ''} {window.fullscreen ? 'inset-0! w-full! h-full! transform-none! rounded-none!' : ''}"
+  class="absolute grid grid-rows-[auto_1fr] rounded-xl overflow-hidden border border-black/10 dark:border-white/10 bg-white/50 dark:bg-gray-800/50 backdrop-blur-[26px] shadow-[0_16px_36px_rgba(0,0,0,0.22),0_48px_96px_rgba(0,0,0,0.18)] transition-shadow {isActive ? 'shadow-[0_20px_44px_rgba(0,0,0,0.3),0_56px_120px_rgba(0,0,0,0.24)]! ring-1 ring-black/5 dark:ring-white/10' : ''} {window.fullscreen ? 'inset-0! w-full! h-full! transform-none! rounded-none!' : ''}"
   data-window={window.app_id}
   aria-label={window.title}
   tabindex="-1"
@@ -177,7 +192,7 @@
   ])}
 >
   <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <header class="window-drag-handle grid grid-cols-[auto_1fr_auto] items-center gap-4 px-4 pt-[0.9rem] pb-[0.7rem] bg-linear-to-b from-white/90 to-white/60 dark:from-gray-700/90 dark:to-gray-800/70 border-b border-black/10 dark:border-white/10" ondblclick={handleTitleBarDblClick}>
+  <header class="window-drag-handle grid grid-cols-[auto_1fr_auto] items-center gap-4 px-4 pt-[0.9rem] pb-[0.7rem] bg-linear-to-b from-white/90 to-white/60 dark:from-gray-700/90 dark:to-gray-800/70 border-b border-black/10 dark:border-white/10" ondblclick={handleTitleBarDblClick} oncontextmenu={handleContextMenu}>
     <TrafficLights {window} />
     <div class="grid justify-items-center text-center gap-[0.08rem]">
       <strong class="text-[0.9rem] font-semibold text-gray-900 dark:text-gray-100">{windowTitle}</strong>
@@ -188,7 +203,7 @@
     <div class="w-8"></div>
   </header>
 
-  <div class="min-h-0 bg-gradient-to-b from-white/75 to-white/90 dark:from-gray-800/95 dark:to-gray-900/95 {isDragging || isResizing ? 'pointer-events-none' : ''}">
+  <div class="min-h-0 bg-linear-to-b from-white/75 to-white/90 dark:from-gray-800/95 dark:to-gray-900/95 {isDragging || isResizing ? 'pointer-events-none' : ''}">
     <AppNexus {window} />
   </div>
 
@@ -202,5 +217,9 @@
     <div class="absolute z-20 cursor-nwse-resize -top-[3px] left-[100px] w-[14px] h-[14px]" onpointerdown={(e: PointerEvent) => startResize(e, 'nw')}></div>
     <div class="absolute z-20 cursor-nwse-resize -bottom-[3px] -right-[3px] w-[14px] h-[14px]" onpointerdown={(e: PointerEvent) => startResize(e, 'se')}></div>
     <div class="absolute z-20 cursor-nesw-resize -bottom-[3px] -left-[3px] w-[14px] h-[14px]" onpointerdown={(e: PointerEvent) => startResize(e, 'sw')}></div>
+  {/if}
+
+  {#if windowCtx}
+    <ContextMenu x={windowCtx.x} y={windowCtx.y} items={windowMenuItems} onclose={() => (windowCtx = null)} />
   {/if}
 </section>

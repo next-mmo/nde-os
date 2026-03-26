@@ -3,6 +3,7 @@
   import FileExplorer from './FileExplorer.svelte';
   import SourceControl from './SourceControl.svelte';
   import CodeEditor from './CodeEditor.svelte';
+  import TerminalPanel from './TerminalPanel.svelte';
 
   let { activeFilePath = $bindable(null), fileContent = $bindable("") } = $props<{
     activeFilePath?: string | null;
@@ -10,6 +11,9 @@
   }>();
 
   let activeSidebar = $state<"explorer" | "scm">("explorer");
+  let showTerminal = $state(false);
+  let terminalHeight = $state(250);
+  let isDraggingTerminal = $state(false);
 
   let activeFileName = $state<string>("");
   let isSaving = $state(false);
@@ -66,7 +70,16 @@
   }
 </script>
 
-<svelte:window onkeydown={handleKeyDown} />
+<svelte:window 
+  onkeydown={handleKeyDown} 
+  onmouseup={() => isDraggingTerminal = false} 
+  onmousemove={(e) => {
+    if (isDraggingTerminal) {
+      const newHeight = terminalHeight - e.movementY;
+      terminalHeight = Math.max(100, Math.min(newHeight, window.innerHeight * 0.8));
+    }
+  }} 
+/>
 
 <div class="absolute inset-0 flex h-full overflow-hidden text-left bg-black">
   <!-- Activity Bar -->
@@ -88,6 +101,16 @@
       title="Source Control"
     >
       <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2"></path></svg>
+    </div>
+    <div class="flex-1"></div>
+    <!-- svelte-ignore a11y_click_events_have_key_events -->
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <div 
+      class="w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer transition-all {showTerminal ? 'bg-indigo-500/20 text-indigo-400' : 'text-white/40 hover:text-white'}"
+      onclick={() => showTerminal = !showTerminal}
+      title="Toggle Terminal"
+    >
+      <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
     </div>
   </div>
 
@@ -160,5 +183,35 @@
         </div>
       </div>
     {/if}
+
+    {#if showTerminal}
+      <!-- Resizer handle -->
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <div 
+        class="h-1 bg-black cursor-row-resize hover:bg-indigo-500/50 transition-colors z-50 group"
+        onmousedown={() => isDraggingTerminal = true}
+      >
+        <div class="h-0.5 max-w-16 mx-auto bg-white/10 group-hover:bg-indigo-400 mt-px rounded-full"></div>
+      </div>
+      <!-- Terminal Panel -->
+      <div 
+        class="bg-[#1e1e1e] flex flex-col shrink-0 overflow-hidden" 
+        style="height: {terminalHeight}px;"
+      >
+        <div class="flex items-center justify-between px-4 py-1.5 border-b border-black/50 text-[11px] uppercase tracking-wider text-white/50 bg-[#252526]">
+          <span>Terminal</span>
+          <button 
+            onclick={() => showTerminal = false}
+            class="hover:text-white hover:bg-white/10 rounded p-0.5 transition-colors"
+          >
+            ✕
+          </button>
+        </div>
+        <div class="flex-1 relative">
+          <TerminalPanel />
+        </div>
+      </div>
+    {/if}
   </div>
 </div>
+

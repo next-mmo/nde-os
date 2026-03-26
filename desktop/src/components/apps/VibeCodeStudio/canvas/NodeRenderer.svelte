@@ -8,12 +8,13 @@
   interface Props {
     node: FNode;
     selectedNodeId?: string | null;
+    zoom?: number;
     onSelectNode?: (nodeId: string | null) => void;
     onUpdateNodePosition?: (id: string, x: number, y: number) => void;
     onUpdateNodeSize?: (id: string, w: number, h: number) => void;
   }
 
-  let { node, selectedNodeId, onSelectNode, onUpdateNodePosition, onUpdateNodeSize }: Props = $props();
+  let { node, selectedNodeId, zoom = 1, onSelectNode, onUpdateNodePosition, onUpdateNodeSize }: Props = $props();
 
   const isSelected = $derived(node.id === selectedNodeId);
 
@@ -55,8 +56,8 @@
 
   function handlePointerMove(e: PointerEvent) {
     if (isDragging && onUpdateNodePosition) {
-      const dx = e.clientX - dragStartX;
-      const dy = e.clientY - dragStartY;
+      const dx = (e.clientX - dragStartX) / zoom;
+      const dy = (e.clientY - dragStartY) / zoom;
       onUpdateNodePosition(node.id, initialNodeX + dx, initialNodeY + dy);
     }
   }
@@ -102,6 +103,7 @@
         <NodeRenderer 
           node={child} 
           {selectedNodeId} 
+          {zoom}
           {onSelectNode} 
           {onUpdateNodePosition} 
           {onUpdateNodeSize} 

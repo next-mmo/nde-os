@@ -1,6 +1,6 @@
 # Vibe Code Studio — OpenCode + Monaco IDE Integration
 
-- **Status:** 🟡 `yolo mode`
+- **Status:** 🟢 `done by AI`
 
 - **Feature:** Integrate Monaco Editor and OpenCode server into Vibe Code Studio for a fully-featured, agent-powered IDE.
 - **Purpose:** Evolve Vibe Code Studio from a playground into a powerful rudimentary IDE (similar to VS Code) focused on agent features. Implements real-time file editing using Monaco, full file browser, file tree navigation, file saving, and built-in Git support (diffs, typical daily git operations). Configured to work seamlessly with the existing local GGUF provider for powerful, local, open-source AI assistance.
@@ -103,11 +103,11 @@
   - [x] 5.3 Ensure styling matches the sleek macOS/Ventura aesthetics using Tailwind + shadcn-svelte.
   - [x] 5.4 Write E2E/Playwright tests for file opening, editing, and saving.
 
-- [ ] **6. Integrated Terminal**
-  - [ ] 6.1 Create raw PTY backend in Rust (e.g. using `portable-pty` or a Tauri plugin) to spawn a sandboxed shell (`cmd.exe` or `sh`).
-  - [ ] 6.2 Expose Tauri commands for terminal lifecycle: `spawn_pty`, `write_pty`, and emit `pty_read` events.
-  - [ ] 6.3 Integrate `xterm.js` into a new `TerminalPanel.svelte` component that binds to the Tauri IPC streams.
-  - [ ] 6.4 Add a resizable/collapsible bottom panel to `IDE.svelte` to host the Terminal.
+- [x] **6. Integrated Terminal**
+  - [x] 6.1 Create raw PTY backend in Rust (e.g. using `portable-pty` or a Tauri plugin) to spawn a sandboxed shell (`cmd.exe` or `sh`).
+  - [x] 6.2 Expose Tauri commands for terminal lifecycle: `spawn_pty`, `write_pty`, and emit `pty_read` events.
+  - [x] 6.3 Integrate `xterm.js` into a new `TerminalPanel.svelte` component that binds to the Tauri IPC streams.
+  - [x] 6.4 Add a resizable/collapsible bottom panel to `IDE.svelte` to host the Terminal.
 
 ---
 

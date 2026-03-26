@@ -29,6 +29,13 @@
     { id: "code-editor", label: "Code Editor" },
   ];
 
+  type SpecialIcon = { id: string; label: string; icon: string; locked_pos?: { x: number; y: number } };
+  
+  const specialIcons: SpecialIcon[] = [
+    { id: "trash", label: "Trash", icon: "🗑️" },
+    { id: "my-files", label: "My Files", icon: "📁" },
+  ];
+
   const visibleShortcuts = $derived(
     allShortcuts.filter((s) => !desktop.hidden_icons.has(s.id)),
   );
@@ -105,23 +112,33 @@
   }
 
   /* ---- Icon right-click context menu ---- */
-  let iconCtx = $state<{ x: number; y: number; id: StaticAppID } | null>(null);
+  let iconCtx = $state<{ x: number; y: number; id: string; isStaticApp: boolean } | null>(null);
 
-  function handleIconContextMenu(e: MouseEvent, id: StaticAppID) {
+  function handleIconContextMenu(e: MouseEvent, id: string, isStaticApp: boolean = true) {
     e.preventDefault();
     e.stopPropagation();
     selectIcon(id);
-    iconCtx = { x: e.clientX, y: e.clientY, id };
+    iconCtx = { x: e.clientX, y: e.clientY, id, isStaticApp };
   }
 
   const iconMenuItems = $derived<ContextMenuItem[]>(
     iconCtx
-      ? [
-          { kind: "action", icon: "📂", label: "Open", action: () => { openStaticApp(iconCtx!.id); iconCtx = null; } },
-          { kind: "action", icon: "ℹ️", label: "Get Info", action: () => { iconCtx = null; }, disabled: true },
-          { kind: "divider" },
-          { kind: "action", icon: "🗑️", label: "Remove from Desktop", action: () => { hideDesktopIcon(iconCtx!.id); iconCtx = null; } },
-        ]
+      ? iconCtx.id === 'trash'
+        ? [
+            { kind: "action", icon: "📂", label: "Open Trash", action: () => { iconCtx = null; } },
+            { kind: "divider" },
+            { kind: "action", icon: "💥", label: "Empty Trash", action: () => { iconCtx = null; } }
+          ]
+        : iconCtx.isStaticApp 
+          ? [
+              { kind: "action", icon: "📂", label: "Open", action: () => { openStaticApp(iconCtx!.id as StaticAppID); iconCtx = null; } },
+              { kind: "action", icon: "ℹ️", label: "Get Info", action: () => { iconCtx = null; }, disabled: true },
+              { kind: "divider" },
+              { kind: "action", icon: "🗑️", label: "Remove from Desktop", action: () => { hideDesktopIcon(iconCtx!.id); iconCtx = null; } },
+            ]
+          : [
+              { kind: "action", icon: "📂", label: "Open", action: () => { iconCtx = null; } },
+            ]
       : [],
   );
 </script>
@@ -166,6 +183,30 @@
           }
         }}
       />
+      <span class="text-[0.68rem] font-medium text-white text-center leading-tight line-clamp-2 w-full drop-shadow-[0_1px_2px_rgba(0,0,0,0.6)] pointer-events-none">
+        {shortcut.label}
+      </span>
+    </button>
+  {/each}
+
+  {#each specialIcons as shortcut, ix (shortcut.id)}
+    {@const pos = dragging?.id === shortcut.id && dragging.moved ? dragPos : getIconPos(shortcut.id, 100 + ix)}
+    {@const isSelected = desktop.icon_selection.has(shortcut.id)}
+    {@const isDragging = dragging?.id === shortcut.id && dragging.moved}
+    <button
+      type="button"
+      class="absolute flex flex-col items-center gap-1 p-2 rounded-xl cursor-default select-none transition-shadow duration-100 bg-transparent border-none appearance-none outline-none focus-visible:ring-2 focus-visible:ring-white/50
+        {isSelected ? 'bg-white/20 dark:bg-white/10 ring-1 ring-white/30 shadow-sm' : 'hover:bg-white/10 dark:hover:bg-white/5'}
+        {isDragging ? 'opacity-80 scale-105 shadow-2xl' : ''}"
+      style="left: {pos.x}px; top: {pos.y}px; width: {ICON_W}px; {isDragging ? 'z-index: 100; transition: none;' : ''}"
+      onpointerdown={(e) => onPointerDown(e, shortcut.id, 100 + ix)}
+      onclick={(e) => handleClick(e, shortcut.id as any)}
+      ondblclick={(e) => { e.stopPropagation(); selectIcon(null); }}
+      oncontextmenu={(e) => handleIconContextMenu(e, shortcut.id, false)}
+    >
+      <div class="w-14 h-14 rounded-2xl bg-white/10 backdrop-blur-sm border border-white/20 grid place-items-center text-3xl shadow-lg pointer-events-none drop-shadow-md">
+        {shortcut.icon}
+      </div>
       <span class="text-[0.68rem] font-medium text-white text-center leading-tight line-clamp-2 w-full drop-shadow-[0_1px_2px_rgba(0,0,0,0.6)] pointer-events-none">
         {shortcut.label}
       </span>

@@ -46,6 +46,7 @@ pub fn run() {
         })
         .manage(app_state)
         .manage(shield_launcher)
+        .manage(commands::pty::PtyState::new())
         .invoke_handler(tauri::generate_handler![
             // system
             commands::system::health_check,
@@ -106,6 +107,9 @@ pub fn run() {
             commands::git::git_add,
             commands::git::git_commit,
             commands::git::git_discard,
+            // pty
+            commands::pty::spawn_pty,
+            commands::pty::write_pty,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

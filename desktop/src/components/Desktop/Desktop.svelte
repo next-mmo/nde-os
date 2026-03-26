@@ -11,6 +11,8 @@
   import FloatingButton from "🍎/components/Desktop/FloatingButton.svelte";
   import ContextMenu, { type ContextMenuItem } from "🍎/components/Desktop/ContextMenu.svelte";
   import LockScreen from "🍎/components/Desktop/LockScreen.svelte";
+  import Spotlight from "🍎/components/Desktop/Spotlight.svelte";
+  import NotificationCenter from "🍎/components/Desktop/NotificationCenter.svelte";
   import { refreshAll, refreshResourceUsage } from "$lib/stores/state";
   import {
     bootDesktop,
@@ -20,6 +22,7 @@
     getSessionById,
     toggleTheme,
     toggleLaunchpad,
+    toggleSpotlight,
     toggleDockAutoHide,
     resetIconPositions,
     selectIcon,
@@ -64,6 +67,10 @@
     document.body.classList.toggle("dark", desktop.theme === "dark");
   });
 
+  $effect(() => {
+    document.documentElement.style.setProperty("--system-wallpaper", desktop.wallpaper);
+  });
+
   /* ---- Desktop right-click context menu ---- */
   let desktopCtx = $state<{ x: number; y: number } | null>(null);
 
@@ -83,7 +90,16 @@
     { kind: "divider" },
     { kind: "action", icon: "🚀", label: "Open Launchpad", action: () => toggleLaunchpad(true) },
   ];
+
+  function handleWindowKeydown(e: KeyboardEvent) {
+    if ((e.metaKey || e.ctrlKey) && e.key === " ") {
+      e.preventDefault();
+      toggleSpotlight();
+    }
+  }
 </script>
+
+<svelte:window onkeydown={handleWindowKeydown} />
 
 <QueryClientProvider client={queryClient}>
   <!-- Collapsed mode: only mounted when collapsed (onMount triggers Tauri resize) -->
@@ -210,6 +226,14 @@
 
     {#if desktop.is_locked}
       <LockScreen />
+    {/if}
+
+    {#if desktop.spotlight_open && !desktop.is_locked}
+      <Spotlight />
+    {/if}
+
+    {#if desktop.notification_center_open && !desktop.is_locked}
+      <NotificationCenter />
     {/if}
   </div>
 </QueryClientProvider>

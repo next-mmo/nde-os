@@ -124,6 +124,7 @@
         <NodeRenderer 
           {node} 
           {selectedNodeId}
+          {zoom}
           {onSelectNode}
           {onUpdateNodePosition}
           {onUpdateNodeSize}

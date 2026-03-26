@@ -14,10 +14,14 @@ pub struct AgentTask {
 #[tauri::command]
 pub async fn get_agent_tasks() -> Result<Vec<AgentTask>, String> {
     let mut tasks = Vec::new();
-    let tasks_dir = std::env::current_dir()
-        .map_err(|e| e.to_string())?
-        .join(".agents")
-        .join("tasks");
+    let current_dir = std::env::current_dir().map_err(|e| e.to_string())?;
+    let base_dir = if current_dir.ends_with("desktop") {
+        current_dir.parent().unwrap().to_path_buf()
+    } else {
+        current_dir
+    };
+    
+    let tasks_dir = base_dir.join(".agents").join("tasks");
 
     if !tasks_dir.exists() {
         return Ok(tasks);
@@ -65,10 +69,14 @@ pub async fn get_agent_tasks() -> Result<Vec<AgentTask>, String> {
 
 #[tauri::command]
 pub async fn update_agent_task_status(app: AppHandle, filename: String, new_status: String) -> Result<(), String> {
-    let tasks_dir = std::env::current_dir()
-        .map_err(|e| e.to_string())?
-        .join(".agents")
-        .join("tasks");
+    let current_dir = std::env::current_dir().map_err(|e| e.to_string())?;
+    let base_dir = if current_dir.ends_with("desktop") {
+        current_dir.parent().unwrap().to_path_buf()
+    } else {
+        current_dir
+    };
+    
+    let tasks_dir = base_dir.join(".agents").join("tasks");
         
     let file_path = tasks_dir.join(&filename);
     

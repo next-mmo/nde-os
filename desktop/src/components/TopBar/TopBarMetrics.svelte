@@ -1,7 +1,7 @@
 <svelte:options runes={true} />
 
 <script lang="ts">
-  import { resourceUsage, systemInfo, healthStatus, llmActiveModel, llmProviderCount } from "$lib/stores/state";
+  import { resourceUsage, systemInfo, healthStatus, llmActiveModel, llmProviderCount, runningCount } from "$lib/stores/state";
   import { click_outside, elevation } from "🍎/actions";
   import { desktop, openStaticApp } from "🍎/state/desktop.svelte";
   import type { ResourceUsage } from "$lib/api/types";
@@ -71,6 +71,12 @@
     <span class="text-[0.66rem] sm:text-[0.72rem] font-medium text-black dark:text-white whitespace-nowrap tracking-[0.01em]">{memoryLabel}</span>
     <span class="text-[0.66rem] sm:text-[0.72rem] font-medium text-black dark:text-white whitespace-nowrap tracking-[0.01em]">{diskLabel}</span>
     <span class="text-[0.66rem] sm:text-[0.72rem] font-medium text-black dark:text-white whitespace-nowrap tracking-[0.01em]">{gpuLabel}</span>
+    {#if $runningCount > 0}
+      <span class="text-[0.66rem] sm:text-[0.72rem] font-medium text-blue-500 whitespace-nowrap tracking-[0.01em] ml-1 flex items-center gap-[0.15rem]">
+        <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+        {$runningCount}
+      </span>
+    {/if}
   </div>
 
   {#if expanded}

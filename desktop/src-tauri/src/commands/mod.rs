@@ -9,3 +9,4 @@ pub mod shield;
 pub mod system;
 pub mod screenshot;
 pub mod git;
+pub mod pty;

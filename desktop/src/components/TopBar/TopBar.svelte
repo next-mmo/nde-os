@@ -5,7 +5,7 @@
   import ActionCenter from "🍎/components/TopBar/ActionCenter.svelte";
   import TopBarMetrics from "./TopBarMetrics.svelte";
   import TopBarTime from "🍎/components/TopBar/TopBarTime.svelte";
-  import { collapseDesktop } from "🍎/state/desktop.svelte";
+  import { collapseDesktop, toggleNotificationCenter } from "🍎/state/desktop.svelte";
 
   let isTauri = $state(false);
   let tauriWindow: any = null;
@@ -77,7 +77,7 @@
     <ActionCenter />
     <TopBarMetrics />
 
-    <button class="font-medium text-[0.78rem] tracking-wide relative h-full px-2.5 text-black dark:text-white whitespace-nowrap rounded hover:bg-black/10 dark:hover:bg-white/10" aria-label="Current time">
+    <button class="font-medium text-[0.78rem] tracking-wide relative h-full px-2.5 text-black dark:text-white whitespace-nowrap rounded hover:bg-black/10 dark:hover:bg-white/10" aria-label="Current time" onclick={() => toggleNotificationCenter()}>
       <TopBarTime />
     </button>
   </div>

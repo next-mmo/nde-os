@@ -24,3 +24,4 @@ tauri-plugin-shell = "2"
 open = "5"
 tauri-plugin-dialog = "2"
 tokio = { version = "1", features = ["sync"] }
+portable-pty = "0.9.0"
