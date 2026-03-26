@@ -75,6 +75,7 @@ fn route(
         (Method::Post, "/api/agent/chat/stream") => {
             return stream_handler::handle_stream_chat(req, rt, agent, &llm_manager, Some(agent_manager));
         }
+        (Method::Post, "/api/agent/autocomplete") => return agent_handler::agent_autocomplete(req, &llm_manager, rt),
         // Task-based agent API (Phase 3)
         (Method::Post, "/api/agent/tasks") => {
             return stream_handler::spawn_task(req, rt, agent_manager);

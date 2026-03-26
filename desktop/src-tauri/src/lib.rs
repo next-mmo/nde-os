@@ -73,6 +73,8 @@ pub fn run() {
             commands::filesystem::create_folder,
             commands::filesystem::delete_entry,
             commands::filesystem::rename_entry,
+            commands::filesystem::read_file_content,
+            commands::filesystem::write_file_content,
             // shield browser
             commands::shield::list_shield_profiles,
             commands::shield::get_shield_profile,
@@ -95,6 +97,15 @@ pub fn run() {
             commands::figma_json::get_figma_sample,
             // screenshot
             commands::screenshot::capture_screenshot,
+            // agent tasks
+            commands::agent_tasks::get_agent_tasks,
+            commands::agent_tasks::update_agent_task_status,
+            // git
+            commands::git::git_status,
+            commands::git::git_show_head,
+            commands::git::git_add,
+            commands::git::git_commit,
+            commands::git::git_discard,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

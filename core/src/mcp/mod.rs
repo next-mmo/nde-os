@@ -5,4 +5,5 @@
 
 pub mod builtin;
 pub mod client;
+pub mod kanban;
 pub mod server;

@@ -10,6 +10,7 @@
   import TopBar from "🍎/components/TopBar/TopBar.svelte";
   import FloatingButton from "🍎/components/Desktop/FloatingButton.svelte";
   import ContextMenu, { type ContextMenuItem } from "🍎/components/Desktop/ContextMenu.svelte";
+  import LockScreen from "🍎/components/Desktop/LockScreen.svelte";
   import { refreshAll, refreshResourceUsage } from "$lib/stores/state";
   import {
     bootDesktop,
@@ -205,6 +206,10 @@
     <!-- Desktop right-click context menu -->
     {#if desktopCtx}
       <ContextMenu x={desktopCtx.x} y={desktopCtx.y} items={desktopMenuItems} onclose={() => (desktopCtx = null)} />
+    {/if}
+
+    {#if desktop.is_locked}
+      <LockScreen />
     {/if}
   </div>
 </QueryClientProvider>

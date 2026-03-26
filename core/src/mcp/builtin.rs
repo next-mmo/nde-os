@@ -308,6 +308,8 @@ pub fn create_default_server() -> McpServer {
         }),
     );
 
+    crate::mcp::kanban::register(&mut server);
+
     server
 }
 

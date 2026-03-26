@@ -173,6 +173,14 @@ function getSavedCollapsed(): boolean {
   return true;
 }
 
+function getSavedIsLocked(): boolean {
+  try {
+    const saved = localStorage.getItem("ai-launcher:is-locked");
+    if (saved === "true" || saved === "false") return saved === "true";
+  } catch {}
+  return false;
+}
+
 const createWindow = (
   app_id: WindowAppID | "browser" | "chat",
   title: string,
@@ -218,7 +226,23 @@ export const desktop = $state({
   icon_positions: loadIconPositions() as Record<string, DesktopIconPosition>,
   icon_selection: new Set<string>(),
   hidden_icons: new Set<string>(loadHiddenIcons()),
+  is_locked: getSavedIsLocked(),
 });
+
+export function lockScreen() {
+  desktop.is_locked = true;
+  desktop.launchpad_open = false;
+  try {
+    localStorage.setItem("ai-launcher:is-locked", "true");
+  } catch {}
+}
+
+export function unlockScreen() {
+  desktop.is_locked = false;
+  try {
+    localStorage.setItem("ai-launcher:is-locked", "false");
+  } catch {}
+}
 
 export function toggleDockAutoHide() {
   desktop.dock_auto_hide = !desktop.dock_auto_hide;

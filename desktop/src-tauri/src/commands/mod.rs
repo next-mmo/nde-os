@@ -1,4 +1,5 @@
 pub mod apps;
+pub mod agent_tasks;
 pub mod catalog;
 pub mod figma_json;
 pub mod filesystem;
@@ -7,3 +8,4 @@ pub mod sandbox;
 pub mod shield;
 pub mod system;
 pub mod screenshot;
+pub mod git;

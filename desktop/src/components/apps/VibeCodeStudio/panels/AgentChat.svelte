@@ -4,9 +4,12 @@
   interface Props {
     document: FDocument;
     onApplyPatch?: (patch: any) => void;
+    chatMode?: "figma" | "scrum" | "dev";
+    activeFilePath?: string | null;
+    fileContent?: string;
   }
 
-  let { document, onApplyPatch }: Props = $props();
+  let { document, onApplyPatch, chatMode = "figma", activeFilePath = null, fileContent = "" }: Props = $props();
 
   let prompt = $state("");
   let isGenerating = $state(false);
@@ -31,7 +34,7 @@
     requestAnimationFrame(() => chatBottom?.scrollIntoView({ behavior: "smooth" }));
   }
 
-  const systemPrompt = `You are the NDE Vibe Studio Agent. You output ONLY valid JSON describing changes to a Figma-like document. 
+  const figmaPrompt = `You are the NDE Vibe Studio Agent. You output ONLY valid JSON describing changes to a Figma-like document. 
 The canvas document uses the following schema:
 - type: FRAME | TEXT | RECTANGLE
 - x, y, width, height: numbers
@@ -43,6 +46,71 @@ Always wrap your JSON in a markdown codeblock. If creating new nodes, provide th
     { "id": "uuid1", "type": "RECTANGLE", "x": 100, "y": 100, "width": 200, "height": 50, "fills": [{"type":"SOLID","color":{"r":0.2,"g":0.5,"b":0.9,"a":1}}] }
   ]
 }`;
+
+  const scrumPrompt = `You are the Scrum Master Agent. You strictly manage project tasks, organize tickets, and answer questions about the development process. You do not generate UI JSON. Never output JSON payloads.`;
+
+  let devPrompt = $derived(`You are the OpenCode IDE Agent. You assist the user with writing and understanding code. You output explanations and code fragments. When providing code blocks, ensure they are properly formatted with the appropriate language.
+${activeFilePath ? `\nActive File: ${activeFilePath}\nFile Content:\n\`\`\`\n${fileContent}\n\`\`\`` : ''}`);
+
+  let activeSystemPrompt = $derived(
+    chatMode === "figma" ? figmaPrompt : 
+    chatMode === "scrum" ? scrumPrompt : devPrompt
+  );
+
+  // Autocomplete state
+  let showAutocomplete = $state(false);
+  let autocompletePrefix = $state("");
+  let autocompleteIndex = $state(0);
+  let mentionType = $state<"@" | "/">("@");
+  let textareaRef: HTMLTextAreaElement | null = null;
+  
+  const skillsList = [
+    { label: "/tickets-writer", description: "Enforces 4-phase methodology" },
+    { label: "/figma-design-sync", description: "Design UI sync" },
+    { label: "/research", description: "Web search" },
+    { label: "/setup", description: "Configure codebase" }
+  ];
+  
+  const mcpList = [
+    { label: "@kanban", description: "Vibe Studio Kanban Tool" },
+    { label: "@agent-native", description: "Native tools" }
+  ];
+
+  let filteredSuggestions = $derived(
+    mentionType === "/" 
+      ? skillsList.filter(s => s.label.toLowerCase().includes(autocompletePrefix.toLowerCase()))
+      : mcpList.filter(s => s.label.toLowerCase().includes(autocompletePrefix.toLowerCase()))
+  );
+
+  function handleInput(e: Event) {
+    const val = (e.target as HTMLTextAreaElement).value;
+    const cursor = (e.target as HTMLTextAreaElement).selectionStart;
+    
+    const textBeforeCursor = val.slice(0, cursor);
+    const match = textBeforeCursor.match(/([@/])([a-zA-Z0-9-]*)$/);
+    
+    if (match) {
+      mentionType = match[1] as "@" | "/";
+      autocompletePrefix = match[2];
+      showAutocomplete = true;
+      autocompleteIndex = 0;
+    } else {
+      showAutocomplete = false;
+    }
+  }
+
+  function selectSuggestion(suggestion: any) {
+    if (!textareaRef) return;
+    const val = prompt;
+    const cursor = textareaRef.selectionStart;
+    const textBeforeCursor = val.slice(0, cursor);
+    const textAfterCursor = val.slice(cursor);
+    
+    const replaced = textBeforeCursor.replace(/[@/][a-zA-Z0-9-]*$/, suggestion.label + " ");
+    prompt = replaced + textAfterCursor;
+    showAutocomplete = false;
+    setTimeout(() => textareaRef?.focus(), 0);
+  }
 
   async function send() {
     if (!prompt.trim() || isGenerating) return;
@@ -60,7 +128,7 @@ Always wrap your JSON in a markdown codeblock. If creating new nodes, provide th
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          message: systemPrompt + "\n\nUser request: " + text,
+          message: activeSystemPrompt + "\n\nUser request: " + text,
         }),
       });
 
@@ -120,6 +188,28 @@ Always wrap your JSON in a markdown codeblock. If creating new nodes, provide th
   }
 
   function handleKeydown(e: KeyboardEvent) {
+    if (showAutocomplete && filteredSuggestions.length > 0) {
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        autocompleteIndex = (autocompleteIndex + 1) % filteredSuggestions.length;
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        autocompleteIndex = (autocompleteIndex - 1 + filteredSuggestions.length) % filteredSuggestions.length;
+        return;
+      }
+      if (e.key === "Enter" || e.key === "Tab") {
+        e.preventDefault();
+        selectSuggestion(filteredSuggestions[autocompleteIndex]);
+        return;
+      }
+      if (e.key === "Escape") {
+        showAutocomplete = false;
+        return;
+      }
+    }
+
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       send();
@@ -162,12 +252,31 @@ Always wrap your JSON in a markdown codeblock. If creating new nodes, provide th
 
 <div class="p-3 border-t border-white/10 bg-black/40 shrink-0">
   <div class="relative flex gap-2">
+    <!-- Auto Complete Popup -->
+    {#if showAutocomplete && filteredSuggestions.length > 0}
+      <div class="absolute bottom-full left-0 mb-2 w-64 max-h-48 overflow-y-auto bg-neutral-900 border border-white/20 rounded-lg shadow-2xl z-50 p-1">
+        {#each filteredSuggestions as suggestion, i}
+          <button 
+            class="w-full text-left px-3 py-2 text-xs rounded hover:bg-white/10 {i === autocompleteIndex ? 'bg-indigo-500/20 text-white' : 'text-white/80'}"
+            onclick={() => selectSuggestion(suggestion)}
+          >
+            <div class="font-medium">{suggestion.label}</div>
+            {#if suggestion.description}
+               <div class="text-[10px] text-white/50">{suggestion.description}</div>
+            {/if}
+          </button>
+        {/each}
+      </div>
+    {/if}
+
     <textarea 
+      bind:this={textareaRef}
       bind:value={prompt}
       onkeydown={handleKeydown}
+      oninput={handleInput}
       disabled={isGenerating}
       rows="1"
-      placeholder="Ask AI to styling this... (Enter to send)" 
+      placeholder={chatMode === 'figma' ? "Ask AI to styling this... (Enter to send)" : chatMode === 'scrum' ? "Manage board tasks... (Type @ or / to search)" : "Ask about your code... (Enter to send)"}
       class="flex-1 bg-white/5 border border-white/10 rounded-lg py-2 pl-3 pr-10 text-sm text-white placeholder-white/30 focus:outline-none focus:ring-1 focus:ring-indigo-500/50 resize-none overflow-hidden"
     ></textarea>
     <button 

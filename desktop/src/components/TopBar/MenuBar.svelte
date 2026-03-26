@@ -3,7 +3,7 @@
 <script lang="ts">
   import { click_outside, elevation } from "🍎/actions";
   import { menubar_menus, setActiveMenu, clearActiveMenu, type MenuSection } from "🍎/state/menubar.svelte";
-  import { activeWindow, toggleLaunchpad, toggleTheme, desktop, selectLauncherSection, openStaticApp, openGenericBrowserWindow } from "🍎/state/desktop.svelte";
+  import { activeWindow, toggleLaunchpad, toggleTheme, desktop, selectLauncherSection, openStaticApp, openGenericBrowserWindow, lockScreen } from "🍎/state/desktop.svelte";
   import Menu from "./Menu.svelte";
 
   const title = $derived(activeWindow()?.title ?? "AI Launcher");
@@ -15,9 +15,16 @@
       "system-preferences": { title: "System Settings...", breakAfter: true, action: () => openStaticApp("settings") },
       "app-store": { title: "App Store...", action: () => openStaticApp("app-store"), breakAfter: true },
       "force-quit": { title: "Force Quit...", disabled: true, breakAfter: true },
-      "sleep": { title: "Sleep", disabled: true },
-      "restart": { title: "Restart...", disabled: true },
-      "shut-down": { title: "Shut Down...", disabled: true, breakAfter: true },
+      "sleep": { title: "Sleep", action: () => lockScreen() },
+      "restart": { title: "Restart...", action: () => window.location.reload() },
+      "shut-down": { title: "Shut Down...", breakAfter: true, action: async () => {
+        try {
+          const { getCurrentWindow } = await import("@tauri-apps/api/window");
+          await getCurrentWindow().close();
+        } catch (e) {
+          window.close();
+        }
+      } },
       "lock-screen": { title: "Lock Screen", disabled: true },
       "log-out": { title: "Log Out User...", disabled: true },
     },

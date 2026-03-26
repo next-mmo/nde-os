@@ -61,6 +61,18 @@ pub struct CreateConversationRequest {
     pub title: Option<String>,
 }
 
+#[derive(Deserialize)]
+pub struct AutocompleteRequest {
+    pub prefix: String,
+    pub suffix: String,
+    pub filename: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct AutocompleteResponse {
+    pub completion: String,
+}
+
 // ── Handlers ─────────────────────────────────────────────────────────────────
 
 pub fn sync_model_config(config: &mut AgentConfig, manager: &std::sync::Arc<Mutex<ai_launcher_core::llm::manager::LlmManager>>) {
@@ -181,4 +193,67 @@ pub fn agent_config(state: &Mutex<AgentState>, llm_manager: &std::sync::Arc<Mute
         "tools": config.enabled_tools,
         "workspace": config.workspace,
     }))
+}
+
+/// POST /api/agent/autocomplete — get code suggestions
+pub fn agent_autocomplete(
+    req: &mut Request,
+    llm_manager: &std::sync::Arc<Mutex<ai_launcher_core::llm::manager::LlmManager>>,
+    rt: &tokio::runtime::Runtime,
+) -> Response<Cursor<Vec<u8>>> {
+    let body = match crate::response::read_body(req) {
+        Some(b) => b,
+        None => return err(400, "Missing request body"),
+    };
+
+    let ac_req: AutocompleteRequest = match serde_json::from_str(&body) {
+        Ok(r) => r,
+        Err(e) => return err(400, &format!("Invalid JSON: {}", e)),
+    };
+
+    let prompt = format!(
+        "You are an expert AI code completion engine for an IDE called OpenCode.\n\n[PREFIX]\n{}\n[SUFFIX]\n{}\n\nProvide only the missing code that goes EXACTLY between [PREFIX] and [SUFFIX]. Do NOT wrap it in markdown backticks. Do NOT provide explanations. Just output the raw code snippet.",
+        ac_req.prefix, ac_req.suffix
+    );
+
+    let messages = vec![
+        ai_launcher_core::llm::Message::system("You are OpenCode autocomplete. Provide raw code ONLY."),
+        ai_launcher_core::llm::Message::user(&prompt),
+    ];
+
+    let provider_config = {
+        let m = llm_manager.lock().unwrap();
+        let active = m.active_name().to_string();
+        m.configs().iter().find(|c| c.name == active).cloned()
+    };
+
+    let response_text = rt.block_on(async {
+        if let Some(c) = provider_config {
+            let api_key = c.api_key.clone().or_else(|| {
+                c.api_key_env.as_ref().and_then(|env| std::env::var(env).ok())
+            });
+            match ai_launcher_core::llm::create_provider(
+                &c.provider_type,
+                &c.model,
+                c.base_url.as_deref(),
+                api_key.as_deref()
+            ) {
+                Ok(provider) => match provider.chat(&messages, &[]).await {
+                    Ok(resp) => Ok(resp.content.unwrap_or_default()),
+                    Err(e) => Err(format!("LLM completion failed: {}", e)),
+                },
+                Err(e) => Err(format!("LLM provider initialization failed: {}", e)),
+            }
+        } else {
+            Err("No active LLM provider configured".to_string())
+        }
+    });
+
+    match response_text {
+        Ok(text) => ok("Autocomplete successful", AutocompleteResponse {
+            // strip surrounding backticks if the LLM leaked them
+            completion: text.trim_start_matches("```").trim_start_matches("javascript").trim_start_matches("typescript").trim_start_matches("rust").trim_start_matches("svelte").trim_start_matches("css").trim_start_matches("html").trim_start_matches("\n").trim_end_matches("```").trim_end_matches("\n").to_string(),
+        }),
+        Err(e) => err(500, &e),
+    }
 }

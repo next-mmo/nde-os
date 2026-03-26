@@ -92,17 +92,42 @@ impl McpServer {
                     .and_then(|n| n.as_str())
                     .unwrap_or("");
 
-                // Will be connected to ToolRegistry in future
-                json!({
-                    "jsonrpc": "2.0",
-                    "id": req.id,
-                    "result": {
-                        "content": [{
-                            "type": "text",
-                            "text": format!("Tool '{}' execution pending — connect to ToolRegistry", tool_name)
-                        }]
+                if tool_name.starts_with("nde_kanban_") {
+                    let empty = json!({});
+                    let params = req.params.as_ref().unwrap_or(&empty);
+                    match crate::mcp::kanban::execute(tool_name, params) {
+                        Ok(result) => json!({
+                            "jsonrpc": "2.0",
+                            "id": req.id,
+                            "result": {
+                                "content": [{
+                                    "type": "text",
+                                    "text": result
+                                }]
+                            }
+                        }),
+                        Err(e) => json!({
+                            "jsonrpc": "2.0",
+                            "id": req.id,
+                            "error": {
+                                "code": -32603,
+                                "message": format!("Kanban tool error: {}", e)
+                            }
+                        })
                     }
-                })
+                } else {
+                    // Will be connected to ToolRegistry in future
+                    json!({
+                        "jsonrpc": "2.0",
+                        "id": req.id,
+                        "result": {
+                            "content": [{
+                                "type": "text",
+                                "text": format!("Tool '{}' execution pending — connect to ToolRegistry", tool_name)
+                            }]
+                        }
+                    })
+                }
             }
 
             "notifications/initialized" => {

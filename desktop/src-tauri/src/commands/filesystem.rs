@@ -146,6 +146,36 @@ pub async fn create_folder(state: State<'_, AppState>, path: String) -> Result<(
     .map_err(|e| e.to_string())?
 }
 
+/// Read file contents. Path must be inside `base_dir`.
+#[tauri::command]
+pub async fn read_file_content(state: State<'_, AppState>, path: String) -> Result<String, String> {
+    let base_dir = state.base_dir.clone();
+
+    tauri::async_runtime::spawn_blocking(move || {
+        let sandbox = create_explorer_sandbox(&base_dir)?;
+        let resolved = sandbox_resolve(&sandbox, &path)?;
+        std::fs::read_to_string(&resolved)
+            .map_err(|e| format!("Cannot read file {}: {e}", resolved.display()))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Write file contents. Path must be inside `base_dir`.
+#[tauri::command]
+pub async fn write_file_content(state: State<'_, AppState>, path: String, content: String) -> Result<(), String> {
+    let base_dir = state.base_dir.clone();
+
+    tauri::async_runtime::spawn_blocking(move || {
+        let sandbox = create_explorer_sandbox(&base_dir)?;
+        let resolved = sandbox_resolve(&sandbox, &path)?;
+        std::fs::write(&resolved, content)
+            .map_err(|e| format!("Cannot write file {}: {e}", resolved.display()))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 /// Delete a file or directory. Jailed to `base_dir` via core `Sandbox::resolve()`.
 #[tauri::command]
 pub async fn delete_entry(state: State<'_, AppState>, path: String) -> Result<(), String> {
