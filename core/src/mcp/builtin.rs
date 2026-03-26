@@ -319,7 +319,7 @@ pub fn builtin_server_info() -> Vec<serde_json::Value> {
             "description": "NDE-OS built-in sandboxed tools — filesystem, shell, code analysis, web browsing, git, memory, knowledge graph, OpenViking context database, and system management",
             "transport": "stdio",
             "status": "running",
-            "tools_count": 23,
+            "tools_count": 22,
             "version": "0.2.0"
         }),
     ]
@@ -365,7 +365,7 @@ mod tests {
         let resp = server.handle_request(&serde_json::to_string(&req).unwrap()).unwrap();
         let parsed: serde_json::Value = serde_json::from_str(&resp).unwrap();
         let tools = parsed["result"]["tools"].as_array().unwrap();
-        assert!(tools.len() >= 23, "Expected 23+ tools, got {}", tools.len());
+        assert!(tools.len() >= 22, "Expected 22+ tools, got {}", tools.len());
     }
 
     #[test]
@@ -378,6 +378,6 @@ mod tests {
     #[test]
     fn test_builtin_tool_definitions() {
         let tools = builtin_tool_definitions();
-        assert!(tools.len() >= 23);
+        assert!(tools.len() >= 22);
     }
 }

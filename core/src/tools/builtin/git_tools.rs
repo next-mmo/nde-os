@@ -63,7 +63,7 @@ impl Tool for GitTool {
             return Err(anyhow::anyhow!("Hard reset is not allowed for safety"));
         }
 
-        let workspace = sandbox.resolve_path(".")?;
+        let workspace = sandbox.resolve(std::path::Path::new("."))?;
 
         // Build git command
         let mut cmd = Command::new("git");
