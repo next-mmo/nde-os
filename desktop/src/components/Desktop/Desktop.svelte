@@ -117,10 +117,8 @@
     </div>
   {/if}
 
-  <!-- Expanded mode: full desktop shell (always mounted, CSS-hidden when collapsed to preserve state) -->
   <div
-    class="w-full h-full relative overflow-hidden"
-    style:display={desktop.collapsed ? 'none' : 'block'}
+    class="relative overflow-hidden {desktop.collapsed ? 'absolute opacity-0 pointer-events-none w-[1280px] h-[800px] -left-[10000px] -top-[10000px]' : 'w-full h-full'}"
     style:visibility={desktop.collapsed ? 'hidden' : 'visible'}
   >
     <!-- Right-edge collapse tab -->

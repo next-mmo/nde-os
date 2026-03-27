@@ -1,0 +1,39 @@
+
+Running 1 test using 1 worker
+
+  ✘  1 [chromium] › e2e\terminal.spec.ts:5:3 › Terminal App › terminal app opens from launchpad and renders xterm pty (30.1s)
+
+
+  1) [chromium] › e2e\terminal.spec.ts:5:3 › Terminal App › terminal app opens from launchpad and renders xterm pty 
+
+    [31mTest timeout of 30000ms exceeded.[39m
+
+    Error: [2mexpect([22m[31mlocator[39m[2m).[22mtoBeVisible[2m([22m[2m)[22m failed
+
+    Locator: getByRole('toolbar', { name: 'Dock' }).getByRole('button', { name: /launchpad/i })
+    Expected: visible
+    Error: element(s) not found
+
+    Call log:
+    [2m  - Expect "toBeVisible" with timeout 30000ms[22m
+    [2m  - waiting for getByRole('toolbar', { name: 'Dock' }).getByRole('button', { name: /launchpad/i })[22m
+
+
+       at helpers.ts:48
+
+      46 |
+      47 | export async function clickButton(locator: Locator) {
+    > 48 |   await expect(locator).toBeVisible({ timeout: 30000 });
+         |                         ^
+      49 |   await expect(locator).toBeEnabled({ timeout: 30000 });
+      50 |   await locator.evaluate((element: HTMLButtonElement) => element.click());
+      51 | }
+        at clickButton (C:\Users\dila\Downloads\ai-launcher-v0.2\ai-launcher\desktop\e2e\helpers.ts:48:25)
+        at C:\Users\dila\Downloads\ai-launcher-v0.2\ai-launcher\desktop\e2e\terminal.spec.ts:16:11
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\terminal-Terminal-App-term-84274-chpad-and-renders-xterm-pty-chromium\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  1 failed
+    [chromium] › e2e\terminal.spec.ts:5:3 › Terminal App › terminal app opens from launchpad and renders xterm pty 

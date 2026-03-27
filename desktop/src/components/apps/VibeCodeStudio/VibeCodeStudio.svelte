@@ -4,6 +4,7 @@
   import PropertiesPanel from "./panels/PropertiesPanel.svelte";
   import LayerTree from "./panels/LayerTree.svelte";
   import AgentChat from "./panels/AgentChat.svelte";
+  import V0Runner from "./canvas/V0Runner.svelte";
   import KanbanBoard from "./tabs/KanbanBoard.svelte";
   import IDE from "./ide/IDE.svelte";
   import { closeWindow } from "🍎/state/desktop.svelte";
@@ -43,6 +44,7 @@
 
   let activeFilePath = $state<string | null>(null);
   let fileContent = $state<string>("");
+  let generatedCode = $state<string>("");
 
   function updateNodePosition(id: string, x: number, y: number) {
     // Recursive search and update within the document tree
@@ -107,6 +109,15 @@
   }
 
   function applyChatPatch(patch: any) {
+    if (patch.code) {
+      generatedCode = patch.code;
+      if (!activeFilePath || activeFilePath.endsWith('.json') || activeFilePath.endsWith('.fj')) {
+        activeFilePath = 'C:\\Users\\dila\\Downloads\\ai-launcher-v0.2\\ai-launcher\\desktop\\ui.html'; // Default virtual file for IDE
+      }
+      fileContent = patch.code;
+      return;
+    }
+
     // Better handling of chat patches directly replacing nodes or appending them
     if (patch.op === "append" && Array.isArray(patch.nodes)) {
       if (selectedNodeId) {
@@ -184,6 +195,11 @@
             lastStr = fileContent;
           }
         } catch (e) {}
+      }
+    } else if (activeFilePath && (activeFilePath.endsWith('.html') || activeFilePath.endsWith('.svelte') || activeFilePath.endsWith('.tsx'))) {
+      if (fileContent !== lastStr) {
+        generatedCode = fileContent;
+        lastStr = fileContent;
       }
     }
   });
@@ -267,11 +283,15 @@
     <main class="flex-1 relative overflow-hidden bg-black/40">
       {#if activeTab === "preview"}
         <div class="absolute inset-0 flex">
-          <LayerTree 
-            {document} 
-            {selectedNodeId} 
-            onSelectNode={(id) => selectedNodeId = id} 
-          />
+          {#if generatedCode}
+            <!-- v0 Runner Previews actual HTML/Tailwind -->
+            <V0Runner code={generatedCode} />
+          {:else}
+            <LayerTree 
+              {document} 
+              {selectedNodeId} 
+              onSelectNode={(id) => selectedNodeId = id} 
+            />
           
           <!-- Interactive Canvas -->
           <div class="flex-1 relative">
@@ -285,14 +305,17 @@
             />
             
             <!-- Toolbar -->
+            {#if !generatedCode}
             <div class="absolute top-4 left-1/2 -translate-x-1/2 flex items-center gap-1.5 px-3 py-1.5 bg-black/60 border border-white/10 backdrop-blur-md rounded-full text-white/50 shadow-2xl z-50">
               <button class="w-8 h-8 rounded-full hover:bg-white/10 hover:text-white flex items-center justify-center transition-colors" onclick={() => createNode('FRAME')} title="Add Frame">◰</button>
               <button class="w-8 h-8 rounded-full hover:bg-white/10 hover:text-white flex items-center justify-center transition-colors" onclick={() => createNode('RECTANGLE')} title="Add Rectangle">▨</button>
               <button class="w-8 h-8 rounded-full hover:bg-white/10 hover:text-white flex items-center justify-center transition-colors font-serif font-bold" onclick={() => createNode('TEXT')} title="Add Text">T</button>
             </div>
+            {/if}
           </div>
 
           <PropertiesPanel {document} {selectedNodeId} />
+          {/if}
         </div>
       {:else if activeTab === "json"}
         <div class="absolute inset-0 p-4">
@@ -324,8 +347,13 @@
     <!-- Status Bar -->
     <footer class="h-8 border-t border-white/10 flex items-center justify-between px-4 text-xs text-white/40 bg-black/60 shrink-0">
       <div class="flex items-center gap-4">
-        <span>Nodes: {document.children.length}</span>
-        <span>Selected: {selectedNodeId ?? 'None'}</span>
+        {#if generatedCode}
+          <span class="text-emerald-400">v0 Runner Active</span>
+          <span>DOM Ready</span>
+        {:else}
+          <span>Nodes: {document.children.length}</span>
+          <span>Selected: {selectedNodeId ?? 'None'}</span>
+        {/if}
       </div>
       <div class="flex items-center gap-3">
         <button class="hover:text-white transition-colors" onclick={() => zoom = Math.max(0.1, zoom - 0.1)}>-</button>

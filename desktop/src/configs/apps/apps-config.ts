@@ -34,8 +34,8 @@ export const apps_config = {
   }),
   terminal: create_app_config({
     title: "Terminal",
-    width: 840,
-    height: 540,
+    width: 600,
+    height: 400,
   }),
   "code-editor": create_app_config({
     title: "Code Editor",

@@ -25,7 +25,7 @@
   let messages = $state<ChatMsg[]>([
     {
       role: "assistant",
-      content: "I'm your Vibe Studio agent. Tell me what UI to build, and I'll generate the Figma-like JSON nodes directly onto your canvas."
+      content: "I'm your Vibe Studio agent. Tell me what UI to build, and I'll generate the HTML/Tailwind code to render it live."
     }
   ]);
   
@@ -34,18 +34,10 @@
     requestAnimationFrame(() => chatBottom?.scrollIntoView({ behavior: "smooth" }));
   }
 
-  const figmaPrompt = `You are the NDE Vibe Studio Agent. You output ONLY valid JSON describing changes to a Figma-like document. 
-The canvas document uses the following schema:
-- type: FRAME | TEXT | RECTANGLE
-- x, y, width, height: numbers
-- fills: [{type: "SOLID", color: {r:1,g:0,b:0,a:1}}]
-Always wrap your JSON in a markdown codeblock. If creating new nodes, provide them as a JSON object, e.g.
-{
-  "op": "append",
-  "nodes": [
-    { "id": "uuid1", "type": "RECTANGLE", "x": 100, "y": 100, "width": 200, "height": 50, "fills": [{"type":"SOLID","color":{"r":0.2,"g":0.5,"b":0.9,"a":1}}] }
-  ]
-}`;
+  const figmaPrompt = `You are the NDE Vibe Studio Agent (v0-style). You output ONLY valid HTML code describing a UI component.
+You should use Tailwind CSS classes for styling. Do not use external CSS files.
+Include responsive design if applicable. Keep the UI modern, sleek, and beautiful (similar to shadcn/ui).
+Always wrap your final HTML in a markdown codeblock like \`\`\`html ... \`\`\`. Do not include explanations outside the codeblock, just the code.`;
 
   const scrumPrompt = `You are the Scrum Master Agent. You strictly manage project tasks, organize tickets, and answer questions about the development process. You do not generate UI JSON. Never output JSON payloads.`;
 
@@ -168,13 +160,10 @@ ${activeFilePath ? `\nActive File: ${activeFilePath}\nFile Content:\n\`\`\`\n${f
       
       // Attempt to parse final codeblock
       messages[idx].streaming = false;
-      const jsonMatch = fullContent.match(/```(?:json)?\s*([\s\S]*?)```/);
+      const jsonMatch = fullContent.match(/```(?:html|svelte|vue|jsx|tsx)?\s*([\s\S]*?)```/);
       if (jsonMatch && onApplyPatch) {
-        try {
-          const parsed = JSON.parse(jsonMatch[1]);
-          messages[idx].spec = parsed;
-          onApplyPatch(parsed);
-        } catch {}
+        messages[idx].spec = { code: jsonMatch[1] };
+        onApplyPatch({ code: jsonMatch[1] });
       }
       
     } catch (e: any) {
