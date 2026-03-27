@@ -27,6 +27,7 @@
     resetIconPositions,
     selectIcon,
     collapseDesktop,
+    selectLauncherSection,
   } from "🍎/state/desktop.svelte";
 
   const queryClient = new QueryClient({
@@ -81,14 +82,21 @@
   }
 
   const desktopMenuItems: ContextMenuItem[] = [
-    { kind: "action", icon: "🌗", label: "Toggle Dark Mode", action: () => toggleTheme(), shortcut: "⌘D" },
+    { kind: "action", icon: "📁", label: "New Folder", action: () => {}, disabled: true },
     { kind: "divider" },
-    { kind: "action", icon: "🔤", label: "Sort Icons by Name", action: () => { resetIconPositions(); } },
-    { kind: "action", icon: "🧹", label: "Clean Up Icons", action: () => resetIconPositions() },
+    { kind: "action", icon: "🔤", label: "Sort By Name", action: () => { resetIconPositions(); } },
+    { kind: "action", icon: "🧹", label: "Clean Up", action: () => resetIconPositions() },
+    { kind: "action", icon: "📐", label: "Use Stacks", action: () => {}, disabled: true },
+    { kind: "divider" },
+    { kind: "action", icon: "👁️", label: "Show View Options", action: () => {}, disabled: true },
+    { kind: "divider" },
+    { kind: "action", icon: "🖼️", label: "Change Wallpaper…", action: () => { selectLauncherSection("overview"); } },
+    { kind: "action", icon: "🌗", label: "Toggle Dark Mode", action: () => toggleTheme(), shortcut: "⌘D" },
     { kind: "divider" },
     { kind: "action", icon: desktop.dock_auto_hide ? "👁️" : "🫥", label: desktop.dock_auto_hide ? "Show Dock" : "Auto-Hide Dock", action: () => toggleDockAutoHide() },
     { kind: "divider" },
     { kind: "action", icon: "🚀", label: "Open Launchpad", action: () => toggleLaunchpad(true) },
+    { kind: "action", icon: "🔍", label: "Spotlight Search", action: () => toggleSpotlight(true), shortcut: "⌘Space" },
   ];
 
   function handleWindowKeydown(e: KeyboardEvent) {
@@ -129,6 +137,7 @@
       class="absolute inset-0 scale-[1.04] saturate-[1.05]"
       style="background: linear-gradient(180deg, hsla(215 85% 80% / 0.18), transparent 18%), linear-gradient(135deg, hsla(8 100% 76% / 0.16), transparent 32%), center / cover no-repeat var(--system-wallpaper);"
       aria-hidden="true"
+      data-testid="desktop-wallpaper"
       oncontextmenu={handleDesktopContextMenu}
       onkeydown={undefined}
     ></div>

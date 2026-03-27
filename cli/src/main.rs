@@ -344,8 +344,14 @@ async fn main() -> Result<()> {
         }
 
         Commands::Mcp => {
-            println!("{}", "Starting NDE-OS MCP server on stdio...".bold());
-            let server = ai_launcher_core::mcp::server::McpServer::new();
+            let workspace = std::env::current_dir()
+                .unwrap_or_else(|_| std::path::PathBuf::from("."));
+            println!("{}", format!(
+                "Starting NDE-OS MCP server on stdio...\n  Workspace: {}\n  Tools:     22+ built-in sandboxed tools\n  Transport: stdio (JSON-RPC)\n  Connect:   Add to your IDE's MCP config",
+                workspace.display()
+            ).bold());
+            let server = ai_launcher_core::mcp::builtin::create_executable_server(&workspace)
+                .expect("Failed to create MCP server — is the workspace directory accessible?");
             server.run_stdio().await?;
         }
     }

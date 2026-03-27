@@ -32,13 +32,15 @@ export async function triggerScreenshotMode() {
     try { await closeOverlay(); } catch (error) { console.error("Ignored close overlay error", error); }
     
     try {
-      const response = await invoke<{base64_image: string, text: string | null}>("capture_screenshot", {
-        x: event.payload.x,
-        y: event.payload.y,
-        width: event.payload.width,
-        height: event.payload.height,
-        ocr: false
-      });
+      const args: any = { ocr: false };
+      if (event.payload.width > 0 && event.payload.height > 0) {
+        args.x = event.payload.x;
+        args.y = event.payload.y;
+        args.width = event.payload.width;
+        args.height = event.payload.height;
+      }
+      
+      const response = await invoke<{base64_image: string, text: string | null}>("capture_screenshot", args);
       
       let windowId = "";
       // Look for existing screenshot window

@@ -46,6 +46,7 @@ Verify that the code meets both Local DoD (ticket-specific) and Global DoD crite
 
 - [ ] **Local DoD**: All core requirements, edge cases, and constraints explicitly defined in Phase 1 are handled.
 - [ ] **Global DoD**: Code complies strictly with the system-wide **Global Definition of Done** defined in `AGENTS.md` (no mocks, explicit passing unit tests, E2E WebView2 tests, 100% cross-platform path integrity, etc).
+- [ ] **E2E Screenshots**: All E2E tests MUST capture screenshot images demonstrating the feature working. These images MUST be saved to `test-results/<task-name>/<screenshot-name>.png` (where `<task-name>` matches the ticket filename). This visual proof is mandatory.
 
 _Action:_
 1. You MUST sync the final ticket status in the `.agents/tasks/feature-name.md` file. Pick off all completed DoD items.

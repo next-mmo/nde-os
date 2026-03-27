@@ -6,10 +6,32 @@
 use super::server::McpServer;
 use serde_json::json;
 
-/// Create an MCP server with all built-in NDE-OS tools registered.
+/// Create an MCP server with all built-in NDE-OS tools registered (schema-only, no executor).
 pub fn create_default_server() -> McpServer {
     let mut server = McpServer::new();
+    register_tools(&mut server);
+    crate::mcp::kanban::register(&mut server);
+    server
+}
 
+/// Create an MCP server with all built-in tools AND a real execution backend.
+/// External agents/IDEs can call tools and get real results.
+///
+/// `workspace` is the directory to sandbox — all file operations are jailed here.
+pub fn create_executable_server(workspace: &std::path::Path) -> anyhow::Result<McpServer> {
+    let sandbox = crate::sandbox::Sandbox::new(workspace)?;
+    let registry = crate::tools::builtin::default_registry();
+
+    let mut server = McpServer::with_executor(registry, sandbox)?;
+    register_tools(&mut server);
+    crate::mcp::kanban::register(&mut server);
+
+    Ok(server)
+}
+
+/// Register all built-in tool schemas on a server. Shared between
+/// `create_default_server` (schema-only) and `create_executable_server` (live).
+fn register_tools(server: &mut McpServer) {
     // ── Filesystem tools ─────────────────────────────────────────────────
     server.register_tool(
         "nde_file_read",
@@ -307,10 +329,6 @@ pub fn create_default_server() -> McpServer {
             "required": ["uri"]
         }),
     );
-
-    crate::mcp::kanban::register(&mut server);
-
-    server
 }
 
 /// Get the list of built-in MCP server info for the API.
@@ -381,5 +399,149 @@ mod tests {
     fn test_builtin_tool_definitions() {
         let tools = builtin_tool_definitions();
         assert!(tools.len() >= 22);
+    }
+
+    #[test]
+    fn test_executable_server_creation() {
+        let tmp = std::env::temp_dir().join("nde_mcp_test_workspace");
+        std::fs::create_dir_all(&tmp).unwrap();
+        let server = create_executable_server(&tmp).unwrap();
+
+        // Verify tools are registered
+        let req = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/list"
+        });
+        let resp = server.handle_request(&serde_json::to_string(&req).unwrap()).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&resp).unwrap();
+        let tools = parsed["result"]["tools"].as_array().unwrap();
+        assert!(tools.len() >= 22, "Expected 22+ tools, got {}", tools.len());
+
+        // Clean up
+        std::fs::remove_dir_all(&tmp).ok();
+    }
+
+    #[test]
+    fn test_executable_server_file_read() {
+        let tmp = std::env::temp_dir().join("nde_mcp_test_file_read");
+        std::fs::create_dir_all(&tmp).unwrap();
+
+        // Write a test file
+        std::fs::write(tmp.join("hello.txt"), "Hello from MCP!").unwrap();
+
+        let server = create_executable_server(&tmp).unwrap();
+
+        // Call nde_file_read
+        let req = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "tools/call",
+            "params": {
+                "name": "nde_file_read",
+                "arguments": { "path": "hello.txt" }
+            }
+        });
+        let resp = server.handle_request(&serde_json::to_string(&req).unwrap()).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&resp).unwrap();
+
+        let text = parsed["result"]["content"][0]["text"].as_str().unwrap();
+        assert!(text.contains("Hello from MCP!"), "Expected file content, got: {}", text);
+        assert!(parsed["result"]["isError"].is_null(), "Should not be an error");
+
+        // Clean up
+        std::fs::remove_dir_all(&tmp).ok();
+    }
+
+    #[test]
+    fn test_executable_server_file_write_and_read() {
+        let tmp = std::env::temp_dir().join("nde_mcp_test_file_write");
+        std::fs::create_dir_all(&tmp).unwrap();
+
+        let server = create_executable_server(&tmp).unwrap();
+
+        // Write via MCP
+        let write_req = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 3,
+            "method": "tools/call",
+            "params": {
+                "name": "nde_file_write",
+                "arguments": { "path": "test_output.txt", "content": "Written via MCP gateway!" }
+            }
+        });
+        let resp = server.handle_request(&serde_json::to_string(&write_req).unwrap()).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&resp).unwrap();
+        assert!(parsed["result"]["isError"].is_null(), "Write should not error");
+
+        // Read it back via MCP
+        let read_req = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 4,
+            "method": "tools/call",
+            "params": {
+                "name": "nde_file_read",
+                "arguments": { "path": "test_output.txt" }
+            }
+        });
+        let resp = server.handle_request(&serde_json::to_string(&read_req).unwrap()).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&resp).unwrap();
+        let text = parsed["result"]["content"][0]["text"].as_str().unwrap();
+        assert!(text.contains("Written via MCP gateway!"), "Round-trip failed: {}", text);
+
+        // Clean up
+        std::fs::remove_dir_all(&tmp).ok();
+    }
+
+    #[test]
+    fn test_executable_server_shell() {
+        let tmp = std::env::temp_dir().join("nde_mcp_test_shell");
+        std::fs::create_dir_all(&tmp).unwrap();
+
+        let server = create_executable_server(&tmp).unwrap();
+
+        let cmd = if cfg!(windows) { "echo hello_mcp" } else { "echo hello_mcp" };
+        let req = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 5,
+            "method": "tools/call",
+            "params": {
+                "name": "nde_shell",
+                "arguments": { "command": cmd }
+            }
+        });
+        let resp = server.handle_request(&serde_json::to_string(&req).unwrap()).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&resp).unwrap();
+        let text = parsed["result"]["content"][0]["text"].as_str().unwrap();
+        assert!(text.contains("hello_mcp"), "Shell should echo, got: {}", text);
+
+        // Clean up
+        std::fs::remove_dir_all(&tmp).ok();
+    }
+
+    #[test]
+    fn test_sandbox_escape_blocked() {
+        let tmp = std::env::temp_dir().join("nde_mcp_test_sandbox_escape");
+        std::fs::create_dir_all(&tmp).unwrap();
+
+        let server = create_executable_server(&tmp).unwrap();
+
+        // Attempt path traversal
+        let req = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 6,
+            "method": "tools/call",
+            "params": {
+                "name": "nde_file_read",
+                "arguments": { "path": "../../../etc/passwd" }
+            }
+        });
+        let resp = server.handle_request(&serde_json::to_string(&req).unwrap()).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&resp).unwrap();
+        let is_error = parsed["result"]["isError"].as_bool().unwrap_or(false);
+        assert!(is_error, "Path traversal should be blocked");
+
+        // Clean up
+        std::fs::remove_dir_all(&tmp).ok();
     }
 }

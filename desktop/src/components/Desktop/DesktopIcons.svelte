@@ -30,7 +30,7 @@
   ];
 
   type SpecialIcon = { id: string; label: string; icon: string; locked_pos?: { x: number; y: number } };
-  
+
   const specialIcons: SpecialIcon[] = [
     { id: "trash", label: "Trash", icon: "🗑️" },
     { id: "my-files", label: "My Files", icon: "📁" },
@@ -58,6 +58,17 @@
   let dragging = $state<{ id: string; startX: number; startY: number; origX: number; origY: number; moved: boolean } | null>(null);
   let dragPos = $state<{ x: number; y: number }>({ x: 0, y: 0 });
 
+  /**
+   * Track last drag-end timestamp so click/dblclick events that fire immediately
+   * after a drag completion are suppressed &mdash; prevents "move then accidentally open".
+   */
+  let lastDragEndAt = 0;
+  const DRAG_CLICK_GUARD_MS = 250;
+
+  function wasDragRecent(): boolean {
+    return performance.now() - lastDragEndAt < DRAG_CLICK_GUARD_MS;
+  }
+
   function onPointerDown(e: PointerEvent, id: string, ix: number) {
     if (e.button !== 0) return; // left button only for drag
     const pos = getIconPos(id, ix);
@@ -68,37 +79,54 @@
   }
 
   function onPointerMove(e: PointerEvent) {
-    if (!dragging) return;
-    const dx = e.clientX - dragging.startX;
-    const dy = e.clientY - dragging.startY;
-    if (!dragging.moved && Math.abs(dx) + Math.abs(dy) < DRAG_THRESHOLD) return;
-    dragging.moved = true;
-    dragPos = { x: dragging.origX + dx, y: dragging.origY + dy };
+    if (dragging) {
+      const dx = e.clientX - dragging.startX;
+      const dy = e.clientY - dragging.startY;
+      if (!dragging.moved && Math.abs(dx) + Math.abs(dy) < DRAG_THRESHOLD) return;
+      dragging.moved = true;
+      dragPos = { x: dragging.origX + dx, y: dragging.origY + dy };
+      return;
+    }
+    // Marquee
+    if (marquee) {
+      marquee = { ...marquee, endX: e.clientX, endY: e.clientY };
+    }
   }
 
   function onPointerUp(e: PointerEvent) {
-    if (!dragging) return;
-    if (dragging.moved) {
-      // Snap to grid
-      const snappedX = Math.round(dragPos.x / GRID) * GRID + 4;
-      const snappedY = Math.round(dragPos.y / GRID) * GRID + 4;
-      setIconPosition(dragging.id, snappedX, snappedY);
+    if (dragging) {
+      if (dragging.moved) {
+        // Snap to grid
+        const snappedX = Math.round(dragPos.x / GRID) * GRID + 4;
+        const snappedY = Math.round(dragPos.y / GRID) * GRID + 4;
+        setIconPosition(dragging.id, snappedX, snappedY);
+        lastDragEndAt = performance.now();
+      }
+      dragging = null;
+      return;
     }
-    dragging = null;
+    // Finish marquee
+    if (marquee) {
+      applyMarqueeSelection();
+      marquee = null;
+    }
   }
 
   function handleClick(e: MouseEvent, id: StaticAppID) {
     e.stopPropagation();
+    if (wasDragRecent()) return; // suppress click after drag-move
     selectIcon(id, e.shiftKey || e.ctrlKey || e.metaKey);
   }
 
   function handleDblClick(e: MouseEvent, id: StaticAppID) {
     e.stopPropagation();
+    if (wasDragRecent()) return; // suppress dblclick after drag-move
     openStaticApp(id);
     selectIcon(null);
   }
 
   function handleClickOutside() {
+    if (wasDragRecent()) return;
     selectIcon(null);
     iconCtx = null;
   }
@@ -109,6 +137,56 @@
     if (e.currentTarget === e.target) {
       ondesktopcontextmenu?.(e);
     }
+  }
+
+  /* ---- Marquee (rubber-band) selection ---- */
+  let marquee = $state<{ startX: number; startY: number; endX: number; endY: number } | null>(null);
+
+  const marqueeRect = $derived(
+    marquee
+      ? {
+          left: Math.min(marquee.startX, marquee.endX),
+          top: Math.min(marquee.startY, marquee.endY),
+          width: Math.abs(marquee.endX - marquee.startX),
+          height: Math.abs(marquee.endY - marquee.startY),
+        }
+      : null,
+  );
+
+  function handleContainerPointerDown(e: PointerEvent) {
+    // Only start marquee on left click directly on the container (not on an icon)
+    if (e.button !== 0) return;
+    if (e.target !== e.currentTarget) return;
+    selectIcon(null);
+    marquee = { startX: e.clientX, startY: e.clientY, endX: e.clientX, endY: e.clientY };
+  }
+
+  function applyMarqueeSelection() {
+    if (!marquee) return;
+    const rect = {
+      left: Math.min(marquee.startX, marquee.endX),
+      top: Math.min(marquee.startY, marquee.endY),
+      right: Math.max(marquee.startX, marquee.endX),
+      bottom: Math.max(marquee.startY, marquee.endY),
+    };
+    const selected = new Set<string>();
+
+    const allIcons: { id: string; ix: number }[] = [
+      ...visibleShortcuts.map((s, ix) => ({ id: s.id, ix })),
+      ...specialIcons.map((s, ix) => ({ id: s.id, ix: 100 + ix })),
+    ];
+
+    for (const { id, ix } of allIcons) {
+      const pos = getIconPos(id, ix);
+      // Icon center
+      const cx = pos.x + ICON_W / 2;
+      const cy = pos.y + 50; // rough center of the icon+label
+      if (cx >= rect.left && cx <= rect.right && cy >= rect.top && cy <= rect.bottom) {
+        selected.add(id);
+      }
+    }
+
+    desktop.icon_selection = selected;
   }
 
   /* ---- Icon right-click context menu ---- */
@@ -127,17 +205,21 @@
         ? [
             { kind: "action", icon: "📂", label: "Open Trash", action: () => { iconCtx = null; } },
             { kind: "divider" },
-            { kind: "action", icon: "💥", label: "Empty Trash", action: () => { iconCtx = null; } }
+            { kind: "action", icon: "💥", label: "Empty Trash", action: () => { iconCtx = null; } },
           ]
-        : iconCtx.isStaticApp 
+        : iconCtx.isStaticApp
           ? [
               { kind: "action", icon: "📂", label: "Open", action: () => { openStaticApp(iconCtx!.id as StaticAppID); iconCtx = null; } },
               { kind: "action", icon: "ℹ️", label: "Get Info", action: () => { iconCtx = null; }, disabled: true },
+              { kind: "divider" },
+              { kind: "action", icon: "📌", label: "Pin to Dock", action: () => { iconCtx = null; }, disabled: true },
+              { kind: "action", icon: "📋", label: "Copy", action: () => { iconCtx = null; }, disabled: true },
               { kind: "divider" },
               { kind: "action", icon: "🗑️", label: "Remove from Desktop", action: () => { hideDesktopIcon(iconCtx!.id); iconCtx = null; } },
             ]
           : [
               { kind: "action", icon: "📂", label: "Open", action: () => { iconCtx = null; } },
+              { kind: "action", icon: "ℹ️", label: "Get Info", action: () => { iconCtx = null; }, disabled: true },
             ]
       : [],
   );
@@ -146,9 +228,11 @@
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
   class="absolute inset-0 z-0"
+  data-testid="desktop-icons-area"
   onclick={handleClickOutside}
   oncontextmenu={handleContainerContextMenu}
   onkeydown={undefined}
+  onpointerdown={handleContainerPointerDown}
   onpointermove={onPointerMove}
   onpointerup={onPointerUp}
 >
@@ -158,6 +242,7 @@
     {@const isDragging = dragging?.id === shortcut.id && dragging.moved}
     <button
       type="button"
+      data-testid="desktop-icon-{shortcut.id}"
       class="absolute flex flex-col items-center gap-1 p-2 rounded-xl cursor-default select-none transition-shadow duration-100 bg-transparent border-none appearance-none outline-none focus-visible:ring-2 focus-visible:ring-white/50
         {isSelected ? 'bg-white/20 dark:bg-white/10 ring-1 ring-white/30 shadow-sm' : 'hover:bg-white/10 dark:hover:bg-white/5'}
         {isDragging ? 'opacity-80 scale-105 shadow-2xl' : ''}"
@@ -195,13 +280,14 @@
     {@const isDragging = dragging?.id === shortcut.id && dragging.moved}
     <button
       type="button"
+      data-testid="desktop-icon-{shortcut.id}"
       class="absolute flex flex-col items-center gap-1 p-2 rounded-xl cursor-default select-none transition-shadow duration-100 bg-transparent border-none appearance-none outline-none focus-visible:ring-2 focus-visible:ring-white/50
         {isSelected ? 'bg-white/20 dark:bg-white/10 ring-1 ring-white/30 shadow-sm' : 'hover:bg-white/10 dark:hover:bg-white/5'}
         {isDragging ? 'opacity-80 scale-105 shadow-2xl' : ''}"
       style="left: {pos.x}px; top: {pos.y}px; width: {ICON_W}px; {isDragging ? 'z-index: 100; transition: none;' : ''}"
       onpointerdown={(e) => onPointerDown(e, shortcut.id, 100 + ix)}
       onclick={(e) => handleClick(e, shortcut.id as any)}
-      ondblclick={(e) => { e.stopPropagation(); selectIcon(null); }}
+      ondblclick={(e) => { e.stopPropagation(); if (!wasDragRecent()) selectIcon(null); }}
       oncontextmenu={(e) => handleIconContextMenu(e, shortcut.id, false)}
     >
       <div class="w-14 h-14 rounded-2xl bg-white/10 backdrop-blur-sm border border-white/20 grid place-items-center text-3xl shadow-lg pointer-events-none drop-shadow-md">
@@ -212,6 +298,15 @@
       </span>
     </button>
   {/each}
+
+  <!-- Marquee rubber-band selection overlay -->
+  {#if marqueeRect && marqueeRect.width > 3 && marqueeRect.height > 3}
+    <div
+      class="fixed pointer-events-none border border-white/60 bg-white/10 backdrop-blur-[2px] rounded-sm"
+      style="left: {marqueeRect.left}px; top: {marqueeRect.top}px; width: {marqueeRect.width}px; height: {marqueeRect.height}px;"
+      data-testid="marquee-selection"
+    ></div>
+  {/if}
 </div>
 
 <!-- Icon context menu -->

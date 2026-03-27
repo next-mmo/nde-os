@@ -25,15 +25,18 @@
     if (!isDragging) return;
     isDragging = false;
     
-    const x = Math.min(startX, currentX);
-    const y = Math.min(startY, currentY);
-    const width = Math.abs(currentX - startX);
-    const height = Math.abs(currentY - startY);
+    const x = Math.round(Math.min(startX, currentX));
+    const y = Math.round(Math.min(startY, currentY));
+    const width = Math.round(Math.abs(currentX - startX));
+    const height = Math.round(Math.abs(currentY - startY));
 
     if (width > 10 && height > 10) {
+      // xcap Monitor::x/y uses logical coordinates; overlay is fullscreen so
+      // clientX/Y already map to monitor logical coordinates directly.
       await emit("screenshot-selected", { x, y, width, height });
     } else {
-      await emit("screenshot-cancelled");
+      // Single click => fullscreen capture (width=0 tells backend to skip crop)
+      await emit("screenshot-selected", { x: 0, y: 0, width: 0, height: 0 });
     }
   }
 
@@ -54,7 +57,7 @@
   onpointermove={handlePointerMove}
   onpointerup={handlePointerUp}
 >
-  {#if isDragging}
+  {#if isDragging && Math.abs(currentX - startX) > 10 && Math.abs(currentY - startY) > 10}
     <div 
       class="absolute border-2 border-primary bg-primary/20 pointer-events-none"
       style={boxStyle}
