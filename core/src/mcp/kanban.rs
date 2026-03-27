@@ -26,6 +26,24 @@ pub fn register(server: &mut McpServer) {
     );
 
     server.register_tool(
+        "nde_kanban_create_task",
+        "Create a new Kanban task ticket (markdown file in .agents/tasks/).",
+        json!({
+            "type": "object",
+            "properties": {
+                "title": { "type": "string", "description": "The task title" },
+                "description": { "type": "string", "description": "Detailed description of the task" },
+                "checklist": {
+                    "type": "array",
+                    "items": { "type": "string" },
+                    "description": "Optional checklist items for the task"
+                }
+            },
+            "required": ["title"]
+        }),
+    );
+
+    server.register_tool(
         "nde_kanban_update_task",
         "Update the status of a specific Kanban task.",
         json!({
@@ -35,6 +53,18 @@ pub fn register(server: &mut McpServer) {
                 "status": { "type": "string", "enum": ["Plan", "YOLO mode", "Done by AI", "Verified", "Re-open"], "description": "The new status" }
             },
             "required": ["filename", "status"]
+        }),
+    );
+
+    server.register_tool(
+        "nde_kanban_delete_task",
+        "Delete a Kanban task ticket.",
+        json!({
+            "type": "object",
+            "properties": {
+                "filename": { "type": "string", "description": "The Markdown file name of the task to delete" }
+            },
+            "required": ["filename"]
         }),
     );
 }
@@ -95,8 +125,75 @@ pub fn execute(tool_name: &str, params: &serde_json::Value) -> Result<String> {
 
             Ok(serde_json::to_string(&tasks)?)
         }
+        "nde_kanban_create_task" => {
+            let args = params.get("arguments").unwrap_or(params);
+
+            let title = args.get("title")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| anyhow!("Missing required field: title"))?;
+
+            let description = args.get("description")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+
+            let checklist: Vec<String> = args.get("checklist")
+                .and_then(|v| v.as_array())
+                .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+                .unwrap_or_default();
+
+            let dir = get_tasks_dir();
+            fs::create_dir_all(&dir).map_err(|e| anyhow!("Failed to create tasks dir: {e}"))?;
+
+            // Generate slug filename
+            let slug: String = title
+                .to_lowercase()
+                .chars()
+                .map(|c| if c.is_alphanumeric() { c } else { '-' })
+                .collect::<String>()
+                .split('-')
+                .filter(|s| !s.is_empty())
+                .collect::<Vec<_>>()
+                .join("-");
+
+            let mut filename = format!("{}.md", slug);
+            let mut counter = 2u32;
+            while dir.join(&filename).exists() {
+                filename = format!("{}-{}.md", slug, counter);
+                counter += 1;
+            }
+
+            // Build checklist markdown
+            let checklist_md = if checklist.is_empty() {
+                "- [ ] Implement the feature\n- [ ] Test the implementation\n".to_string()
+            } else {
+                checklist.iter().map(|item| format!("- [ ] {}", item)).collect::<Vec<_>>().join("\n") + "\n"
+            };
+
+            let desc = if description.is_empty() { title } else { description };
+            let epoch_secs = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs();
+            let days = epoch_secs / 86400;
+            let now = format!("{}-{:02}-{:02}", 1970 + days / 365, (days % 365 / 30 + 1).min(12), (days % 365 % 30 + 1).min(31));
+
+            let content = format!(
+                "# {}\n\n- **Status:** 🔴 `plan`\n- **Created:** {}\n\n## Description\n\n{}\n\n## Checklist\n\n{}",
+                title, now, desc, checklist_md
+            );
+
+            let filepath = dir.join(&filename);
+            fs::write(&filepath, &content)?;
+
+            Ok(json!({
+                "success": true,
+                "filename": filename,
+                "title": title,
+                "message": format!("Created task: {}", title)
+            }).to_string())
+        }
         "nde_kanban_update_task" => {
-            let args = params.get("arguments").ok_or_else(|| anyhow!("Missing arguments"))?;
+            let args = params.get("arguments").unwrap_or(params);
             
             let filename = args.get("filename").and_then(|v| v.as_str()).unwrap_or("");
             let new_status = args.get("status").and_then(|v| v.as_str()).unwrap_or("");
@@ -139,6 +236,22 @@ pub fn execute(tool_name: &str, params: &serde_json::Value) -> Result<String> {
                 Ok(json!({"success": true, "message": format!("Updated {} to {}", filename, new_status)}).to_string())
             } else {
                 Err(anyhow!("Status line not found in file"))
+            }
+        }
+        "nde_kanban_delete_task" => {
+            let args = params.get("arguments").unwrap_or(params);
+            let filename = args.get("filename").and_then(|v| v.as_str()).unwrap_or("");
+
+            if filename.is_empty() || filename.contains("..") || filename.contains("/") || filename.contains("\\") {
+                return Err(anyhow!("Invalid filename"));
+            }
+
+            let filepath = get_tasks_dir().join(filename);
+            if filepath.exists() {
+                fs::remove_file(&filepath)?;
+                Ok(json!({"success": true, "message": format!("Deleted task: {}", filename)}).to_string())
+            } else {
+                Err(anyhow!("Task not found: {}", filename))
             }
         }
         _ => Err(anyhow!("Unknown tool: {}", tool_name)),

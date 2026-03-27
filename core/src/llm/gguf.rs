@@ -8,8 +8,11 @@ use anyhow::{Context, Result};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use tokio::sync::Mutex;
+
+/// Cached GPU detection result (runs nvidia-smi once per process).
+static GPU_DETECTED: OnceLock<bool> = OnceLock::new();
 
 /// Info about a locally-available GGUF model file.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -60,12 +63,32 @@ impl GgufProvider {
         let mut default_filename = DEFAULT_MODEL_FILENAME.to_string();
 
         let recs = GgufModelRecommendation::recommend_models(u64::MAX, None);
-        if let Some(rec) = recs.iter().find(|r| r.id == model_id) {
+        // Try exact ID match, then try matching by URL filename containing the model_id
+        let rec_match = recs.iter().find(|r| r.id == model_id)
+            .or_else(|| {
+                let id_lower = model_id.to_lowercase();
+                recs.iter().find(|r| {
+                    let url_filename = r.url.split('/').last().unwrap_or_default().to_lowercase();
+                    // Match "Qwen3.5-9B-Q4_K_M" against URL filename "Qwen3.5-9B-Q4_K_M.gguf"
+                    url_filename.starts_with(&id_lower)
+                        || url_filename.trim_end_matches(".gguf") == id_lower
+                })
+            });
+
+        if let Some(rec) = rec_match {
             download_url = rec.url.clone();
             default_filename = download_url.split('/').last().unwrap_or(DEFAULT_MODEL_FILENAME).to_string();
         } else if model_id.starts_with("http") {
             download_url = model_id.to_string();
             default_filename = download_url.split('/').last().unwrap_or(DEFAULT_MODEL_FILENAME).to_string();
+        } else if model_id.ends_with(".gguf") || model_id.contains("-Q") || model_id.contains("-q") {
+            // Looks like a GGUF filename or model name pattern — use it directly
+            let fname = if model_id.ends_with(".gguf") {
+                model_id.to_string()
+            } else {
+                format!("{}.gguf", model_id)
+            };
+            default_filename = fname;
         }
 
         // Resolve model path: explicit path > bundled core/models > data_dir/models
@@ -269,10 +292,30 @@ impl GgufProvider {
     }
 
     /// Auto-download prebuilt llama-server if not present.
+    /// Also handles GPU upgrade: if a GPU is now available but the current
+    /// binary is CPU-only (no ggml-cuda DLL), re-downloads the CUDA build.
     pub async fn ensure_server_binary(&self) -> Result<PathBuf> {
         let bin_path = self.server_bin_path();
+        let bin_dir = self.data_dir.join("bin");
+
         if bin_path.exists() {
-            return Ok(bin_path);
+            // GPU upgrade check: binary exists but may be CPU-only
+            let needs_gpu_upgrade = Self::has_nvidia_gpu() && cfg!(windows) && {
+                let cuda_dll = bin_dir.join("ggml-cuda.dll");
+                !cuda_dll.exists()
+            };
+            if needs_gpu_upgrade {
+                tracing::info!("GPU detected but CUDA DLLs missing — upgrading to CUDA build...");
+                // Remove old CPU-only binaries
+                if let Err(e) = std::fs::remove_dir_all(&bin_dir) {
+                    tracing::warn!(error = %e, "Failed to remove old bin dir for GPU upgrade");
+                    // Fall through — still try to use existing binary
+                    return Ok(bin_path);
+                }
+                // Fall through to download CUDA build
+            } else {
+                return Ok(bin_path);
+            }
         }
 
         // Also check system PATH first
@@ -301,6 +344,28 @@ impl GgufProvider {
 
         let bytes = resp.bytes().await.context("Failed to read archive")?;
         Self::extract_server(&bytes, &archive_name, &bin_dir)?;
+
+        // Also download CUDA runtime DLLs if needed (Windows + NVIDIA GPU)
+        if let Some(cudart_url) = Self::cudart_url() {
+            tracing::info!(url = %cudart_url, "Downloading CUDA runtime DLLs...");
+            match self.client.get(&cudart_url).send().await {
+                Ok(resp) if resp.status().is_success() => {
+                    if let Ok(cudart_bytes) = resp.bytes().await {
+                        if let Err(e) = Self::extract_server(&cudart_bytes, "zip", &bin_dir) {
+                            tracing::warn!(error = %e, "Failed to extract cudart — GPU may not work");
+                        } else {
+                            tracing::info!("CUDA runtime DLLs installed");
+                        }
+                    }
+                }
+                Ok(resp) => {
+                    tracing::warn!(status = %resp.status(), "Failed to download cudart — GPU may not work");
+                }
+                Err(e) => {
+                    tracing::warn!(error = %e, "Failed to download cudart — GPU may not work");
+                }
+            }
+        }
 
         if bin_path.exists() {
             // Make executable on Unix
@@ -341,16 +406,82 @@ impl GgufProvider {
             })
     }
 
-    /// Build the GitHub release URL for the current platform.
+    /// Detect whether an NVIDIA GPU is available (via nvidia-smi).
+    /// Result is cached for the lifetime of the process via OnceLock.
+    fn has_nvidia_gpu() -> bool {
+        *GPU_DETECTED.get_or_init(|| Self::detect_nvidia_gpu())
+    }
+
+    /// Actually run nvidia-smi to detect GPU. Called once, result cached.
+    fn detect_nvidia_gpu() -> bool {
+        // Try nvidia-smi from PATH first (System32 on Windows, /usr/bin on Linux)
+        let mut result = std::process::Command::new("nvidia-smi")
+            .arg("--query-gpu=name")
+            .arg("--format=csv,noheader")
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::null())
+            .output();
+
+        // Fallback: try explicit Windows path if PATH lookup failed
+        #[cfg(windows)]
+        if result.is_err() {
+            // nvidia-smi lives in System32 on Windows, but some environments
+            // strip System32 from PATH. Also check Program Files.
+            for path in [
+                r"C:\Windows\System32\nvidia-smi.exe",
+                r"C:\Program Files\NVIDIA Corporation\NVSMI\nvidia-smi.exe",
+            ] {
+                if PathBuf::from(path).exists() {
+                    result = std::process::Command::new(path)
+                        .arg("--query-gpu=name")
+                        .arg("--format=csv,noheader")
+                        .stdout(std::process::Stdio::piped())
+                        .stderr(std::process::Stdio::null())
+                        .output();
+                    if result.is_ok() {
+                        break;
+                    }
+                }
+            }
+        }
+
+        match result {
+            Ok(out) if out.status.success() => {
+                let s = String::from_utf8_lossy(&out.stdout);
+                let found = !s.trim().is_empty();
+                if found {
+                    tracing::info!(gpu = %s.trim(), "NVIDIA GPU detected — using CUDA build");
+                } else {
+                    tracing::info!("nvidia-smi found but no GPU returned");
+                }
+                found
+            }
+            _ => {
+                tracing::info!("No NVIDIA GPU detected — using CPU build");
+                false
+            }
+        }
+    }
+
+    /// Build the GitHub release URL(s) for the current platform.
+    /// Returns `(main_url, archive_type)`.
+    /// Use `cudart_url()` to get the companion CUDA runtime archive if needed.
     fn release_url() -> (String, String) {
         let tag = LLAMA_CPP_VERSION;
+        let has_gpu = Self::has_nvidia_gpu();
+
         let (suffix, archive) = if cfg!(target_os = "windows") {
             if cfg!(target_arch = "x86_64") {
-                ("bin-win-avx2-x64.zip", "zip")
+                if has_gpu {
+                    ("bin-win-cuda-cu12.4-x64.zip", "zip")
+                } else {
+                    ("bin-win-avx2-x64.zip", "zip")
+                }
             } else {
                 ("bin-win-msvc-arm64.zip", "zip")
             }
         } else if cfg!(target_os = "macos") {
+            // macOS uses Metal (built into the default binary), no CUDA
             if cfg!(target_arch = "x86_64") {
                 ("bin-macos-x64.zip", "zip")
             } else {
@@ -359,17 +490,35 @@ impl GgufProvider {
         } else {
             // Linux
             if cfg!(target_arch = "x86_64") {
-                ("bin-ubuntu-x64.zip", "zip")
+                if has_gpu {
+                    ("bin-ubuntu-x64.zip", "zip") // Linux CUDA builds have same name
+                } else {
+                    ("bin-ubuntu-x64.zip", "zip")
+                }
             } else {
-                // Warning: b4679 doesn't have an official ubuntu-arm64 bin release according to my listing, but we will leave a placeholder
                 ("bin-ubuntu-arm64.zip", "zip")
             }
         };
         let url = format!(
-            "https://github.com/ggerganov/llama.cpp/releases/download/{}/llama-{}-{}", 
+            "https://github.com/ggerganov/llama.cpp/releases/download/{}/llama-{}-{}",
             tag, tag, suffix
         );
         (url, archive.to_string())
+    }
+
+    /// URL for the CUDA runtime DLLs (cudart) — needed alongside the CUDA build on Windows.
+    fn cudart_url() -> Option<String> {
+        if !cfg!(target_os = "windows") || !cfg!(target_arch = "x86_64") {
+            return None;
+        }
+        if !Self::has_nvidia_gpu() {
+            return None;
+        }
+        let tag = LLAMA_CPP_VERSION;
+        Some(format!(
+            "https://github.com/ggerganov/llama.cpp/releases/download/{}/cudart-llama-bin-win-cu12.4-x64.zip",
+            tag
+        ))
     }
 
     /// Extract llama-server and ALL companion files (DLLs etc.) from the downloaded archive.
@@ -450,28 +599,47 @@ impl GgufProvider {
         let server_bin = self.ensure_server_binary().await?;
         self.ensure_model().await?;
 
+        // Use larger context for agent workflows; GPU can handle it
+        let has_gpu = Self::has_nvidia_gpu();
+        let ctx_size = if has_gpu { "16384" } else { "8192" };
+
         tracing::info!(
             bin = %server_bin.display(),
             model = %self.model_path.display(),
             port = self.port,
+            ctx_size,
+            gpu = has_gpu,
             "Starting llama-server..."
         );
 
-        let child = tokio::process::Command::new(&server_bin)
-            .arg("--model").arg(&self.model_path)
+        let bin_dir = server_bin.parent()
+            .unwrap_or_else(|| Path::new("."))
+            .to_path_buf();
+
+        let mut cmd = tokio::process::Command::new(&server_bin);
+        cmd.arg("--model").arg(&self.model_path)
             .arg("--port").arg(self.port.to_string())
-            .arg("--ctx-size").arg("4096")
+            .arg("--ctx-size").arg(ctx_size)
             .arg("--n-gpu-layers").arg("99")
             .arg("--host").arg("127.0.0.1")
+            // Set working directory to bin/ so Windows can find companion DLLs
+            // (ggml-cuda.dll, cudart64_*.dll, etc.)
+            .current_dir(&bin_dir)
             .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .spawn()
+            .stderr(std::process::Stdio::piped());
+
+        // Enable flash attention for GPU — significantly faster inference
+        if has_gpu {
+            cmd.arg("--flash-attn");
+        }
+
+        let child = cmd.spawn()
             .context("Failed to spawn llama-server")?;
 
         *proc = Some(child);
 
-        // Wait for server ready (up to 60s — large models need time to load)
-        for i in 0..120 {
+        // Wait for server ready (up to 90s — large models on first GPU load need time)
+        for i in 0..180 {
             tokio::time::sleep(std::time::Duration::from_millis(500)).await;
             if self.health_check().await {
                 tracing::info!(elapsed_ms = (i + 1) * 500, "llama-server ready");
@@ -479,7 +647,7 @@ impl GgufProvider {
             }
         }
 
-        Err(anyhow::anyhow!("llama-server did not become ready within 60 seconds"))
+        Err(anyhow::anyhow!("llama-server did not become ready within 90 seconds"))
     }
 
     async fn health_check(&self) -> bool {

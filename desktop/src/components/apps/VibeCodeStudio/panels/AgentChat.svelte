@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { invoke } from "@tauri-apps/api/core";
   import type { FDocument, FNode } from "$lib/figma-json/types";
 
   interface Props {
@@ -20,6 +21,7 @@
     streaming?: boolean;
     error?: boolean;
     spec?: any;
+    ticket?: { filename: string; title: string };
   }
 
   let messages = $state<ChatMsg[]>([
@@ -39,7 +41,15 @@ You should use Tailwind CSS classes for styling. Do not use external CSS files.
 Include responsive design if applicable. Keep the UI modern, sleek, and beautiful (similar to shadcn/ui).
 Always wrap your final HTML in a markdown codeblock like \`\`\`html ... \`\`\`. Do not include explanations outside the codeblock, just the code.`;
 
-  const scrumPrompt = `You are the Scrum Master Agent. You strictly manage project tasks, organize tickets, and answer questions about the development process. You do not generate UI JSON. Never output JSON payloads.`;
+  const scrumPrompt = `You are the Scrum Master Agent for NDE Vibe Code Studio. You manage the Kanban board, create tickets, and organize development tasks.
+
+You have access to these Kanban tools:
+- nde_kanban_get_tasks: List all tasks on the board
+- nde_kanban_create_task: Create a new task (title, description, checklist)
+- nde_kanban_update_task: Update task status (Plan, YOLO mode, Done by AI, Verified, Re-open)
+- nde_kanban_delete_task: Delete a task
+
+When asked to create a task, use the nde_kanban_create_task tool. Never output raw JSON payloads.`;
 
   let devPrompt = $derived(`You are the OpenCode IDE Agent. You assist the user with writing and understanding code. You output explanations and code fragments. When providing code blocks, ensure they are properly formatted with the appropriate language.
 ${activeFilePath ? `\nActive File: ${activeFilePath}\nFile Content:\n\`\`\`\n${fileContent}\n\`\`\`` : ''}`);
@@ -104,6 +114,19 @@ ${activeFilePath ? `\nActive File: ${activeFilePath}\nFile Content:\n\`\`\`\n${f
     setTimeout(() => textareaRef?.focus(), 0);
   }
 
+  /** Try to handle ticket creation directly without LLM roundtrip */
+  function parseScrumCreateIntent(text: string): { title: string; description: string } | null {
+    // Match patterns: "create <title>", "create task: <title>", "create ticket <title>"
+    const m = text.match(/^(?:create|add|new)\s+(?:(?:a\s+)?(?:task|ticket|story|issue)[:\s]+)?(.+)$/i);
+    if (m) {
+      const title = m[1].trim();
+      if (title.length > 0 && title.length < 200) {
+        return { title, description: "" };
+      }
+    }
+    return null;
+  }
+
   async function send() {
     if (!prompt.trim() || isGenerating) return;
     const text = prompt.trim();
@@ -111,6 +134,34 @@ ${activeFilePath ? `\nActive File: ${activeFilePath}\nFile Content:\n\`\`\`\n${f
     isGenerating = true;
 
     messages.push({ role: "user", content: text });
+
+    // Fast path: In scrum mode, create tickets directly via Tauri (no LLM needed)
+    if (chatMode === "scrum") {
+      const intent = parseScrumCreateIntent(text);
+      if (intent) {
+        try {
+          const result = await invoke<{ filename: string; title: string }>("create_agent_task", {
+            title: intent.title,
+            description: intent.description,
+            checklist: [],
+          });
+          messages.push({
+            role: "assistant",
+            content: `✅ Created ticket: **${result.title}**\nFile: \`${result.filename}\`\n\nThe task appears on your Kanban board in the Plan column.`,
+            ticket: result,
+          });
+          isGenerating = false;
+          scrollToBottom();
+          return;
+        } catch (e: any) {
+          messages.push({ role: "assistant", content: `❌ Failed to create ticket: ${e}`, error: true });
+          isGenerating = false;
+          scrollToBottom();
+          return;
+        }
+      }
+    }
+
     const idx = messages.length;
     messages.push({ role: "assistant", content: "", streaming: true });
     scrollToBottom();
@@ -223,6 +274,12 @@ ${activeFilePath ? `\nActive File: ${activeFilePath}\nFile Content:\n\`\`\`\n${f
             <div class="w-1.5 h-1.5 rounded-full bg-white/50 animate-pulse"></div>
             <div class="w-1.5 h-1.5 rounded-full bg-white/50 animate-pulse" style="animation-delay: 150ms"></div>
             <div class="w-1.5 h-1.5 rounded-full bg-white/50 animate-pulse" style="animation-delay: 300ms"></div>
+          </div>
+        {/if}
+        {#if msg.ticket}
+          <div class="mt-1 flex items-center gap-1.5 text-[10px] text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded px-2 py-1 w-fit">
+            <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 24 24"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-7 14l-5-5 1.41-1.41L12 14.17l7.59-7.59L21 8l-9 9z"/></svg>
+            Ticket created on Kanban
           </div>
         {/if}
         {#if msg.spec}

@@ -28,7 +28,12 @@ pub async fn capture_screenshot(
         None
     };
 
-    let image = capture_screen(area).map_err(|e| format!("Failed to capture screen: {}", e))?;
+    // Run capture on a blocking OS thread — Windows GDI (BitBlt) can return
+    // black images when called from a Tokio async worker thread.
+    let image = tokio::task::spawn_blocking(move || capture_screen(area))
+        .await
+        .map_err(|e| format!("Capture task failed: {}", e))?
+        .map_err(|e| format!("Failed to capture screen: {}", e))?;
 
     let mut response = ScreenshotResponse {
         base64_image: None,

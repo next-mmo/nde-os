@@ -11,17 +11,21 @@ pub struct AgentTask {
     pub locked: bool,
 }
 
-#[tauri::command]
-pub async fn get_agent_tasks() -> Result<Vec<AgentTask>, String> {
-    let mut tasks = Vec::new();
+/// Resolve the `.agents/tasks/` directory from CWD.
+fn tasks_dir() -> Result<PathBuf, String> {
     let current_dir = std::env::current_dir().map_err(|e| e.to_string())?;
     let base_dir = if current_dir.ends_with("desktop") {
         current_dir.parent().unwrap().to_path_buf()
     } else {
         current_dir
     };
-    
-    let tasks_dir = base_dir.join(".agents").join("tasks");
+    Ok(base_dir.join(".agents").join("tasks"))
+}
+
+#[tauri::command]
+pub async fn get_agent_tasks() -> Result<Vec<AgentTask>, String> {
+    let mut tasks = Vec::new();
+    let tasks_dir = tasks_dir()?;
 
     if !tasks_dir.exists() {
         return Ok(tasks);
@@ -51,7 +55,6 @@ pub async fn get_agent_tasks() -> Result<Vec<AgentTask>, String> {
                     "Plan"
                 };
 
-                // 4.1 If status matches 🟡 yolo mode, tag task state as locked: true
                 let locked = status == "YOLO mode";
 
                 tasks.push(AgentTask {
@@ -69,18 +72,9 @@ pub async fn get_agent_tasks() -> Result<Vec<AgentTask>, String> {
 
 #[tauri::command]
 pub async fn update_agent_task_status(app: AppHandle, filename: String, new_status: String) -> Result<(), String> {
-    let current_dir = std::env::current_dir().map_err(|e| e.to_string())?;
-    let base_dir = if current_dir.ends_with("desktop") {
-        current_dir.parent().unwrap().to_path_buf()
-    } else {
-        current_dir
-    };
-    
-    let tasks_dir = base_dir.join(".agents").join("tasks");
-        
+    let tasks_dir = tasks_dir()?;
     let file_path = tasks_dir.join(&filename);
     
-    // Basic sandboxing/traversal protection
     if !file_path.starts_with(&tasks_dir) {
         return Err("Invalid filename traversal attempt".into());
     }
@@ -112,9 +106,97 @@ pub async fn update_agent_task_status(app: AppHandle, filename: String, new_stat
     }
 
     fs::write(&file_path, final_content).map_err(|e| e.to_string())?;
-    
-    // Emit event to update all frontend clients
     let _ = app.emit("tasks://updated", ());
     
+    Ok(())
+}
+
+/// Create a new agent task ticket file in `.agents/tasks/`.
+#[tauri::command]
+pub async fn create_agent_task(
+    app: AppHandle,
+    title: String,
+    description: String,
+    checklist: Vec<String>,
+) -> Result<AgentTask, String> {
+    let tasks_dir = tasks_dir()?;
+    fs::create_dir_all(&tasks_dir).map_err(|e| format!("Failed to create tasks dir: {e}"))?;
+
+    // Generate a slug filename from the title
+    let slug: String = title
+        .to_lowercase()
+        .chars()
+        .map(|c| if c.is_alphanumeric() { c } else { '-' })
+        .collect::<String>()
+        .split('-')
+        .filter(|s| !s.is_empty())
+        .collect::<Vec<_>>()
+        .join("-");
+
+    // Avoid collisions
+    let mut filename = format!("{}.md", slug);
+    let mut counter = 2u32;
+    while tasks_dir.join(&filename).exists() {
+        filename = format!("{}-{}.md", slug, counter);
+        counter += 1;
+    }
+
+    // Build checklist markdown
+    let checklist_str = if checklist.is_empty() {
+        "- [ ] Implement the feature\n- [ ] Test the implementation\n".to_string()
+    } else {
+        checklist.iter().map(|item| format!("- [ ] {}", item)).collect::<Vec<_>>().join("\n") + "\n"
+    };
+
+    let now = {
+        let d = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        // Simple UTC date string (good enough for a ticket timestamp)
+        let secs_per_day = 86400u64;
+        let days = d / secs_per_day;
+        // Approximate year/month/day (not accounting for leap seconds, but fine for tickets)
+        let year = 1970 + days / 365;
+        let remaining = days % 365;
+        let month = remaining / 30 + 1;
+        let day = remaining % 30 + 1;
+        format!("{}-{:02}-{:02}", year, month.min(12), day.min(31))
+    };
+    let desc = if description.is_empty() { title.clone() } else { description };
+
+    let content = format!(
+        "# {}\n\n- **Status:** 🔴 `plan`\n- **Created:** {}\n\n## Description\n\n{}\n\n## Checklist\n\n{}",
+        title, now, desc, checklist_str
+    );
+
+    let file_path = tasks_dir.join(&filename);
+    fs::write(&file_path, &content).map_err(|e| format!("Failed to write task: {e}"))?;
+
+    let _ = app.emit("tasks://updated", ());
+
+    Ok(AgentTask {
+        filename,
+        title,
+        status: "Plan".to_string(),
+        locked: false,
+    })
+}
+
+/// Delete an agent task file.
+#[tauri::command]
+pub async fn delete_agent_task(app: AppHandle, filename: String) -> Result<(), String> {
+    let tasks_dir = tasks_dir()?;
+    let file_path = tasks_dir.join(&filename);
+
+    if !file_path.starts_with(&tasks_dir) {
+        return Err("Invalid filename traversal attempt".into());
+    }
+
+    if file_path.exists() {
+        fs::remove_file(&file_path).map_err(|e| e.to_string())?;
+        let _ = app.emit("tasks://updated", ());
+    }
+
     Ok(())
 }
