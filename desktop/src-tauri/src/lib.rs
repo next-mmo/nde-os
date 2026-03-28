@@ -2,6 +2,7 @@ mod commands;
 mod state;
 
 use ai_launcher_core::shield::launcher::BrowserLauncher;
+use tauri::Manager;
 use commands::shield::ShieldLauncherState;
 use state::AppState;
 use std::path::PathBuf;
@@ -44,7 +45,7 @@ pub fn run() {
 
                 // In dev mode, disable always-on-top so you can switch to IDE / other windows.
                 // Production keeps alwaysOnTop: true from tauri.conf.json.
-                if let Some(win) = app.get_webview_window("main") {
+                if let Some(win) = app.handle().get_webview_window("main") {
                     let _ = win.set_always_on_top(false);
                 }
             }
