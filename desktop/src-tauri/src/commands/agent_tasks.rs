@@ -176,12 +176,16 @@ fn update_legacy_status_line(content: &str, fm_status: &str) -> String {
 }
 
 /// Create a new agent task ticket file in `.agents/tasks/`.
+///
+/// If `content` is non-empty, it is written as-is (LLM-generated full markdown).
+/// Otherwise a minimal skeleton is generated from title/description/checklist.
 #[tauri::command]
 pub async fn create_agent_task(
     app: AppHandle,
     title: String,
     description: String,
     checklist: Vec<String>,
+    content: Option<String>,
 ) -> Result<AgentTask, String> {
     let tasks_dir = tasks_dir()?;
     fs::create_dir_all(&tasks_dir).map_err(|e| format!("Failed to create tasks dir: {e}"))?;
@@ -205,37 +209,19 @@ pub async fn create_agent_task(
         counter += 1;
     }
 
-    // Build checklist markdown
-    let checklist_str = if checklist.is_empty() {
-        "- [ ] Implement the feature\n- [ ] Test the implementation\n".to_string()
+    // Use LLM-provided content if available, otherwise minimal skeleton
+    let file_content = if let Some(ref c) = content {
+        if !c.trim().is_empty() {
+            c.clone()
+        } else {
+            build_minimal_ticket(&title, &description, &checklist)
+        }
     } else {
-        checklist.iter().map(|item| format!("- [ ] {}", item)).collect::<Vec<_>>().join("\n") + "\n"
+        build_minimal_ticket(&title, &description, &checklist)
     };
-
-    let now = {
-        let d = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs();
-        // Simple UTC date string (good enough for a ticket timestamp)
-        let secs_per_day = 86400u64;
-        let days = d / secs_per_day;
-        // Approximate year/month/day (not accounting for leap seconds, but fine for tickets)
-        let year = 1970 + days / 365;
-        let remaining = days % 365;
-        let month = remaining / 30 + 1;
-        let day = remaining % 30 + 1;
-        format!("{}-{:02}-{:02}", year, month.min(12), day.min(31))
-    };
-    let desc = if description.is_empty() { title.clone() } else { description };
-
-    let content = format!(
-        "# {}\n\n- **Status:** 🔴 `plan`\n- **Created:** {}\n\n## Description\n\n{}\n\n## Checklist\n\n{}",
-        title, now, desc, checklist_str
-    );
 
     let file_path = tasks_dir.join(&filename);
-    fs::write(&file_path, &content).map_err(|e| format!("Failed to write task: {e}"))?;
+    fs::write(&file_path, &file_content).map_err(|e| format!("Failed to write task: {e}"))?;
 
     let _ = app.emit("tasks://updated", ());
 
@@ -245,6 +231,26 @@ pub async fn create_agent_task(
         status: "Plan".to_string(),
         locked: false,
     })
+}
+
+/// Minimal fallback ticket template — used ONLY when no LLM-generated content is provided
+/// (e.g. quick-add from the UI + button). The LLM owns the real template format.
+fn build_minimal_ticket(title: &str, description: &str, checklist: &[String]) -> String {
+    let desc = if description.is_empty() { title } else { description };
+    let checklist_str = if checklist.is_empty() {
+        "- [ ] Implement the feature\n- [ ] Test the implementation\n".to_string()
+    } else {
+        checklist
+            .iter()
+            .map(|item| format!("- [ ] {}", item))
+            .collect::<Vec<_>>()
+            .join("\n")
+            + "\n"
+    };
+
+    format!(
+        "# {title}\n\n- **Status:** 🔴 `plan`\n\n## Description\n\n{desc}\n\n## Checklist\n\n{checklist_str}"
+    )
 }
 
 /// Delete an agent task file.

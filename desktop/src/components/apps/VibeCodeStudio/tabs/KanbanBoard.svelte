@@ -21,7 +21,7 @@
   async function submitCreateTask(col: string) {
     if (!createTitle.trim()) { showCreateCol = null; return; }
     try {
-      await invoke("create_agent_task", { title: createTitle, description: "", checklist: [] });
+      await invoke("create_agent_task", { title: createTitle, description: "", checklist: [], content: null });
       showCreateCol = null;
       createTitle = "";
     } catch (e) {

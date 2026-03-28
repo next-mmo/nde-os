@@ -55,13 +55,20 @@ You have access to these Kanban tools. To use them, output a JSON codeblock cont
 Available Tools:
 - nde_kanban_get_tasks: args: {}
 - nde_kanban_create_task: args: { "title": string, "description": string, "checklist": string[] }
-- nde_kanban_update_task: args: { "filename": string, "status": "Plan" | "Waiting Approval" | "YOLO mode" | "Done by AI" | "Verified by Human" | "Re-open" }
+- nde_kanban_update_task: args: { "filename": string, "status": "Plan" | "YOLO mode" | "Done by AI" | "Verified by Human" | "Re-open" }
 - nde_kanban_delete_task: args: { "filename": string }
+
+When creating tasks, use the tickets-writer methodology with rich content:
+1. Title and Purpose explaining WHAT and WHY
+2. Description with technical context
+3. Edge Cases & Security concerns  
+4. Task Checklist with 3-8 specific steps
+5. Definition of Done
 
 Important Rules:
 1. ONLY output the JSON block when using a tool. Do NOT wrap tool JSON payloads outside of the \`\`\`json block.
 2. Only use ONE tool per response.
-3. Once the tool returns a result, you will receive it as a System observation, and you can then provide your final answer to the user.`;
+3. Once the tool returns a result, you will receive it as a System observation, and you can then provide your final answer.`;
 
   let devPrompt = $derived(`You are the OpenCode IDE Agent. You assist the user with writing and understanding code. You output explanations and code fragments. When providing code blocks, ensure they are properly formatted with the appropriate language.
 ${activeFilePath ? `\nActive File: ${activeFilePath}\nFile Content:\n\`\`\`\n${fileContent}\n\`\`\`` : ''}`);
@@ -79,10 +86,12 @@ ${activeFilePath ? `\nActive File: ${activeFilePath}\nFile Content:\n\`\`\`\n${f
   let textareaRef: HTMLTextAreaElement | null = null;
   
   const skillsList = [
+    { label: "/add", description: "Create task → /add My Task Title" },
+    { label: "/list", description: "List all kanban tasks" },
+    { label: "/move", description: "Move task → /move filename.md Done by AI" },
+    { label: "/delete", description: "Delete task → /delete filename.md" },
     { label: "/tickets-writer", description: "Enforces 4-phase methodology" },
-    { label: "/figma-design-sync", description: "Design UI sync" },
     { label: "/research", description: "Web search" },
-    { label: "/setup", description: "Configure codebase" }
   ];
   
   const mcpList = [
@@ -123,15 +132,202 @@ ${activeFilePath ? `\nActive File: ${activeFilePath}\nFile Content:\n\`\`\`\n${f
     const replaced = textBeforeCursor.replace(/[@/][a-zA-Z0-9-]*$/, suggestion.label + " ");
     prompt = replaced + textAfterCursor;
     showAutocomplete = false;
-    setTimeout(() => textareaRef?.focus(), 0);
+    const newCursorPos = replaced.length;
+    setTimeout(() => {
+      if (textareaRef) {
+        textareaRef.focus();
+        textareaRef.selectionStart = newCursorPos;
+        textareaRef.selectionEnd = newCursorPos;
+      }
+    }, 0);
   }
 
-    // Removed the fast path regex parsing. We fully rely on the LLM tool-calling loop.
+  // ── Direct slash-command executor ────────────────────────────────
+  async function tryDirectCommand(text: string): Promise<boolean> {
+    // /add <title> — LLM generates full markdown ticket, writes directly to file
+    const addMatch = text.match(/^\/add\s+(.+)/i);
+    if (addMatch) {
+      const title = addMatch[1].trim();
+      messages.push({ role: "user", content: text });
+      messages.push({ role: "assistant", content: "", streaming: true });
+      scrollToBottom();
+
+      // Ask the LLM to generate a complete ticket (tickets-writer methodology)
+      const enrichPrompt = `You are a Scrum Master using the tickets-writer methodology.
+Generate a COMPLETE markdown task ticket for: "${title}"
+
+Use this EXACT format — output ONLY the markdown, nothing else:
+
+# ${title}
+
+- **Status:** 🔴 \`plan\`
+- **Feature:** ${title}
+- **Purpose:** <1-2 sentence purpose explaining WHAT this achieves and WHY>
+
+---
+
+## Description
+
+<2-4 sentences with technical context about the implementation approach>
+
+---
+
+## Edge Cases & Security
+
+- <specific edge case or security concern>
+- <another concern>
+
+---
+
+## Task Checklist
+
+- [ ] <Specific actionable step 1>
+- [ ] <Specific actionable step 2>
+- [ ] <Specific actionable step 3>
+- [ ] <...3-8 total steps>
+- [ ] Write tests and verify
+
+---
+
+## Definition of Done
+
+- [ ] All checklist items completed
+- [ ] Code reviewed and tested
+- [ ] No TODOs, no mocks, no hacks
+
+Rules:
+- Be technical and precise
+- Each checklist step must be independently verifiable
+- Include edge cases relevant to the specific task
+- Output ONLY the markdown — no explanations before or after`;
+
+      let ticketContent = "";
+
+      try {
+        const resp = await fetch("http://localhost:8080/api/agent/chat/stream", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ message: enrichPrompt }),
+        });
+
+        if (resp.ok) {
+          const reader = resp.body?.getReader();
+          const decoder = new TextDecoder();
+
+          if (reader) {
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              const chunk = decoder.decode(value, { stream: true });
+              for (const line of chunk.split("\n")) {
+                const trimmed = line.trim();
+                if (!trimmed.startsWith("data: ") || trimmed === "data: [DONE]") continue;
+                try {
+                  const data = JSON.parse(trimmed.slice(6));
+                  if (data.type === "text_delta" && data.content) {
+                    ticketContent += data.content;
+                    messages[messages.length - 1].content = `✨ Generating ticket...\n\n${ticketContent}`;
+                    scrollToBottom();
+                  }
+                } catch {}
+              }
+            }
+          }
+        }
+      } catch {
+        // LLM unavailable — ticketContent stays empty, backend uses minimal fallback
+      }
+
+      // Create the task — pass full LLM markdown as content (Rust writes it directly)
+      messages[messages.length - 1].streaming = false;
+      try {
+        const r: any = await invoke("create_agent_task", {
+          title,
+          description: "",
+          checklist: [],
+          content: ticketContent || null, // null → backend uses minimal fallback
+        });
+        messages[messages.length - 1].content = ticketContent
+          ? `✅ Created **${title}** → \`${r.filename}\`\n\n${ticketContent}`
+          : `✅ Created **${title}** → \`${r.filename}\``;
+        messages[messages.length - 1].ticket = { filename: r.filename, title };
+      } catch (e: any) {
+        messages[messages.length - 1].content = `❌ Error: ${e}`;
+        messages[messages.length - 1].error = true;
+      }
+      scrollToBottom();
+      return true;
+    }
+
+    // /list
+    if (/^\/list\s*$/i.test(text)) {
+      messages.push({ role: "user", content: text });
+      messages.push({ role: "system", content: "🔧 Listing tasks...", tool: "nde_kanban_get_tasks" });
+      scrollToBottom();
+      try {
+        const tasks: any[] = await invoke("get_agent_tasks");
+        if (tasks.length === 0) {
+          messages.push({ role: "assistant", content: "📋 No tasks on the board." });
+        } else {
+          const lines = tasks.map(t => `• **${t.title}** — \`${t.status}\` → \`${t.filename}\``);
+          messages.push({ role: "assistant", content: `📋 **${tasks.length} task(s):**\n${lines.join("\n")}` });
+        }
+      } catch (e: any) {
+        messages.push({ role: "assistant", content: `❌ Error: ${e}`, error: true });
+      }
+      scrollToBottom();
+      return true;
+    }
+
+    // /move <filename> <status>
+    const moveMatch = text.match(/^\/move\s+(\S+\.md)\s+(.+)/i);
+    if (moveMatch) {
+      const filename = moveMatch[1].trim();
+      const newStatus = moveMatch[2].trim();
+      messages.push({ role: "user", content: text });
+      messages.push({ role: "system", content: `🔧 Moving \`${filename}\` → **${newStatus}**...`, tool: "nde_kanban_update_task" });
+      scrollToBottom();
+      try {
+        await invoke("update_agent_task_status", { filename, newStatus });
+        messages.push({ role: "assistant", content: `✅ Moved \`${filename}\` to **${newStatus}**` });
+      } catch (e: any) {
+        messages.push({ role: "assistant", content: `❌ Error: ${e}`, error: true });
+      }
+      scrollToBottom();
+      return true;
+    }
+
+    // /delete <filename>
+    const delMatch = text.match(/^\/delete\s+(\S+\.md)/i);
+    if (delMatch) {
+      const filename = delMatch[1].trim();
+      messages.push({ role: "user", content: text });
+      messages.push({ role: "system", content: `🔧 Deleting \`${filename}\`...`, tool: "nde_kanban_delete_task" });
+      scrollToBottom();
+      try {
+        await invoke("delete_agent_task", { filename });
+        messages.push({ role: "assistant", content: `✅ Deleted \`${filename}\`` });
+      } catch (e: any) {
+        messages.push({ role: "assistant", content: `❌ Error: ${e}`, error: true });
+      }
+      scrollToBottom();
+      return true;
+    }
+
+    return false;
+  }
 
   async function send() {
     if (!prompt.trim() || isGenerating) return;
     const text = prompt.trim();
     prompt = "";
+
+    // Try direct slash commands first (no LLM call needed)
+    if (text.startsWith("/")) {
+      const handled = await tryDirectCommand(text);
+      if (handled) return;
+    }
+
     isGenerating = true;
 
     messages.push({ role: "user", content: text });
@@ -173,6 +369,28 @@ ${activeFilePath ? `\nActive File: ${activeFilePath}\nFile Content:\n\`\`\`\n${f
                   fullContent += data.content;
                   messages[messages.length - 1].content = fullContent;
                   scrollToBottom();
+                } else if (data.type === "tool_call_start") {
+                  // Native tool event from backend executor
+                  messages[messages.length - 1].streaming = false;
+                  messages.push({ role: "system", content: `🔧 Calling **${data.tool_name}**...`, tool: data.tool_name });
+                  scrollToBottom();
+                } else if (data.type === "tool_call_result") {
+                  const preview = data.output?.length > 500 ? data.output.slice(0, 500) + "..." : data.output;
+                  messages.push({
+                    role: "system",
+                    content: data.is_error
+                      ? `❌ **${data.tool_name}** error:\n\`\`\`\n${preview}\n\`\`\``
+                      : `✅ **${data.tool_name}** (${data.duration_ms}ms):\n\`\`\`\n${preview}\n\`\`\``,
+                    tool: data.tool_name,
+                  });
+                  fullContent = "";
+                  messages.push({ role: "assistant", content: "", streaming: true });
+                  scrollToBottom();
+                } else if (data.type === "done" && data.content) {
+                  if (messages[messages.length - 1].role === "assistant" && !messages[messages.length - 1].content) {
+                    messages[messages.length - 1].content = data.content;
+                    fullContent = data.content;
+                  }
                 } else if (data.type === "error") {
                   throw new Error(data.message);
                 }
@@ -181,21 +399,24 @@ ${activeFilePath ? `\nActive File: ${activeFilePath}\nFile Content:\n\`\`\`\n${f
           }
         }
         
-        // Check for tool calls
+        // Finalize current assistant message
         messages[messages.length - 1].streaming = false;
+
+        // Frontend tool loop: parse JSON codeblocks for LLMs without native tool-calling
         const jsonMatch = fullContent.match(/```(?:json)?\s*(\{[\s\S]*?"tool"[\s\S]*?\})\s*```/);
         
         if (jsonMatch && chatMode === "scrum") {
           let toolCall: any;
           try { toolCall = JSON.parse(jsonMatch[1]); } catch(e) {}
           if (toolCall && toolCall.tool) {
-            messages.push({ role: "system", content: `🔧 Executing **${toolCall.tool}**...`, tool: toolCall.tool });
+            // Show collapsible tool step
+            messages.push({ role: "system", content: `🔧 Calling **${toolCall.tool}**...`, tool: toolCall.tool });
             scrollToBottom();
             
             let resultString = "";
             try {
               if (toolCall.tool === "nde_kanban_create_task") {
-                 let r: any = await invoke("create_agent_task", { title: toolCall.args.title||"Task", description: toolCall.args.description||"", checklist: toolCall.args.checklist||[] });
+                 let r: any = await invoke("create_agent_task", { title: toolCall.args.title||"Task", description: toolCall.args.description||"", checklist: toolCall.args.checklist||[], content: null });
                  resultString = `Success: Created ${r.filename}`;
               } else if (toolCall.tool === "nde_kanban_update_task") {
                  let stat = toolCall.args.status === "Verified" ? "Verified by Human" : toolCall.args.status;
@@ -208,19 +429,25 @@ ${activeFilePath ? `\nActive File: ${activeFilePath}\nFile Content:\n\`\`\`\n${f
                  const tasks = await invoke("get_agent_tasks");
                  resultString = JSON.stringify(tasks, null, 2);
               } else {
-                 resultString = `Error: Unknown tool ${toolCall.tool}. Available tools: nde_kanban_create_task, nde_kanban_update_task, nde_kanban_delete_task, nde_kanban_get_tasks`;
+                 resultString = `Unknown tool: ${toolCall.tool}`;
               }
-            } catch (e: any) { resultString = `Error executing tool: ${e}`; }
+            } catch (e: any) { resultString = `Error: ${e}`; }
             
-            messages.push({ role: "system", content: `\`\`\`\n${resultString}\n\`\`\`` });
+            // Show result as collapsible step
+            messages.push({
+              role: "system",
+              content: resultString.startsWith("Error") ? `❌ **${toolCall.tool}**:\n\`\`\`\n${resultString}\n\`\`\`` : `✅ **${toolCall.tool}**:\n\`\`\`\n${resultString}\n\`\`\``,
+              tool: toolCall.tool,
+            });
             
-            historyContext += `\n\nAssistant generated tool call: ${fullContent}\n\nSystem observation:\n\`\`\`\n${resultString}\n\`\`\`\n\nProceed based on the observation. If done, provide a clear, concise summary.`;
+            historyContext += `\n\nAssistant: ${fullContent}\n\nSystem observation:\n\`\`\`\n${resultString}\n\`\`\`\n\nBased on the result above, provide a clear summary to the user.`;
             messages.push({ role: "assistant", content: "", streaming: true });
             scrollToBottom();
             continue;
           }
         }
 
+        // Check for HTML (figma mode)
         const htmlMatch = fullContent.match(/```(?:html|svelte|vue|jsx|tsx)?\s*([\s\S]*?)```/);
         if (htmlMatch && onApplyPatch) {
           messages[messages.length - 1].spec = { code: htmlMatch[1] };
@@ -269,41 +496,77 @@ ${activeFilePath ? `\nActive File: ${activeFilePath}\nFile Content:\n\`\`\`\n${f
   }
 </script>
 
-<div class="flex-1 overflow-y-auto p-4 flex flex-col gap-4 text-sm scrollbar-thin">
-  {#each messages as msg}
-    <div class="flex gap-3 {msg.role === 'user' ? 'flex-row-reverse' : ''}">
-      <div class="w-7 h-7 shrink-0 rounded-full flex items-center justify-center {msg.role === 'assistant' ? 'bg-indigo-500/20 text-indigo-400 border border-indigo-500/30' : msg.role === 'user' ? 'bg-white/10 text-white/70 border border-white/20' : 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'}">
-        {msg.role === 'assistant' ? '✦' : msg.role === 'user' ? 'U' : '🔧'}
-      </div>
-      <div class="max-w-[85%]">
+<div class="flex-1 overflow-y-auto p-4 flex flex-col gap-3 text-sm scrollbar-thin">
+  {#each messages as msg, idx}
+    {#if msg.role === 'system'}
+      <!-- Tool/system messages: collapsible process step -->
+      <details class="group tool-step">
+        <summary class="flex items-center gap-2 cursor-pointer select-none px-2 py-1.5 rounded-lg bg-white/3 hover:bg-white/6 border border-white/6 transition-colors text-xs text-white/60">
+          <svg class="w-3.5 h-3.5 shrink-0 transition-transform duration-200 group-open:rotate-90 text-white/40" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+          {#if msg.tool}
+            <span class="inline-flex items-center gap-1.5">
+              {#if msg.content?.startsWith('✅')}
+                <span class="w-4 h-4 rounded-full bg-emerald-500/20 flex items-center justify-center text-[10px] text-emerald-400">✓</span>
+                <span class="text-emerald-400/80">{msg.tool}</span>
+                <span class="text-white/30">completed</span>
+              {:else if msg.content?.startsWith('❌')}
+                <span class="w-4 h-4 rounded-full bg-red-500/20 flex items-center justify-center text-[10px] text-red-400">✗</span>
+                <span class="text-red-400/80">{msg.tool}</span>
+                <span class="text-white/30">failed</span>
+              {:else}
+                <span class="w-4 h-4 rounded-full bg-amber-500/20 flex items-center justify-center">
+                  <span class="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse"></span>
+                </span>
+                <span class="text-amber-300/80">{msg.tool}</span>
+                <span class="text-white/30">running...</span>
+              {/if}
+            </span>
+          {:else}
+            <span class="text-white/50">{msg.content?.split('\n')[0]?.slice(0, 60) || 'Process step'}</span>
+          {/if}
+        </summary>
         {#if msg.content}
-          <div class="px-3 py-2 rounded-xl {msg.role === 'assistant' ? 'bg-white/5 border border-white/10 text-white/90 font-mono text-[11px] whitespace-pre-wrap max-h-48 overflow-y-auto' : msg.role === 'user' ? 'bg-indigo-500/30 border border-indigo-500/40 text-white whitespace-pre-wrap' : 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-100 font-mono text-[10px] whitespace-pre-wrap'}">
+          <div class="mt-1.5 ml-6 px-3 py-2 rounded-lg bg-black/30 border border-white/6 text-[10px] text-white/60 font-mono whitespace-pre-wrap max-h-40 overflow-y-auto scrollbar-thin">
             {msg.content}
           </div>
         {/if}
-        {#if msg.streaming && !msg.content}
-          <div class="px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white/50 flex gap-1 items-center">
-            <div class="w-1.5 h-1.5 rounded-full bg-white/50 animate-pulse"></div>
-            <div class="w-1.5 h-1.5 rounded-full bg-white/50 animate-pulse" style="animation-delay: 150ms"></div>
-            <div class="w-1.5 h-1.5 rounded-full bg-white/50 animate-pulse" style="animation-delay: 300ms"></div>
-          </div>
-        {/if}
-        {#if msg.ticket}
-          <div class="mt-1 flex items-center gap-1.5 text-[10px] text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded px-2 py-1 w-fit">
-            <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 24 24"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-7 14l-5-5 1.41-1.41L12 14.17l7.59-7.59L21 8l-9 9z"/></svg>
-            Ticket created on Kanban
-          </div>
-        {/if}
-        {#if msg.spec}
-          <!-- svelte-ignore a11y_click_events_have_key_events -->
-          <!-- svelte-ignore a11y_no_static_element_interactions -->
-          <div class="mt-1 flex items-center gap-1.5 text-[10px] text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded px-2 py-1 w-fit cursor-pointer hover:bg-emerald-500/20 transition-colors" onclick={() => onApplyPatch && onApplyPatch(msg.spec)}>
-            <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 24 24"><path d="M9 16h6l1-4H8l1 4zm1-8h4v2h-4V8z"/></svg>
-            UI generated · Click to apply
-          </div>
-        {/if}
+      </details>
+    {:else}
+      <!-- User / Assistant messages: regular bubbles -->
+      <div class="flex gap-3 {msg.role === 'user' ? 'flex-row-reverse' : ''}">
+        <div class="w-7 h-7 shrink-0 rounded-full flex items-center justify-center {msg.role === 'assistant' ? 'bg-indigo-500/20 text-indigo-400 border border-indigo-500/30' : 'bg-white/10 text-white/70 border border-white/20'}">
+          {msg.role === 'assistant' ? '✦' : 'U'}
+        </div>
+        <div class="max-w-[85%]">
+          {#if msg.content}
+            <div class="px-3 py-2 rounded-xl {msg.role === 'assistant' ? 'bg-white/5 border border-white/10 text-white/90 font-mono text-[11px] whitespace-pre-wrap max-h-48 overflow-y-auto' : 'bg-indigo-500/30 border border-indigo-500/40 text-white whitespace-pre-wrap'}">
+              {msg.content}
+            </div>
+          {/if}
+          {#if msg.streaming && !msg.content}
+            <div class="px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white/50 flex gap-1 items-center">
+              <div class="w-1.5 h-1.5 rounded-full bg-white/50 animate-pulse"></div>
+              <div class="w-1.5 h-1.5 rounded-full bg-white/50 animate-pulse" style="animation-delay: 150ms"></div>
+              <div class="w-1.5 h-1.5 rounded-full bg-white/50 animate-pulse" style="animation-delay: 300ms"></div>
+            </div>
+          {/if}
+          {#if msg.ticket}
+            <div class="mt-1 flex items-center gap-1.5 text-[10px] text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded px-2 py-1 w-fit">
+              <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 24 24"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-7 14l-5-5 1.41-1.41L12 14.17l7.59-7.59L21 8l-9 9z"/></svg>
+              Ticket created on Kanban
+            </div>
+          {/if}
+          {#if msg.spec}
+            <!-- svelte-ignore a11y_click_events_have_key_events -->
+            <!-- svelte-ignore a11y_no_static_element_interactions -->
+            <div class="mt-1 flex items-center gap-1.5 text-[10px] text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded px-2 py-1 w-fit cursor-pointer hover:bg-emerald-500/20 transition-colors" onclick={() => onApplyPatch && onApplyPatch(msg.spec)}>
+              <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 24 24"><path d="M9 16h6l1-4H8l1 4zm1-8h4v2h-4V8z"/></svg>
+              UI generated · Click to apply
+            </div>
+          {/if}
+        </div>
       </div>
-    </div>
+    {/if}
   {/each}
   <div bind:this={chatBottom}></div>
 </div>

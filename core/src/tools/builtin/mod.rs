@@ -35,9 +35,12 @@ mod web_search;
 // ── Git tools (Phase 3) ─────────────────────────────────────────────────────
 mod git_tools;
 
+// ── Kanban tools ─────────────────────────────────────────────────────────────
+mod kanban_tools;
+
 use super::ToolRegistry;
 
-/// Creates the default tool registry with all 27 built-in tools.
+/// Creates the default tool registry with all 33 built-in tools.
 ///
 /// Categories:
 ///   Filesystem (6): file_read, file_write, file_delete, file_list, file_search, file_patch
@@ -47,6 +50,8 @@ use super::ToolRegistry;
 ///   Knowledge (2):  knowledge_store, knowledge_query
 ///   Web (3):        web_browse, web_search, http_fetch
 ///   Git (1):        git
+///   Kanban (6):     kanban_get_tasks, kanban_create_task, kanban_update_task,
+///                   kanban_delete_task, kanban_get_task_content, kanban_update_task_content
 ///   System (7):     app_list, app_install, app_launch, app_stop, system_info, skill_list
 pub fn default_registry() -> ToolRegistry {
     let mut reg = ToolRegistry::new();
@@ -84,6 +89,14 @@ pub fn default_registry() -> ToolRegistry {
 
     // Git (Phase 3)
     reg.register(Box::new(git_tools::GitTool));
+
+    // Kanban
+    reg.register(Box::new(kanban_tools::KanbanGetTasksTool));
+    reg.register(Box::new(kanban_tools::KanbanCreateTaskTool));
+    reg.register(Box::new(kanban_tools::KanbanUpdateTaskTool));
+    reg.register(Box::new(kanban_tools::KanbanDeleteTaskTool));
+    reg.register(Box::new(kanban_tools::KanbanGetTaskContentTool));
+    reg.register(Box::new(kanban_tools::KanbanUpdateTaskContentTool));
 
     // System integration
     reg.register(Box::new(app_tools::AppListTool));
