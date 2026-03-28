@@ -145,13 +145,13 @@
 
     <main class="relative z-10 w-full h-full grid grid-rows-[auto_1fr] pointer-events-none">
       <div class="pointer-events-auto"><TopBar /></div>
-      <div class="pointer-events-auto relative">
+      <div class="pointer-events-none relative">
         <WindowsArea />
 
         <!-- Drawer panels -->
         {#if desktop.drawer && drawerSession}
           <div
-            class="absolute z-50 top-0 bottom-0 {desktop.drawer.side === 'left' ? 'left-0 border-r' : 'right-0 border-l'} w-[50vw] max-w-[800px] min-w-[320px] flex flex-col bg-white/95 dark:bg-gray-900/95 backdrop-blur-2xl border-black/10 dark:border-white/10 shadow-2xl"
+            class="pointer-events-auto absolute z-50 top-0 bottom-0 {desktop.drawer.side === 'left' ? 'left-0 border-r' : 'right-0 border-l'} w-[50vw] max-w-[800px] min-w-[320px] flex flex-col bg-white/95 dark:bg-gray-900/95 backdrop-blur-2xl border-black/10 dark:border-white/10 shadow-2xl"
             data-testid="drawer-panel"
             data-drawer-side={desktop.drawer.side}
           >
@@ -186,7 +186,7 @@
         <!-- Fullscreen session overlay -->
         {#if fullscreenSession}
           <div
-            class="absolute inset-0 z-50 flex flex-col bg-white/95 dark:bg-gray-900/95 backdrop-blur-2xl"
+            class="pointer-events-auto absolute inset-0 z-50 flex flex-col bg-white/95 dark:bg-gray-900/95 backdrop-blur-2xl"
             data-testid="fullscreen-panel"
           >
             <header class="flex items-center justify-between gap-3 px-4 py-2.5 border-b border-black/8 dark:border-white/8 bg-linear-to-b from-white/90 to-white/60 dark:from-gray-800/90 dark:to-gray-800/60 shrink-0">

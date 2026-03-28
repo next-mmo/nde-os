@@ -74,6 +74,29 @@ Tests fail = task NOT done. **Only test what you touched** — run scoped tests 
 - **Run**: `cd desktop && npx playwright test e2e/<spec>.spec.ts --reporter=list` (requires `./dev.sh` running).
 - **Never** use `page.goto("http://localhost:5174")` — the Tauri webview loads its own URL via the bridge.
 
+#### Dev Mode Behavior (Important)
+
+- **Always expanded**: In `import.meta.env.DEV`, the desktop always starts expanded (`collapsed = false`). `collapseDesktop()` is a no-op. No FAB-expansion logic needed in E2E specs.
+- **Test hook**: `window.__svelteDesktop` is exposed in dev mode only (`main.ts`). Use `window.__svelteDesktop.openStaticApp("app-id")` to open windows programmatically in specs.
+
+#### Known Gotchas
+
+- **Tasks directory CWD**: `cargo tauri dev` runs the binary from `desktop/src-tauri/`. `tasks_dir()` in `agent_tasks.rs` now walks up from CWD to find `.agents/tasks/` (the repo root). E2E specs that write task files must target the path that `tasks_dir()` resolves to — confirmed by checking `desktop/src-tauri/.agents/tasks/` in dev mode.
+- **`data-card-id` includes `.md`**: The Rust backend returns full filenames including extension (`task-name.md`). Playwright selectors must use `[data-card-id="task-name.md"]`, not `[data-card-id="task-name"]`.
+- **HTML5 drag in WebView2**: `page.dragTo()` uses Pointer/Mouse events which do NOT fire `DragEvent` in WebView2. Always dispatch drag events manually via `page.evaluate()`: `dragstart` → `dragover` → `drop` → `dragend`.
+- **`aria-hidden` elements**: The desktop wallpaper has `aria-hidden="true"`, making `toBeVisible()` fail. Use `waitForSelector('[data-testid="dock"], [data-window]')` to check if the desktop shell is ready.
+- **Window remount for fresh data**: Svelte's `onMount` only fires once per component lifecycle. If a window stays open between tests, `get_agent_tasks` won't re-fetch. Close the window before reopening to force an `onMount` refresh:
+  ```ts
+  // Close existing window to force onMount re-run
+  await page.evaluate(() => {
+    document.querySelector('[data-window="vibe-studio"] button[aria-label="Close Desktop Window"]')?.click();
+  });
+  await page.waitForTimeout(500);
+  // Re-open
+  await page.evaluate(() => window.__svelteDesktop?.openStaticApp("vibe-studio"));
+  ```
+- **Tauri event channels**: Frontend `emit("event://name")` does NOT trigger Svelte `listen("event://name")` — those listen for backend-emitted events only. Triggering board refresh from tests requires either closing/reopening the window or using `window.__svelteDesktop.refreshKanban()`.
+
 ## 7. Global Definition of Done (DoD)
 
 Before marking any task, ticket, or feature as complete, the following system-wide criteria must be met to ensure zero-mistake execution, flawless user experience, and deep backend performance:

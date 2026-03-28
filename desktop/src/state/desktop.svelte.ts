@@ -173,6 +173,9 @@ function getSavedStartExpanded(): boolean {
 }
 
 function getSavedCollapsed(): boolean {
+  // In Tauri dev mode, always start expanded — FAB toggle is not useful during development
+  // and causes E2E test failures since tests expect the full desktop UI.
+  if (import.meta.env.DEV) return false;
   if (getSavedStartExpanded()) return false; // always expanded on boot
   // Otherwise, restore last session state
   try {
@@ -374,6 +377,9 @@ export async function saveFabPosition() {
 }
 
 export async function collapseDesktop() {
+  // In dev mode, collapsing is disabled — the desktop stays expanded for development and testing
+  if (import.meta.env.DEV) return;
+
   // Save current window geometry before shrinking
   await saveMainWindowGeometry();
 
@@ -439,10 +445,7 @@ export function bootDesktop() {
     (id) => validStaticIds.includes(id as StaticAppID) && id !== "launchpad",
   ))];
 
-  // Only force the launcher open on first startup (no saved state)
-  if (!hasSavedState && !appsToRestore.includes("ai-launcher")) {
-    appsToRestore.unshift("ai-launcher");
-  }
+  // Do not auto-open the launcher on first startup — let the user open it manually
 
   for (const appId of appsToRestore) {
     const config = apps_config[appId as Exclude<StaticAppID, "launchpad">];

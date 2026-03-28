@@ -41,6 +41,12 @@ pub fn run() {
                         .level(log::LevelFilter::Info)
                         .build(),
                 )?;
+
+                // In dev mode, disable always-on-top so you can switch to IDE / other windows.
+                // Production keeps alwaysOnTop: true from tauri.conf.json.
+                if let Some(win) = app.get_webview_window("main") {
+                    let _ = win.set_always_on_top(false);
+                }
             }
             Ok(())
         })

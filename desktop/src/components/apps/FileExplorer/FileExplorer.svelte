@@ -11,35 +11,100 @@
     modified: string | null;
   }
 
-  let currentPath = $state("");
-  let entries = $state<FileEntry[]>([]);
-  let loading = $state(false);
-  let error = $state("");
-  let history = $state<string[]>([]);
-  let historyIndex = $state(-1);
-  let viewMode = $state<"list" | "grid">("list");
-  let selectedPath = $state<string | null>(null);
-  let renamingPath = $state<string | null>(null);
-  let renameValue = $state("");
-  let showNewFolderInput = $state(false);
-  let newFolderName = $state("");
-  let sandboxRoot = $state("");
+  interface SidebarItem {
+    label: string;
+    icon: string;
+    subpath: string;
+    /** absolute path – set once sandboxRoot is known for built-ins, or full path for pins */
+    fullPath?: string;
+    isPinned?: boolean;
+    isBuiltIn?: boolean;
+  }
 
-  // Context menu state
-  let contextMenu = $state<{ x: number; y: number; type: "file" | "folder" | "blank"; entry?: FileEntry } | null>(null);
-
-  // Sidebar: NDE-OS workspace directories (these live inside the sandbox root)
-  const sidebarItems = [
-    { label: "Workspace", icon: "🏠", subpath: "" },
-    { label: "Apps", icon: "📦", subpath: "" }, // Will contain app workspaces
-    { label: "Data", icon: "💾", subpath: "data" },
-    { label: "Models", icon: "🧠", subpath: "models" },
-    { label: "Outputs", icon: "📤", subpath: "outputs" },
-    { label: "Logs", icon: "📋", subpath: "logs" },
-    { label: "Config", icon: "⚙️", subpath: "config" },
-    { label: "Temp", icon: "🗑️", subpath: "tmp" },
+  // ── Built-in sidebar items (NDE-OS workspace shortcuts) ───────────
+  const builtInItems: SidebarItem[] = [
+    { label: "Workspace", icon: "🏠", subpath: "",      isBuiltIn: true },
+    { label: "Apps",      icon: "📦", subpath: "",      isBuiltIn: true },
+    { label: "Data",      icon: "💾", subpath: "data",  isBuiltIn: true },
+    { label: "Models",    icon: "🧠", subpath: "models",isBuiltIn: true },
+    { label: "Outputs",   icon: "📤", subpath: "outputs",isBuiltIn: true },
+    { label: "Logs",      icon: "📋", subpath: "logs",  isBuiltIn: true },
+    { label: "Config",    icon: "⚙️",  subpath: "config",isBuiltIn: true },
+    { label: "Temp",      icon: "🗑️",  subpath: "tmp",  isBuiltIn: true },
   ];
 
+  // ── State ─────────────────────────────────────────────────────────
+  let currentPath   = $state("");
+  let entries       = $state<FileEntry[]>([]);
+  let loading       = $state(false);
+  let error         = $state("");
+  let history       = $state<string[]>([]);
+  let historyIndex  = $state(-1);
+  let viewMode      = $state<"list" | "grid">("list");
+  let selectedPath  = $state<string | null>(null);
+  let renamingPath  = $state<string | null>(null);
+  let renameValue   = $state("");
+  let showNewFolderInput = $state(false);
+  let newFolderName = $state("");
+  let sandboxRoot   = $state("");
+
+  // Pinned items persisted in localStorage
+  const PINS_KEY = "file-explorer-pins";
+  let pinnedItems = $state<SidebarItem[]>(loadPins());
+
+  function loadPins(): SidebarItem[] {
+    try {
+      const raw = localStorage.getItem(PINS_KEY);
+      if (raw) return JSON.parse(raw) as SidebarItem[];
+    } catch {}
+    return [];
+  }
+
+  function savePins() {
+    try {
+      localStorage.setItem(PINS_KEY, JSON.stringify(pinnedItems));
+    } catch {}
+  }
+
+  // Full sidebar = built-ins + pinned separator
+  const sidebarItems = $derived<SidebarItem[]>([
+    ...builtInItems,
+  ]);
+
+  // Context menu state
+  let contextMenu = $state<{
+    x: number; y: number;
+    type: "file" | "folder" | "blank";
+    entry?: FileEntry;
+  } | null>(null);
+
+  // ── Pin helpers ───────────────────────────────────────────────────
+  function isPinned(path: string): boolean {
+    return pinnedItems.some(p => p.fullPath === path);
+  }
+
+  function pinFolder(entry: FileEntry) {
+    if (isPinned(entry.path)) return;
+    const sep = entry.path.includes("\\") ? "\\" : "/";
+    const label = entry.path.split(sep).pop() ?? entry.name;
+    pinnedItems = [...pinnedItems, {
+      label,
+      icon: "📁",
+      subpath: "",
+      fullPath: entry.path,
+      isPinned: true,
+    }];
+    savePins();
+    contextMenu = null;
+  }
+
+  function unpinFolder(path: string) {
+    pinnedItems = pinnedItems.filter(p => p.fullPath !== path);
+    savePins();
+    contextMenu = null;
+  }
+
+  // ── Init ──────────────────────────────────────────────────────────
   async function init() {
     try {
       sandboxRoot = await invoke<string>("get_home_dir");
@@ -50,12 +115,12 @@
   }
 
   async function navigate(path: string) {
-    loading = true;
-    error = "";
-    selectedPath = null;
-    renamingPath = null;
+    loading       = true;
+    error         = "";
+    selectedPath  = null;
+    renamingPath  = null;
     showNewFolderInput = false;
-    contextMenu = null;
+    contextMenu   = null;
     try {
       const result = await invoke<FileEntry[]>("list_directory", { path });
       entries = result;
@@ -64,7 +129,7 @@
       if (historyIndex < history.length - 1) {
         history = history.slice(0, historyIndex + 1);
       }
-      history = [...history, currentPath];
+      history      = [...history, currentPath];
       historyIndex = history.length - 1;
     } catch (e) {
       error = String(e);
@@ -87,12 +152,12 @@
   }
 
   async function loadPath(path: string) {
-    loading = true;
-    error = "";
+    loading      = true;
+    error        = "";
     selectedPath = null;
-    contextMenu = null;
+    contextMenu  = null;
     try {
-      entries = await invoke<FileEntry[]>("list_directory", { path });
+      entries     = await invoke<FileEntry[]>("list_directory", { path });
       currentPath = path;
     } catch (e) {
       error = String(e);
@@ -101,10 +166,8 @@
   }
 
   function goUp() {
-    // Don't navigate above sandbox root
     if (!currentPath || currentPath === sandboxRoot) return;
-
-    const sep = currentPath.includes("\\") ? "\\" : "/";
+    const sep   = currentPath.includes("\\") ? "\\" : "/";
     const parts = currentPath.split(sep).filter(Boolean);
     if (parts.length <= 1) return;
     parts.pop();
@@ -112,17 +175,15 @@
       ? "/" + parts.join("/")
       : parts.join(sep);
 
-    // Verify parent is still inside sandbox
-    const rootNorm = sandboxRoot.replace(/\\/g, "/").toLowerCase();
+    const rootNorm   = sandboxRoot.replace(/\\/g, "/").toLowerCase();
     const parentNorm = parent.replace(/\\/g, "/").toLowerCase();
     if (!parentNorm.startsWith(rootNorm)) return;
-
     navigate(parent);
   }
 
   function handleEntryClick(entry: FileEntry) {
     selectedPath = entry.path;
-    contextMenu = null;
+    contextMenu  = null;
   }
 
   async function handleEntryDblClick(entry: FileEntry) {
@@ -139,12 +200,12 @@
 
   async function handleCreateFolder() {
     if (!newFolderName.trim()) return;
-    const sep = currentPath.includes("\\") ? "\\" : "/";
+    const sep        = currentPath.includes("\\") ? "\\" : "/";
     const folderPath = currentPath + sep + newFolderName.trim();
     try {
       await invoke("create_folder", { path: folderPath });
       showNewFolderInput = false;
-      newFolderName = "";
+      newFolderName      = "";
       await loadPath(currentPath);
     } catch (e) {
       error = String(e);
@@ -157,7 +218,7 @@
     try {
       await invoke("delete_entry", { path: target });
       selectedPath = null;
-      contextMenu = null;
+      contextMenu  = null;
       await loadPath(currentPath);
     } catch (e) {
       error = String(e);
@@ -166,8 +227,8 @@
 
   function startRename(entry: FileEntry) {
     renamingPath = entry.path;
-    renameValue = entry.name;
-    contextMenu = null;
+    renameValue  = entry.name;
+    contextMenu  = null;
   }
 
   async function handleRename(entry: FileEntry) {
@@ -175,7 +236,7 @@
       renamingPath = null;
       return;
     }
-    const sep = currentPath.includes("\\") ? "\\" : "/";
+    const sep     = currentPath.includes("\\") ? "\\" : "/";
     const newPath = currentPath + sep + renameValue.trim();
     try {
       await invoke("rename_entry", { oldPath: entry.path, newPath });
@@ -192,8 +253,11 @@
   }
 
   // ── Context menu ──────────────────────────────────────────────────
-
-  function showContextMenu(e: MouseEvent, type: "file" | "folder" | "blank", entry?: FileEntry) {
+  function showContextMenu(
+    e: MouseEvent,
+    type: "file" | "folder" | "blank",
+    entry?: FileEntry
+  ) {
     e.preventDefault();
     e.stopPropagation();
     if (entry) selectedPath = entry.path;
@@ -205,16 +269,12 @@
   }
 
   // ── Utils ─────────────────────────────────────────────────────────
-
   function formatSize(bytes: number): string {
     if (bytes === 0) return "—";
     const units = ["B", "KB", "MB", "GB", "TB"];
-    let i = 0;
+    let i    = 0;
     let size = bytes;
-    while (size >= 1024 && i < units.length - 1) {
-      size /= 1024;
-      i++;
-    }
+    while (size >= 1024 && i < units.length - 1) { size /= 1024; i++; }
     return `${size.toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
   }
 
@@ -237,11 +297,10 @@
   // Breadcrumbs relative to sandbox root
   const breadcrumbs = $derived.by(() => {
     if (!currentPath || !sandboxRoot) return [{ label: "NDE-OS", path: sandboxRoot }];
-    const sep = sandboxRoot.includes("\\") ? "\\" : "/";
-    const rootParts = sandboxRoot.split(sep).filter(Boolean);
+    const sep         = sandboxRoot.includes("\\") ? "\\" : "/";
+    const rootParts   = sandboxRoot.split(sep).filter(Boolean);
     const currentParts = currentPath.split(sep).filter(Boolean);
-    // Remove root prefix to get relative parts
-    const relParts = currentParts.slice(rootParts.length);
+    const relParts    = currentParts.slice(rootParts.length);
 
     const crumbs: { label: string; path: string }[] = [
       { label: "NDE-OS", path: sandboxRoot },
@@ -253,13 +312,22 @@
     return crumbs;
   });
 
-  function handleSidebar(item: { subpath: string }) {
-    if (item.subpath === "") {
-      navigate("");
-    } else {
-      const sep = sandboxRoot.includes("\\") ? "\\" : "/";
-      navigate(sandboxRoot + sep + item.subpath);
-    }
+  /** Resolve the absolute path for a sidebar item */
+  function resolveSidebarPath(item: SidebarItem): string {
+    if (item.fullPath) return item.fullPath;
+    if (!item.subpath) return sandboxRoot;
+    const sep = sandboxRoot.includes("\\") ? "\\" : "/";
+    return sandboxRoot + sep + item.subpath;
+  }
+
+  function handleSidebar(item: SidebarItem) {
+    navigate(resolveSidebarPath(item));
+  }
+
+  /** Is this sidebar item "active" (current path matches it)? */
+  function isSidebarActive(item: SidebarItem): boolean {
+    const target = resolveSidebarPath(item);
+    return currentPath === target || currentPath === "";
   }
 
   // Is at sandbox root?
@@ -272,19 +340,65 @@
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div class="flex w-full h-full overflow-hidden text-sm" onclick={closeContextMenu} onkeydown={undefined}>
   <!-- Sidebar -->
-  <aside class="w-48 shrink-0 border-r border-black/8 dark:border-white/8 bg-white/30 dark:bg-gray-900/30 backdrop-blur-md flex flex-col overflow-y-auto">
-    <div class="px-3 pt-3 pb-1.5">
-      <span class="text-[0.65rem] uppercase tracking-widest font-semibold text-gray-400 dark:text-gray-500">NDE-OS</span>
+  <aside class="w-52 shrink-0 border-r border-black/8 dark:border-white/8 bg-white/30 dark:bg-gray-900/30 backdrop-blur-md flex flex-col overflow-y-auto">
+    <!-- NDE-OS section -->
+    <div class="px-3 pt-3 pb-1">
+      <span class="text-[0.62rem] uppercase tracking-widest font-semibold text-gray-400 dark:text-gray-500">NDE-OS</span>
     </div>
     {#each sidebarItems as item}
       <button
-        class="flex items-center gap-2 px-3 py-1.5 text-left text-[0.82rem] font-medium rounded-lg mx-1.5 transition-colors duration-150 hover:bg-black/5 dark:hover:bg-white/5 {currentPath.endsWith(item.subpath) && item.subpath !== '' ? 'bg-blue-500/12 text-blue-600 dark:text-blue-400' : item.subpath === '' && isAtRoot ? 'bg-blue-500/12 text-blue-600 dark:text-blue-400' : 'text-gray-700 dark:text-gray-300'}"
+        class="group flex items-center gap-2 px-3 py-1.5 text-left text-[0.82rem] font-medium rounded-lg mx-1.5 transition-colors duration-150
+          hover:bg-black/5 dark:hover:bg-white/5
+          {isSidebarActive(item) ? 'bg-blue-500/12 text-blue-600 dark:text-blue-400' : 'text-gray-700 dark:text-gray-300'}"
         onclick={() => handleSidebar(item)}
+        title="Built-in workspace shortcut"
       >
         <span class="text-base">{item.icon}</span>
-        {item.label}
+        <span class="flex-1 truncate">{item.label}</span>
+        <!-- Built-in shortcut badge -->
+        <span
+          class="opacity-0 group-hover:opacity-100 transition-opacity text-[0.6rem] px-1 py-0.5 rounded bg-blue-500/10 text-blue-500 dark:text-blue-400 font-semibold leading-none shrink-0"
+          title="NDE-OS workspace shortcut"
+        >pin</span>
       </button>
     {/each}
+
+    <!-- Pinned section (user pins) -->
+    {#if pinnedItems.length > 0}
+      <div class="px-3 pt-3 pb-1 mt-1 border-t border-black/6 dark:border-white/6">
+        <span class="text-[0.62rem] uppercase tracking-widest font-semibold text-gray-400 dark:text-gray-500">Pinned</span>
+      </div>
+      {#each pinnedItems as pin}
+        <div
+          class="group flex items-center gap-2 px-3 py-1.5 text-left text-[0.82rem] font-medium rounded-lg mx-1.5 transition-colors duration-150
+            hover:bg-black/5 dark:hover:bg-white/5
+            {currentPath === pin.fullPath ? 'bg-blue-500/12 text-blue-600 dark:text-blue-400' : 'text-gray-700 dark:text-gray-300'}"
+        >
+          <button
+            class="flex items-center gap-2 flex-1 min-w-0 bg-transparent border-none p-0 text-inherit"
+            onclick={() => { if (pin.fullPath) navigate(pin.fullPath); }}
+            title={pin.fullPath}
+          >
+            <!-- Pinned folder icon with pin indicator -->
+            <span class="relative text-base shrink-0">
+              {pin.icon}
+              <span class="absolute -top-1 -right-1 text-[0.5rem] leading-none">📌</span>
+            </span>
+            <span class="flex-1 truncate">{pin.label}</span>
+          </button>
+          <!-- Unpin button -->
+          <button
+            class="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 rounded hover:bg-red-500/15 text-red-400 hover:text-red-500 shrink-0"
+            onclick={() => { if (pin.fullPath) unpinFolder(pin.fullPath); }}
+            title="Unpin"
+          >
+            <svg class="w-3 h-3" viewBox="0 0 20 20" fill="currentColor">
+              <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"/>
+            </svg>
+          </button>
+        </div>
+      {/each}
+    {/if}
   </aside>
 
   <!-- Main content -->
@@ -432,7 +546,13 @@
               >
                 <td class="px-4 py-1.5">
                   <div class="flex items-center gap-2">
-                    <span class="text-base">{fileIcon(entry)}</span>
+                    <!-- Folder icon: show 📌 overlay if it's pinned in sidebar -->
+                    <span class="relative text-base shrink-0">
+                      {fileIcon(entry)}
+                      {#if entry.is_dir && isPinned(entry.path)}
+                        <span class="absolute -top-1 -right-1 text-[0.5rem] leading-none" title="Pinned to sidebar">📌</span>
+                      {/if}
+                    </span>
                     {#if renamingPath === entry.path}
                       <input
                         type="text"
@@ -474,7 +594,12 @@
               oncontextmenu={(e) => { e.stopPropagation(); showContextMenu(e, entry.is_dir ? "folder" : "file", entry); }}
               onkeydown={(e) => { if (e.key === "Enter") handleEntryDblClick(entry); if (e.key === "Delete") handleDelete(entry.path); }}
             >
-              <span class="text-3xl">{fileIcon(entry)}</span>
+              <span class="relative text-3xl">
+                {fileIcon(entry)}
+                {#if entry.is_dir && isPinned(entry.path)}
+                  <span class="absolute -top-1 -right-1 text-[0.65rem] leading-none" title="Pinned to sidebar">📌</span>
+                {/if}
+              </span>
               <span class="text-[0.7rem] text-gray-700 dark:text-gray-300 text-center leading-tight line-clamp-2 w-full break-all">{entry.name}</span>
             </button>
           {/each}
@@ -492,7 +617,7 @@
       <span>{entries.length} item{entries.length !== 1 ? "s" : ""}</span>
       <span class="truncate max-w-[60%] text-right font-mono opacity-70">
         {#if sandboxRoot && currentPath}
-          /{currentPath.replace(sandboxRoot, "").replace(/^[\\/]/, "").replace(/\\/g, "/") || ""}
+          /{currentPath.replace(sandboxRoot, "").replace(/^[\/\\]/, "").replace(/\\/g, "/") || ""}
         {:else}
           /
         {/if}
@@ -511,7 +636,7 @@
     onkeydown={undefined}
   >
     <div
-      class="absolute min-w-[180px] py-1 rounded-xl bg-white/95 dark:bg-gray-800/95 backdrop-blur-xl border border-black/10 dark:border-white/10 shadow-xl shadow-black/20"
+      class="absolute min-w-[200px] py-1 rounded-xl bg-white/95 dark:bg-gray-800/95 backdrop-blur-xl border border-black/10 dark:border-white/10 shadow-xl shadow-black/20"
       style="left: {contextMenu.x}px; top: {contextMenu.y}px;"
     >
       {#if contextMenu.type === "file" && contextMenu.entry}
@@ -539,6 +664,25 @@
         <button class="flex items-center gap-2 w-full px-3 py-1.5 text-[0.8rem] text-left bg-transparent border-none cursor-default rounded-md mx-1 hover:bg-blue-500/15 dark:hover:bg-blue-500/20" onclick={() => { if (contextMenu?.entry) copyPath(contextMenu.entry.path); }}>
           <span>📋</span> Copy Path
         </button>
+
+        <!-- Pin / Unpin -->
+        <div class="h-px mx-2 my-1 bg-black/8 dark:bg-white/8"></div>
+        {#if contextMenu.entry && isPinned(contextMenu.entry.path)}
+          <button
+            class="flex items-center gap-2 w-full px-3 py-1.5 text-[0.8rem] text-left bg-transparent border-none cursor-default rounded-md mx-1 hover:bg-amber-500/15 dark:hover:bg-amber-500/20 text-amber-600 dark:text-amber-400"
+            onclick={() => { if (contextMenu?.entry) unpinFolder(contextMenu.entry.path); }}
+          >
+            <span>📌</span> Unpin from Sidebar
+          </button>
+        {:else}
+          <button
+            class="flex items-center gap-2 w-full px-3 py-1.5 text-[0.8rem] text-left bg-transparent border-none cursor-default rounded-md mx-1 hover:bg-blue-500/15 dark:hover:bg-blue-500/20"
+            onclick={() => { if (contextMenu?.entry) pinFolder(contextMenu.entry); }}
+          >
+            <span>📌</span> Pin to Sidebar
+          </button>
+        {/if}
+
         <div class="h-px mx-2 my-1 bg-black/8 dark:bg-white/8"></div>
         <button class="flex items-center gap-2 w-full px-3 py-1.5 text-[0.8rem] text-left bg-transparent border-none cursor-default rounded-md mx-1 hover:bg-red-500/15 dark:hover:bg-red-500/20 text-red-500 dark:text-red-400" onclick={() => { if (contextMenu?.entry) handleDelete(contextMenu.entry.path); }}>
           <span>🗑️</span> Delete
@@ -567,6 +711,3 @@
     </div>
   </div>
 {/if}
-
-
-
