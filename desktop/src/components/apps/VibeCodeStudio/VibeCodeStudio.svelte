@@ -7,6 +7,7 @@
   import V0Runner from "./canvas/V0Runner.svelte";
   import KanbanBoard from "./tabs/KanbanBoard.svelte";
   import IDE from "./ide/IDE.svelte";
+  import ResizeHandle from "./panels/ResizeHandle.svelte";
   import { closeWindow } from "🍎/state/desktop.svelte";
 
   interface Props {
@@ -45,6 +46,20 @@
   let activeFilePath = $state<string | null>(null);
   let fileContent = $state<string>("");
   let generatedCode = $state<string>("");
+
+  // Resizable panel widths
+  let layerTreeWidth = $state(256);
+  let propertiesWidth = $state(288);
+  let chatWidth = $state(320);
+  let rootEl: HTMLDivElement | undefined = $state();
+
+  const MIN_PANEL = 150;
+  const MAX_PANEL_RATIO = 0.5;
+
+  function clampPanel(value: number): number {
+    const max = rootEl ? rootEl.clientWidth * MAX_PANEL_RATIO : 600;
+    return Math.max(MIN_PANEL, Math.min(value, max));
+  }
 
   function updateNodePosition(id: string, x: number, y: number) {
     // Recursive search and update within the document tree
@@ -217,7 +232,7 @@
 
 <svelte:window onkeydown={handleKeyDown} />
 
-<div class="flex h-full w-full bg-background/90 backdrop-blur text-foreground overflow-hidden font-sans">
+<div bind:this={rootEl} class="flex h-full w-full bg-background/90 backdrop-blur text-foreground overflow-hidden font-sans">
   
   <!-- Left Side: Main Area (80%) -->
   <div class="flex-1 flex flex-col min-w-0 border-r border-white/10">
@@ -287,23 +302,26 @@
             <!-- v0 Runner Previews actual HTML/Tailwind -->
             <V0Runner code={generatedCode} />
           {:else}
-            <LayerTree 
-              {document} 
-              {selectedNodeId} 
-              onSelectNode={(id) => selectedNodeId = id} 
+            <LayerTree
+              {document}
+              {selectedNodeId}
+              onSelectNode={(id) => selectedNodeId = id}
+              width={layerTreeWidth}
             />
-          
+
+            <ResizeHandle onResize={(d) => layerTreeWidth = clampPanel(layerTreeWidth + d)} />
+
           <!-- Interactive Canvas -->
-          <div class="flex-1 relative">
-            <CanvasEditor 
-              {document} 
+          <div class="flex-1 relative min-w-0">
+            <CanvasEditor
+              {document}
               {selectedNodeId}
               bind:zoom
               onSelectNode={(id) => selectedNodeId = id}
               onUpdateNodePosition={updateNodePosition}
               onUpdateNodeSize={updateNodeSize}
             />
-            
+
             <!-- Toolbar -->
             {#if !generatedCode}
             <div class="absolute top-4 left-1/2 -translate-x-1/2 flex items-center gap-1.5 px-3 py-1.5 bg-black/60 border border-white/10 backdrop-blur-md rounded-full text-white/50 shadow-2xl z-50">
@@ -314,7 +332,8 @@
             {/if}
           </div>
 
-          <PropertiesPanel {document} {selectedNodeId} />
+          <ResizeHandle onResize={(d) => propertiesWidth = clampPanel(propertiesWidth - d)} />
+          <PropertiesPanel {document} {selectedNodeId} width={propertiesWidth} />
           {/if}
         </div>
       {:else if activeTab === "json"}
@@ -363,8 +382,13 @@
     </footer>
   </div>
 
-  <!-- Right Side: Chat Panel (20%) -->
-  <div class="w-80 border-l border-white/10 bg-black/20 shrink-0 flex-none hidden lg:flex flex-col">
+  <!-- Resize handle: Main Area <-> Chat Panel -->
+  <div class="hidden lg:block">
+    <ResizeHandle onResize={(d) => chatWidth = clampPanel(chatWidth - d)} />
+  </div>
+
+  <!-- Right Side: Chat Panel -->
+  <div class="border-l border-white/10 bg-black/20 shrink-0 flex-none hidden lg:flex flex-col" style="width: {chatWidth}px">
     <div class="h-12 border-b border-white/10 flex items-center justify-between px-4 shrink-0 bg-black/40">
       <h2 class="text-sm font-medium text-white/80">AI Agent Workspace</h2>
       <div class="flex bg-black/40 p-1 rounded-md">

@@ -4,9 +4,10 @@
   interface Props {
     document: FDocument;
     selectedNodeId: string | null;
+    width?: number;
   }
 
-  let { document, selectedNodeId }: Props = $props();
+  let { document, selectedNodeId, width }: Props = $props();
 
   // Find node by ID
   const selectedNode = $derived.by(() => {
@@ -27,7 +28,7 @@
   
 </script>
 
-<div class="w-72 border-l border-white/10 bg-black/40 shrink-0 flex flex-col h-full overflow-y-auto text-xs">
+<div class="border-l border-white/10 bg-black/40 shrink-0 flex flex-col h-full overflow-y-auto text-xs" style="width: {width ?? 288}px">
   <div class="h-10 border-b border-white/10 flex items-center px-4 shrink-0 font-medium text-white/80">
     Design
   </div>

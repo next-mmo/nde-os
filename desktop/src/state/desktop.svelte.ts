@@ -164,13 +164,22 @@ function getSavedDockAutoHide(): boolean {
   return false;
 }
 
+function getSavedStartExpanded(): boolean {
+  try {
+    const saved = localStorage.getItem("ai-launcher:start-expanded");
+    if (saved === "true" || saved === "false") return saved === "true";
+  } catch {}
+  return true; // default: start expanded
+}
+
 function getSavedCollapsed(): boolean {
+  if (getSavedStartExpanded()) return false; // always expanded on boot
+  // Otherwise, restore last session state
   try {
     const saved = localStorage.getItem("ai-launcher:collapsed");
     if (saved === "true" || saved === "false") return saved === "true";
   } catch {}
-  // First-ever launch defaults to collapsed (FAB)
-  return true;
+  return false;
 }
 
 function getSavedIsLocked(): boolean {
@@ -218,6 +227,7 @@ export type DrawerState = {
 export const desktop = $state({
   theme: getSavedTheme(),
   collapsed: getSavedCollapsed(),
+  start_expanded: getSavedStartExpanded(),
   launchpad_open: false,
   launcher_section: getSavedLauncherSection(),
   launcher_query: "",
@@ -239,6 +249,13 @@ export const desktop = $state({
   notification_center_open: false,
   wallpaper: getSavedWallpaper(),
 });
+
+export function toggleStartExpanded() {
+  desktop.start_expanded = !desktop.start_expanded;
+  try {
+    localStorage.setItem("ai-launcher:start-expanded", String(desktop.start_expanded));
+  } catch {}
+}
 
 export function setWallpaper(bg: string) {
   desktop.wallpaper = bg;
@@ -296,7 +313,7 @@ export async function expandDesktop() {
     await win.setMinSize(new LogicalSize(900, 600));
 
     const saved = loadWindowGeometry("__tauri-main__");
-    if (saved && saved.width > 0 && saved.height > 0) {
+    if (saved && saved.width >= 900 && saved.height >= 600) {
       await win.setSize(new LogicalSize(saved.width, saved.height));
       await win.setPosition(new LogicalPosition(saved.x, saved.y));
       if (saved.fullscreen) {
@@ -414,13 +431,13 @@ function assignWindowFocus(window: DesktopWindow) {
 export function bootDesktop() {
   if (desktop.windows.length > 0) return;
 
-  // Restore previously open windows from localStorage
+  // Restore previously open windows from localStorage (deduplicated)
   const savedAppIds = loadOpenWindows();
   const hasSavedState = savedAppIds.length > 0;
   const validStaticIds = Object.keys(apps_config) as StaticAppID[];
-  const appsToRestore = savedAppIds.filter(
+  const appsToRestore = [...new Set(savedAppIds.filter(
     (id) => validStaticIds.includes(id as StaticAppID) && id !== "launchpad",
-  );
+  ))];
 
   // Only force the launcher open on first startup (no saved state)
   if (!hasSavedState && !appsToRestore.includes("ai-launcher")) {
@@ -430,15 +447,15 @@ export function bootDesktop() {
   for (const appId of appsToRestore) {
     const config = apps_config[appId as Exclude<StaticAppID, "launchpad">];
     if (!config) continue;
+    const savedGeo = loadWindowGeometry(appId);
     const win = createWindow(
       appId as WindowAppID,
       config.title,
-      config.width!,
-      config.height!,
+      savedGeo && savedGeo.width >= 200 ? savedGeo.width : config.width!,
+      savedGeo && savedGeo.height >= 200 ? savedGeo.height : config.height!,
     );
     win.resizable = config.resizable!;
     win.expandable = config.expandable!;
-    const savedGeo = loadWindowGeometry(appId);
     // Restore saved fullscreen state; default ai-launcher to fullscreen on first run
     win.fullscreen = typeof savedGeo?.fullscreen === 'boolean' ? savedGeo.fullscreen : true;
     assignWindowFocus(win);

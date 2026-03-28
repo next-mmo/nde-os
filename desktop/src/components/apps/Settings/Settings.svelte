@@ -8,7 +8,7 @@
     resourceUsage,
     systemInfo,
   } from "$lib/stores/state";
-  import { desktop, toggleDockAutoHide, toggleTheme, resetIconPositions, setWallpaper } from "🍎/state/desktop.svelte";
+  import { desktop, toggleDockAutoHide, toggleTheme, resetIconPositions, setWallpaper, toggleStartExpanded } from "🍎/state/desktop.svelte";
 
   const wallpapers = [
     { id: 'ventura', label: 'Ventura', value: 'url("/wallpapers/ventura-1.webp")' },
@@ -258,7 +258,7 @@
 
         <div class="bg-white/60 dark:bg-black/30 backdrop-blur-xl border border-black/5 dark:border-white/10 rounded-xl overflow-hidden shadow-sm mb-6 flex flex-col divide-y divide-black/5 dark:divide-white/5">
           <div class="flex items-center justify-between p-6">
-            <div>
+            <div class="flex-1 min-w-0">
               <h2 class="text-[14px] font-medium text-black dark:text-white">Automatically hide and show the Dock</h2>
               <p class="text-[12px] text-gray-500 mt-1">Retracts the dock to give you more screen space when not in use.</p>
             </div>
@@ -267,7 +267,7 @@
               role="switch" 
               aria-label="Toggle Dock Auto-Hide"
               aria-checked={desktop.dock_auto_hide}
-              class="relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 {desktop.dock_auto_hide ? 'bg-blue-500' : 'bg-gray-300 dark:bg-gray-600'}"
+              class="ml-4 relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 {desktop.dock_auto_hide ? 'bg-blue-500' : 'bg-gray-300 dark:bg-gray-600'}"
               onclick={toggleDockAutoHide}
             >
               <span class="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out {desktop.dock_auto_hide ? 'translate-x-5' : 'translate-x-0'}"></span>
@@ -275,12 +275,29 @@
           </div>
           
           <div class="flex items-center justify-between p-6">
-            <div>
+            <div class="flex-1 min-w-0">
+              <h2 class="text-[14px] font-medium text-black dark:text-white">Start Expanded on Launch</h2>
+              <p class="text-[12px] text-gray-500 mt-1">Always open in full desktop mode instead of the collapsed floating button.</p>
+            </div>
+            
+            <button 
+              role="switch" 
+              aria-label="Toggle Start Expanded"
+              aria-checked={desktop.start_expanded}
+              class="ml-4 relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 {desktop.start_expanded ? 'bg-blue-500' : 'bg-gray-300 dark:bg-gray-600'}"
+              onclick={toggleStartExpanded}
+            >
+              <span class="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out {desktop.start_expanded ? 'translate-x-5' : 'translate-x-0'}"></span>
+            </button>
+          </div>
+
+          <div class="flex items-center justify-between p-6">
+            <div class="flex-1 min-w-0">
               <h2 class="text-[14px] font-medium text-black dark:text-white">Reset Desktop App Icons</h2>
               <p class="text-[12px] text-gray-500 mt-1">Restores all icons on the desktop to their default positions.</p>
             </div>
             <button 
-              class="px-4 py-1.5 rounded bg-gray-200 hover:bg-gray-300 dark:bg-white/10 dark:hover:bg-white/20 text-[13px] font-medium text-black dark:text-white transition shadow-sm border border-black/5 dark:border-white/5"
+              class="ml-4 shrink-0 px-4 py-1.5 rounded bg-gray-200 hover:bg-gray-300 dark:bg-white/10 dark:hover:bg-white/20 text-[13px] font-medium text-black dark:text-white transition shadow-sm border border-black/5 dark:border-white/5"
               onclick={resetIconPositions}
             >
               Reset Layout

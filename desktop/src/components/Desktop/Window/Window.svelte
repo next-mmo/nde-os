@@ -110,10 +110,11 @@
   }
 
   const defaultPosition = () => {
-    if (savedGeo) {
+    const vw = globalThis.innerWidth ?? 1280;
+    const vh = globalThis.innerHeight ?? 800;
+    if (savedGeo && savedGeo.x >= -window.width / 2 && savedGeo.x < vw - 50 && savedGeo.y >= 0 && savedGeo.y < vh - 50) {
       return { x: savedGeo.x, y: savedGeo.y };
     }
-    const vw = globalThis.innerWidth ?? 1280;
     const offsetX = ((window.id.length * 53) % 120) - 60;
     const offsetY = ((window.id.length * 37) % 30);
     return {

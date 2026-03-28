@@ -5,9 +5,10 @@
     document: FDocument;
     selectedNodeId: string | null;
     onSelectNode?: (id: string | null) => void;
+    width?: number;
   }
 
-  let { document, selectedNodeId, onSelectNode }: Props = $props();
+  let { document, selectedNodeId, onSelectNode, width }: Props = $props();
 
   function toggleVisibility(node: FNode, e: Event) {
     e.stopPropagation();
@@ -55,7 +56,7 @@
   {/if}
 {/snippet}
 
-<div class="w-64 border-r border-white/10 bg-black/40 shrink-0 hidden md:flex flex-col h-full overflow-hidden select-none">
+<div class="border-r border-white/10 bg-black/40 shrink-0 hidden md:flex flex-col h-full overflow-hidden select-none" style="width: {width ?? 256}px">
   <div class="h-10 border-b border-white/10 flex items-center px-4 shrink-0 font-medium text-white/80 text-xs text-center justify-between">
     <span>Layers</span>
   </div>
