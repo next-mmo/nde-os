@@ -1,0 +1,31 @@
+
+Running 1 test using 1 worker
+
+  ✘  1 [chromium] › e2e\kanban-crud.spec.ts:25:3 › Vibe Kanban - Full Manual Management CRUD › should create, edit, move, and delete Kanban tasks via UI (1.8s)
+
+
+  1) [chromium] › e2e\kanban-crud.spec.ts:25:3 › Vibe Kanban - Full Manual Management CRUD › should create, edit, move, and delete Kanban tasks via UI 
+
+    Error: locator.fill: Error: strict mode violation: locator('textarea') resolved to 2 elements:
+        1) <textarea class="w-full h-full bg-transparent text-[13px] leading-relaxed text-white/80 font-mono resize-none focus:outline-none scrollbar-thin"></textarea> aka getByRole('textbox').first()
+        2) <textarea rows="1" placeholder="Manage board tasks... (Type @ or / to search)" class="flex-1 bg-white/5 border border-white/10 rounded-lg py-2 pl-3 pr-10 text-sm text-white placeholder-white/30 focus:outline-none focus:ring-1 focus:ring-indigo-500/50 resize-none overflow-hidden"></textarea> aka getByRole('textbox', { name: 'Manage board tasks... (Type' })
+
+    Call log:
+    [2m  - waiting for locator('textarea')[22m
+
+
+      61 |     // Fill the text area
+      62 |     const textarea = page.locator('textarea');
+    > 63 |     await textarea.fill(`# My Amazing E2E Task\n\n- **Status:** 🔴 plan\n\n## Edited Details\nWe are editing inside the detail panel.`);
+         |                    ^
+      64 |     await saveBtn.click();
+      65 |     
+      66 |     // Slide-over should disappear
+        at C:\Users\dila\Downloads\ai-launcher-v0.2\ai-launcher\desktop\e2e\kanban-crud.spec.ts:63:20
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\kanban-crud-Vibe-Kanban----cae59--delete-Kanban-tasks-via-UI-chromium\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  1 failed
+    [chromium] › e2e\kanban-crud.spec.ts:25:3 › Vibe Kanban - Full Manual Management CRUD › should create, edit, move, and delete Kanban tasks via UI 

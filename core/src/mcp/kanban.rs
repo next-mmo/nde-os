@@ -67,11 +67,88 @@ pub fn register(server: &mut McpServer) {
             "required": ["filename"]
         }),
     );
+
+    server.register_tool(
+        "nde_kanban_get_task_content",
+        "Retrieve the full markdown content of a Kanban task.",
+        json!({
+            "type": "object",
+            "properties": {
+                "filename": { "type": "string", "description": "The Markdown file name of the task" }
+            },
+            "required": ["filename"]
+        }),
+    );
+
+    server.register_tool(
+        "nde_kanban_update_task_content",
+        "Update the full markdown content of a Kanban task.",
+        json!({
+            "type": "object",
+            "properties": {
+                "filename": { "type": "string", "description": "The Markdown file name of the task" },
+                "content": { "type": "string", "description": "The new Markdown content for the task" }
+            },
+            "required": ["filename", "content"]
+        }),
+    );
 }
 
 fn get_tasks_dir() -> PathBuf {
-    // Relative to the NDE-OS root where core/ runs
-    Path::new(".agents").join("tasks")
+    let current_dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+
+    let mut candidate = current_dir.as_path();
+    loop {
+        let agents_path = candidate.join(".agents").join("tasks");
+        if agents_path.is_dir() {
+            return agents_path;
+        }
+        match candidate.parent() {
+            Some(parent) => candidate = parent,
+            None => break,
+        }
+    }
+
+    current_dir.join(".agents").join("tasks")
+}
+
+fn classify_status(val: &str) -> &'static str {
+    if val.contains('🟢') || val.to_lowercase().contains("done by ai") { "Done by AI" }
+    else if val.contains('🟡') || val.to_lowercase().contains("yolo") { "YOLO mode" }
+    else if val.to_lowercase().contains("waiting") { "Waiting Approval" }
+    else if val.contains('✅') || val.to_lowercase().contains("verified") { "Verified" }
+    else if val.to_lowercase().contains("re-open") { "Re-open" }
+    else { "Plan" }
+}
+
+fn parse_status(content: &str) -> &'static str {
+    if content.starts_with("---") {
+        let after = &content[3..];
+        if let Some(end) = after.find("\n---") {
+            let frontmatter = &after[..end];
+            for line in frontmatter.lines() {
+                let line = line.trim();
+                if let Some(val) = line.strip_prefix("status:") {
+                    return classify_status(val.trim());
+                }
+            }
+        }
+    }
+    if let Some(line) = content.lines().find(|l| l.starts_with("- **Status:**")) {
+        return classify_status(line);
+    }
+    "Plan"
+}
+
+fn update_legacy_status_line(content: &str, fm_status: &str) -> String {
+    let replacement = format!("- **Status:** {fm_status}");
+    let mut updated: String = content.lines().map(|line| {
+        if line.starts_with("- **Status:**") { replacement.clone() } else { line.to_string() }
+    }).collect::<Vec<_>>().join("\n");
+    if content.ends_with('\n') && !updated.ends_with('\n') {
+        updated.push('\n');
+    }
+    updated
 }
 
 pub fn execute(tool_name: &str, params: &serde_json::Value) -> Result<String> {
@@ -86,32 +163,18 @@ pub fn execute(tool_name: &str, params: &serde_json::Value) -> Result<String> {
             if let Ok(entries) = fs::read_dir(dir) {
                 for entry in entries.flatten() {
                     let path = entry.path();
-                    if path.extension().and_then(|e| e.to_str()) == Some("md") {
+                    if path.is_file() && path.extension().and_then(|e| e.to_str()) == Some("md") {
                         if let Ok(content) = fs::read_to_string(&path) {
                             let filename = path.file_name().unwrap_or_default().to_string_lossy().to_string();
-                            let mut title = filename.clone();
-                            let mut status = "Plan".to_string();
-
-                            for line in content.lines() {
-                                if line.starts_with("# ") {
-                                    title = line[2..].trim().to_string();
-                                } else if line.contains("- **Status:**") {
-                                    let l = line.to_lowercase();
-                                    if l.contains("🟢") || l.contains("done") {
-                                        status = "Done by AI".to_string();
-                                    } else if l.contains("🟡") || l.contains("yolo") {
-                                        status = "YOLO mode".to_string();
-                                    } else if l.contains("✅") || l.contains("verified") {
-                                        status = "Verified".to_string();
-                                    } else if l.contains("re-open") {
-                                        status = "Re-open".to_string();
-                                    } else {
-                                        status = "Plan".to_string();
-                                    }
-                                }
-                            }
-
+                            
+                            let title = content.lines()
+                                .find(|line| line.starts_with("# "))
+                                .map(|line| line.trim_start_matches("# ").trim().to_string())
+                                .unwrap_or_else(|| filename.clone());
+                            
+                            let status = parse_status(&content).to_string();
                             let locked = status == "YOLO mode";
+                            
                             tasks.push(KanbanTask {
                                 filename,
                                 title,
@@ -208,35 +271,43 @@ pub fn execute(tool_name: &str, params: &serde_json::Value) -> Result<String> {
             }
 
             let content = fs::read_to_string(&filepath)?;
-            let emoji_status = match new_status {
-                "YOLO mode" => "🟡 `yolo mode`",
-                "Done by AI" => "🟢 `done by AI`",
-                "Verified" => "✅ `verified`",
-                "Re-open" => "🔴 `re-open`",
-                _ => "🔴 `plan`",
+            let fm_status = match new_status {
+                "Waiting Approval" => "🔴 waiting approval",
+                "YOLO mode" => "🟡 yolo mode",
+                "Done by AI" => "🟢 done by AI",
+                "Verified" | "Verified by Human" => "✅ verified",
+                "Re-open" => "🔴 re-open",
+                _ => "🔴 plan",
             };
 
-            let replacement = format!("- **Status:** {}", emoji_status);
-            let mut lines: Vec<&str> = content.lines().collect();
-            let mut modified = false;
+            let updated_content = if content.starts_with("---") {
+                let after = &content[3..];
+                if let Some(end_offset) = after.find("\n---") {
+                    let frontmatter = &after[..end_offset];
+                    let rest = &after[end_offset..]; // starts with \n---
 
-            for line in lines.iter_mut() {
-                if line.starts_with("- **Status:**") {
-                    *line = replacement.as_str();
-                    modified = true;
-                }
-            }
+                    let updated_fm: String = frontmatter.lines().map(|line| {
+                        if line.trim_start().starts_with("status:") {
+                            format!("status: {fm_status}")
+                        } else {
+                            line.to_string()
+                        }
+                    }).collect::<Vec<_>>().join("\n");
 
-            if modified {
-                let mut new_content = lines.join("\n");
-                if content.ends_with("\n") {
-                    new_content.push('\n');
+                    let mut out = format!("---\n{updated_fm}{rest}");
+                    if content.ends_with('\n') && !out.ends_with('\n') {
+                        out.push('\n');
+                    }
+                    out
+                } else {
+                    update_legacy_status_line(&content, fm_status)
                 }
-                fs::write(&filepath, new_content)?;
-                Ok(json!({"success": true, "message": format!("Updated {} to {}", filename, new_status)}).to_string())
             } else {
-                Err(anyhow!("Status line not found in file"))
-            }
+                update_legacy_status_line(&content, fm_status)
+            };
+
+            fs::write(&filepath, updated_content)?;
+            Ok(json!({"success": true, "message": format!("Updated {} to {}", filename, new_status)}).to_string())
         }
         "nde_kanban_delete_task" => {
             let args = params.get("arguments").unwrap_or(params);
@@ -253,6 +324,39 @@ pub fn execute(tool_name: &str, params: &serde_json::Value) -> Result<String> {
             } else {
                 Err(anyhow!("Task not found: {}", filename))
             }
+        }
+        "nde_kanban_get_task_content" => {
+            let args = params.get("arguments").unwrap_or(params);
+            let filename = args.get("filename").and_then(|v| v.as_str()).unwrap_or("");
+
+            if filename.is_empty() || filename.contains("..") || filename.contains("/") || filename.contains("\\") {
+                return Err(anyhow!("Invalid filename"));
+            }
+
+            let filepath = get_tasks_dir().join(filename);
+            if filepath.exists() {
+                let content = fs::read_to_string(&filepath)?;
+                Ok(content)
+            } else {
+                Err(anyhow!("Task not found: {}", filename))
+            }
+        }
+        "nde_kanban_update_task_content" => {
+            let args = params.get("arguments").unwrap_or(params);
+            let filename = args.get("filename").and_then(|v| v.as_str()).unwrap_or("");
+            let new_content = args.get("content").and_then(|v| v.as_str()).ok_or_else(|| anyhow!("Missing content"))?;
+
+            if filename.is_empty() || filename.contains("..") || filename.contains("/") || filename.contains("\\") {
+                return Err(anyhow!("Invalid filename"));
+            }
+
+            let filepath = get_tasks_dir().join(filename);
+            if !filepath.exists() {
+                return Err(anyhow!("Task not found: {}", filename));
+            }
+
+            fs::write(&filepath, new_content)?;
+            Ok(json!({"success": true, "message": format!("Updated content of {}", filename)}).to_string())
         }
         _ => Err(anyhow!("Unknown tool: {}", tool_name)),
     }

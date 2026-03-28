@@ -23,6 +23,11 @@ export function createKanbanState() {
   };
 
   onMount(async () => {
+    try {
+      await invoke("watch_tasks_dir");
+    } catch (e) {
+      console.warn("Failed to start tasks watcher:", e);
+    }
     refresh();
     unlisten = await listen("tasks://updated", () => {
       refresh();
@@ -35,6 +40,7 @@ export function createKanbanState() {
 
   return {
     get tasks() { return tasks; },
+    refresh,
 
     /**
      * Move task to a new status column and optionally reorder it.

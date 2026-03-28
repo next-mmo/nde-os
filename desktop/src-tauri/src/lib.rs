@@ -110,6 +110,9 @@ pub fn run() {
             commands::agent_tasks::update_agent_task_status,
             commands::agent_tasks::create_agent_task,
             commands::agent_tasks::delete_agent_task,
+            commands::agent_tasks::get_agent_task_content,
+            commands::agent_tasks::update_agent_task_content,
+            commands::agent_tasks::watch_tasks_dir,
             // git
             commands::git::git_status,
             commands::git::git_show_head,

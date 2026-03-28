@@ -264,3 +264,90 @@ pub async fn delete_agent_task(app: AppHandle, filename: String) -> Result<(), S
 
     Ok(())
 }
+
+#[tauri::command]
+pub async fn get_agent_task_content(filename: String) -> Result<String, String> {
+    let tasks_dir = tasks_dir()?;
+    let file_path = tasks_dir.join(&filename);
+
+    if !file_path.starts_with(&tasks_dir) {
+        return Err("Invalid filename traversal attempt".into());
+    }
+
+    if file_path.exists() {
+        fs::read_to_string(&file_path).map_err(|e| e.to_string())
+    } else {
+        Err(format!("Task not found: {}", filename))
+    }
+}
+
+#[tauri::command]
+pub async fn update_agent_task_content(app: AppHandle, filename: String, content: String) -> Result<(), String> {
+    let tasks_dir = tasks_dir()?;
+    let file_path = tasks_dir.join(&filename);
+
+    if !file_path.starts_with(&tasks_dir) {
+        return Err("Invalid filename traversal attempt".into());
+    }
+
+    if !file_path.exists() {
+        return Err(format!("Task not found: {}", filename));
+    }
+
+    fs::write(&file_path, content).map_err(|e| e.to_string())?;
+    let _ = app.emit("tasks://updated", ());
+
+    Ok(())
+}
+
+static WATCHER_STARTED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+#[tauri::command]
+pub async fn watch_tasks_dir(app: AppHandle) -> Result<(), String> {
+    use std::sync::atomic::Ordering;
+    use notify::{Watcher, RecursiveMode, EventKind};
+
+    if WATCHER_STARTED.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst).is_err() {
+        return Ok(()); // Already started
+    }
+
+    let tasks_dir = tasks_dir()?;
+    fs::create_dir_all(&tasks_dir).map_err(|e| format!("Failed to create tasks dir for watcher: {e}"))?;
+
+    let app_clone = app.clone();
+    
+    // Spawn a thread to keep the watcher alive and receive events
+    std::thread::spawn(move || {
+        let (tx, rx) = std::sync::mpsc::channel();
+        let mut watcher = match notify::recommended_watcher(tx) {
+            Ok(w) => w,
+            Err(e) => {
+                log::error!("Failed to create tasks watcher: {:?}", e);
+                WATCHER_STARTED.store(false, Ordering::SeqCst);
+                return;
+            }
+        };
+
+        if let Err(e) = watcher.watch(&tasks_dir, RecursiveMode::NonRecursive) {
+            log::error!("Failed to watch tasks directory: {:?}", e);
+            WATCHER_STARTED.store(false, Ordering::SeqCst);
+            return;
+        }
+
+        while let Ok(res) = rx.recv() {
+            match res {
+                Ok(event) => {
+                    match event.kind {
+                        EventKind::Create(_) | EventKind::Modify(_) | EventKind::Remove(_) => {
+                            let _ = app_clone.emit("tasks://updated", ());
+                        }
+                        _ => {}
+                    }
+                }
+                Err(e) => log::error!("Watch error: {:?}", e),
+            }
+        }
+    });
+
+    Ok(())
+}

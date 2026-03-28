@@ -16,12 +16,13 @@
   let isGenerating = $state(false);
   
   interface ChatMsg {
-    role: "user" | "assistant";
+    role: "user" | "assistant" | "system";
     content: string;
     streaming?: boolean;
     error?: boolean;
     spec?: any;
     ticket?: { filename: string; title: string };
+    tool?: string;
   }
 
   let messages = $state<ChatMsg[]>([
@@ -43,13 +44,24 @@ Always wrap your final HTML in a markdown codeblock like \`\`\`html ... \`\`\`. 
 
   const scrumPrompt = `You are the Scrum Master Agent for NDE Vibe Code Studio. You manage the Kanban board, create tickets, and organize development tasks.
 
-You have access to these Kanban tools:
-- nde_kanban_get_tasks: List all tasks on the board
-- nde_kanban_create_task: Create a new task (title, description, checklist)
-- nde_kanban_update_task: Update task status (Plan, YOLO mode, Done by AI, Verified, Re-open)
-- nde_kanban_delete_task: Delete a task
+You have access to these Kanban tools. To use them, output a JSON codeblock containing a tool request EXACTLY like this:
+\`\`\`json
+{
+  "tool": "nde_kanban_create_task",
+  "args": { "title": "Setup Express Server", "description": "Configure express.js and basic routes", "checklist": ["Install dependencies", "Create index.js"] }
+}
+\`\`\`
 
-When asked to create a task, use the nde_kanban_create_task tool. Never output raw JSON payloads.`;
+Available Tools:
+- nde_kanban_get_tasks: args: {}
+- nde_kanban_create_task: args: { "title": string, "description": string, "checklist": string[] }
+- nde_kanban_update_task: args: { "filename": string, "status": "Plan" | "Waiting Approval" | "YOLO mode" | "Done by AI" | "Verified by Human" | "Re-open" }
+- nde_kanban_delete_task: args: { "filename": string }
+
+Important Rules:
+1. ONLY output the JSON block when using a tool. Do NOT wrap tool JSON payloads outside of the \`\`\`json block.
+2. Only use ONE tool per response.
+3. Once the tool returns a result, you will receive it as a System observation, and you can then provide your final answer to the user.`;
 
   let devPrompt = $derived(`You are the OpenCode IDE Agent. You assist the user with writing and understanding code. You output explanations and code fragments. When providing code blocks, ensure they are properly formatted with the appropriate language.
 ${activeFilePath ? `\nActive File: ${activeFilePath}\nFile Content:\n\`\`\`\n${fileContent}\n\`\`\`` : ''}`);
@@ -114,18 +126,7 @@ ${activeFilePath ? `\nActive File: ${activeFilePath}\nFile Content:\n\`\`\`\n${f
     setTimeout(() => textareaRef?.focus(), 0);
   }
 
-  /** Try to handle ticket creation directly without LLM roundtrip */
-  function parseScrumCreateIntent(text: string): { title: string; description: string } | null {
-    // Match patterns: "create <title>", "create task: <title>", "create ticket <title>"
-    const m = text.match(/^(?:create|add|new)\s+(?:(?:a\s+)?(?:task|ticket|story|issue)[:\s]+)?(.+)$/i);
-    if (m) {
-      const title = m[1].trim();
-      if (title.length > 0 && title.length < 200) {
-        return { title, description: "" };
-      }
-    }
-    return null;
-  }
+    // Removed the fast path regex parsing. We fully rely on the LLM tool-calling loop.
 
   async function send() {
     if (!prompt.trim() || isGenerating) return;
@@ -134,93 +135,104 @@ ${activeFilePath ? `\nActive File: ${activeFilePath}\nFile Content:\n\`\`\`\n${f
     isGenerating = true;
 
     messages.push({ role: "user", content: text });
-
-    // Fast path: In scrum mode, create tickets directly via Tauri (no LLM needed)
-    if (chatMode === "scrum") {
-      const intent = parseScrumCreateIntent(text);
-      if (intent) {
-        try {
-          const result = await invoke<{ filename: string; title: string }>("create_agent_task", {
-            title: intent.title,
-            description: intent.description,
-            checklist: [],
-          });
-          messages.push({
-            role: "assistant",
-            content: `✅ Created ticket: **${result.title}**\nFile: \`${result.filename}\`\n\nThe task appears on your Kanban board in the Plan column.`,
-            ticket: result,
-          });
-          isGenerating = false;
-          scrollToBottom();
-          return;
-        } catch (e: any) {
-          messages.push({ role: "assistant", content: `❌ Failed to create ticket: ${e}`, error: true });
-          isGenerating = false;
-          scrollToBottom();
-          return;
-        }
-      }
-    }
-
-    const idx = messages.length;
     messages.push({ role: "assistant", content: "", streaming: true });
     scrollToBottom();
 
+    let historyContext = activeSystemPrompt + "\n\nUser request: " + text;
+    let turnCount = 0;
+
     try {
-      const resp = await fetch("http://localhost:8080/api/agent/chat/stream", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          message: activeSystemPrompt + "\n\nUser request: " + text,
-        }),
-      });
+      while (turnCount < 5) {
+        turnCount++;
+        const resp = await fetch("http://localhost:8080/api/agent/chat/stream", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ message: historyContext }),
+        });
 
-      if (!resp.ok) throw new Error("Agent API Error");
+        if (!resp.ok) throw new Error("Agent API Error");
 
-      const reader = resp.body?.getReader();
-      const decoder = new TextDecoder();
-      let fullContent = "";
+        const reader = resp.body?.getReader();
+        const decoder = new TextDecoder();
+        let fullContent = "";
 
-      if (reader) {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          const chunk = decoder.decode(value, { stream: true });
-          const lines = chunk.split("\n");
-          for (const line of lines) {
-            const trimmed = line.trim();
-            if (!trimmed || trimmed.startsWith(":")) continue;
-            if (trimmed === "data: [DONE]") continue;
-            if (!trimmed.startsWith("data: ")) continue;
+        if (reader) {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            const chunk = decoder.decode(value, { stream: true });
+            const lines = chunk.split("\n");
+            for (const line of lines) {
+              const trimmed = line.trim();
+              if (!trimmed || trimmed.startsWith(":") || trimmed === "data: [DONE]") continue;
+              if (!trimmed.startsWith("data: ")) continue;
 
-            try {
-              const data = JSON.parse(trimmed.slice(6));
-              if (data.type === "text_delta" && data.content) {
-                fullContent += data.content;
-                messages[idx].content = fullContent;
-                scrollToBottom();
-              } else if (data.type === "done") {
-                fullContent = data.content || fullContent;
-              } else if (data.type === "error") {
-                throw new Error(data.message);
-              }
-            } catch {}
+              try {
+                const data = JSON.parse(trimmed.slice(6));
+                if (data.type === "text_delta" && data.content) {
+                  fullContent += data.content;
+                  messages[messages.length - 1].content = fullContent;
+                  scrollToBottom();
+                } else if (data.type === "error") {
+                  throw new Error(data.message);
+                }
+              } catch {}
+            }
           }
         }
-      }
-      
-      // Attempt to parse final codeblock
-      messages[idx].streaming = false;
-      const jsonMatch = fullContent.match(/```(?:html|svelte|vue|jsx|tsx)?\s*([\s\S]*?)```/);
-      if (jsonMatch && onApplyPatch) {
-        messages[idx].spec = { code: jsonMatch[1] };
-        onApplyPatch({ code: jsonMatch[1] });
+        
+        // Check for tool calls
+        messages[messages.length - 1].streaming = false;
+        const jsonMatch = fullContent.match(/```(?:json)?\s*(\{[\s\S]*?"tool"[\s\S]*?\})\s*```/);
+        
+        if (jsonMatch && chatMode === "scrum") {
+          let toolCall: any;
+          try { toolCall = JSON.parse(jsonMatch[1]); } catch(e) {}
+          if (toolCall && toolCall.tool) {
+            messages.push({ role: "system", content: `🔧 Executing **${toolCall.tool}**...`, tool: toolCall.tool });
+            scrollToBottom();
+            
+            let resultString = "";
+            try {
+              if (toolCall.tool === "nde_kanban_create_task") {
+                 let r: any = await invoke("create_agent_task", { title: toolCall.args.title||"Task", description: toolCall.args.description||"", checklist: toolCall.args.checklist||[] });
+                 resultString = `Success: Created ${r.filename}`;
+              } else if (toolCall.tool === "nde_kanban_update_task") {
+                 let stat = toolCall.args.status === "Verified" ? "Verified by Human" : toolCall.args.status;
+                 await invoke("update_agent_task_status", { filename: toolCall.args.filename, newStatus: stat });
+                 resultString = `Success: Updated ${toolCall.args.filename} to ${stat}`;
+              } else if (toolCall.tool === "nde_kanban_delete_task") {
+                 await invoke("delete_agent_task", { filename: toolCall.args.filename });
+                 resultString = `Success: Deleted ${toolCall.args.filename}`;
+              } else if (toolCall.tool === "nde_kanban_get_tasks") {
+                 const tasks = await invoke("get_agent_tasks");
+                 resultString = JSON.stringify(tasks, null, 2);
+              } else {
+                 resultString = `Error: Unknown tool ${toolCall.tool}. Available tools: nde_kanban_create_task, nde_kanban_update_task, nde_kanban_delete_task, nde_kanban_get_tasks`;
+              }
+            } catch (e: any) { resultString = `Error executing tool: ${e}`; }
+            
+            messages.push({ role: "system", content: `\`\`\`\n${resultString}\n\`\`\`` });
+            
+            historyContext += `\n\nAssistant generated tool call: ${fullContent}\n\nSystem observation:\n\`\`\`\n${resultString}\n\`\`\`\n\nProceed based on the observation. If done, provide a clear, concise summary.`;
+            messages.push({ role: "assistant", content: "", streaming: true });
+            scrollToBottom();
+            continue;
+          }
+        }
+
+        const htmlMatch = fullContent.match(/```(?:html|svelte|vue|jsx|tsx)?\s*([\s\S]*?)```/);
+        if (htmlMatch && onApplyPatch) {
+          messages[messages.length - 1].spec = { code: htmlMatch[1] };
+          onApplyPatch({ code: htmlMatch[1] });
+        }
+        break;
       }
       
     } catch (e: any) {
-      messages[idx].content = e.message;
-      messages[idx].error = true;
-      messages[idx].streaming = false;
+      messages[messages.length - 1].content = e.message;
+      messages[messages.length - 1].error = true;
+      messages[messages.length - 1].streaming = false;
     } finally {
       isGenerating = false;
       scrollToBottom();
@@ -260,12 +272,12 @@ ${activeFilePath ? `\nActive File: ${activeFilePath}\nFile Content:\n\`\`\`\n${f
 <div class="flex-1 overflow-y-auto p-4 flex flex-col gap-4 text-sm scrollbar-thin">
   {#each messages as msg}
     <div class="flex gap-3 {msg.role === 'user' ? 'flex-row-reverse' : ''}">
-      <div class="w-7 h-7 shrink-0 rounded-full flex items-center justify-center {msg.role === 'assistant' ? 'bg-indigo-500/20 text-indigo-400 border border-indigo-500/30' : 'bg-white/10 text-white/70 border border-white/20'}">
-        {msg.role === 'assistant' ? '✦' : 'U'}
+      <div class="w-7 h-7 shrink-0 rounded-full flex items-center justify-center {msg.role === 'assistant' ? 'bg-indigo-500/20 text-indigo-400 border border-indigo-500/30' : msg.role === 'user' ? 'bg-white/10 text-white/70 border border-white/20' : 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'}">
+        {msg.role === 'assistant' ? '✦' : msg.role === 'user' ? 'U' : '🔧'}
       </div>
       <div class="max-w-[85%]">
         {#if msg.content}
-          <div class="px-3 py-2 rounded-xl {msg.role === 'assistant' ? 'bg-white/5 border border-white/10 text-white/90 font-mono text-[11px] whitespace-pre-wrap max-h-48 overflow-y-auto' : 'bg-indigo-500/30 border border-indigo-500/40 text-white whitespace-pre-wrap'}">
+          <div class="px-3 py-2 rounded-xl {msg.role === 'assistant' ? 'bg-white/5 border border-white/10 text-white/90 font-mono text-[11px] whitespace-pre-wrap max-h-48 overflow-y-auto' : msg.role === 'user' ? 'bg-indigo-500/30 border border-indigo-500/40 text-white whitespace-pre-wrap' : 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-100 font-mono text-[10px] whitespace-pre-wrap'}">
             {msg.content}
           </div>
         {/if}

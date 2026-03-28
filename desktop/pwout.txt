@@ -1,0 +1,28 @@
+
+Running 1 test using 1 worker
+
+  ✘  1 [chromium] › e2e\kanban-crud.spec.ts:25:3 › Vibe Kanban - Full Manual Management CRUD › should create, edit, move, and delete Kanban tasks via UI (16.0s)
+
+
+  1) [chromium] › e2e\kanban-crud.spec.ts:25:3 › Vibe Kanban - Full Manual Management CRUD › should create, edit, move, and delete Kanban tasks via UI 
+
+    TimeoutError: locator.click: Timeout 15000ms exceeded.
+    Call log:
+    [2m  - waiting for locator('[data-testid="tab-kanban"]')[22m
+
+
+      31 |
+      32 |     // Navigate to Kanban tab
+    > 33 |     await page.locator('[data-testid="tab-kanban"]').click();
+         |                                                      ^
+      34 |     await page.waitForTimeout(300);
+      35 |
+      36 |     // 1. Create a Task via the inline '+ New Task' button
+        at C:\Users\dila\Downloads\ai-launcher-v0.2\ai-launcher\desktop\e2e\kanban-crud.spec.ts:33:54
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\kanban-crud-Vibe-Kanban----cae59--delete-Kanban-tasks-via-UI-chromium\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  1 failed
+    [chromium] › e2e\kanban-crud.spec.ts:25:3 › Vibe Kanban - Full Manual Management CRUD › should create, edit, move, and delete Kanban tasks via UI 
