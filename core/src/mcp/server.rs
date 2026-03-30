@@ -288,9 +288,7 @@ impl McpServer {
                         }
                     });
                     stdout
-                        .write_all(
-                            format!("{}\n", serde_json::to_string(&error_resp)?).as_bytes(),
-                        )
+                        .write_all(format!("{}\n", serde_json::to_string(&error_resp)?).as_bytes())
                         .await?;
                     stdout.flush().await?;
                 }

@@ -40,8 +40,8 @@
   let selectedNodeId = $state<string | null>(null);
   let zoom = $state(1);
 
-  let activeTab = $state<"preview" | "json" | "figma" | "kanban" | "ide">("preview");
-  let chatMode = $state<"figma" | "scrum" | "dev">("figma");
+  let activeTab = $state<"preview" | "json" | "kanban" | "ide">("preview");
+  let chatMode = $state<"scrum" | "dev">("scrum");
 
   let activeFilePath = $state<string | null>(null);
   let fileContent = $state<string>("");
@@ -257,12 +257,7 @@
           >
             JSON
           </button>
-          <button 
-            class="px-3 py-1 text-xs font-medium rounded transition-colors {activeTab === 'figma' ? 'bg-white/10 text-white shadow-sm' : 'text-white/50 hover:text-white/80'}"
-            onclick={() => activeTab = "figma"}
-          >
-            Figma
-          </button>
+
           <button 
             class="px-3 py-1 text-xs font-medium rounded transition-colors {activeTab === 'kanban' ? 'bg-white/10 text-white shadow-sm' : 'text-white/50 hover:text-white/80'}"
             onclick={() => {
@@ -356,10 +351,6 @@
         <div class="absolute inset-0">
           <IDE bind:activeFilePath bind:fileContent />
         </div>
-      {:else}
-        <div class="absolute inset-0 flex items-center justify-center">
-          <p class="text-white/50">Figma import coming soon...</p>
-        </div>
       {/if}
     </main>
 
@@ -392,7 +383,7 @@
     <div class="h-12 border-b border-white/10 flex items-center justify-between px-4 shrink-0 bg-black/40">
       <h2 class="text-sm font-medium text-white/80">AI Agent Workspace</h2>
       <div class="flex bg-black/40 p-1 rounded-md">
-        <button class="px-2 py-0.5 text-[10px] font-medium rounded {chatMode === 'figma' ? 'bg-white/10 text-white' : 'text-white/50 hover:text-white/80'}" onclick={() => chatMode = 'figma'}>Figma Agent</button>
+
         <button class="px-2 py-0.5 text-[10px] font-medium rounded {chatMode === 'scrum' ? 'bg-white/10 text-white' : 'text-white/50 hover:text-white/80'}" onclick={() => chatMode = 'scrum'}>Scrum Master</button>
         <button class="px-2 py-0.5 text-[10px] font-medium rounded {chatMode === 'dev' ? 'bg-white/10 text-white' : 'text-white/50 hover:text-white/80'}" onclick={() => chatMode = 'dev'}>Agent IDE</button>
       </div>

@@ -113,28 +113,37 @@ free_ports() {
     fi
 }
 
-# ── Dependency checks ───────────────────────────────────────
+# ── Dependency checks & auto-install ────────────────────────
 check_deps() {
-    local missing=0
+    # ── Rust / cargo ────────────────────────────────────────
+    if ! command -v cargo &>/dev/null; then
+        # Try sourcing cargo env first (rustup may already be installed)
+        if [ -f "$HOME/.cargo/env" ]; then
+            echo -e "${YELLOW}⚡ Sourcing ~/.cargo/env${RESET}"
+            source "$HOME/.cargo/env"
+        fi
+    fi
 
     if ! command -v cargo &>/dev/null; then
-        echo -e "${RED}✗  cargo not found. Install Rust: https://rustup.rs${RESET}"
-        missing=1
+        echo -e "${CYAN}📦 Installing Rust via rustup...${RESET}"
+        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+        source "$HOME/.cargo/env"
+        echo -e "${GREEN}✓  Rust installed ($(rustc --version))${RESET}"
+        echo ""
     fi
 
+    # ── Node.js ─────────────────────────────────────────────
     if ! command -v node &>/dev/null; then
         echo -e "${RED}✗  node not found. Install Node.js: https://nodejs.org${RESET}"
-        missing=1
-    fi
-
-    if ! command -v pnpm &>/dev/null; then
-        echo -e "${RED}✗  pnpm not found. Install pnpm: https://pnpm.io/installation${RESET}"
-        missing=1
-    fi
-
-    if [ $missing -eq 1 ]; then
-        echo -e "${RED}Aborting — fix missing dependencies above.${RESET}"
         exit 1
+    fi
+
+    # ── pnpm ────────────────────────────────────────────────
+    if ! command -v pnpm &>/dev/null; then
+        echo -e "${CYAN}📦 Installing pnpm via npm...${RESET}"
+        npm install -g pnpm
+        echo -e "${GREEN}✓  pnpm installed ($(pnpm --version))${RESET}"
+        echo ""
     fi
 }
 

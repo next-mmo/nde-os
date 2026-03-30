@@ -186,13 +186,14 @@ fn to_anthropic_messages(messages: &[Message]) -> (Option<String>, Vec<Anthropic
                     content: AnthropicContent::Text(content.clone()),
                 });
             }
-            Message::Assistant { content, tool_calls } => {
+            Message::Assistant {
+                content,
+                tool_calls,
+            } => {
                 if tool_calls.is_empty() {
                     result.push(AnthropicMessage {
                         role: "assistant".into(),
-                        content: AnthropicContent::Text(
-                            content.clone().unwrap_or_default(),
-                        ),
+                        content: AnthropicContent::Text(content.clone().unwrap_or_default()),
                     });
                 } else {
                     let mut blocks: Vec<ContentBlock> = Vec::new();
@@ -304,11 +305,7 @@ impl LlmProvider for AnthropicProvider {
         Ok(parse_response(data))
     }
 
-    async fn chat_stream(
-        &self,
-        messages: &[Message],
-        tools: &[ToolDef],
-    ) -> Result<ChunkStream> {
+    async fn chat_stream(&self, messages: &[Message], tools: &[ToolDef]) -> Result<ChunkStream> {
         let body = self.build_request(messages, tools, true);
 
         let resp = self

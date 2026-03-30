@@ -113,12 +113,19 @@ fn get_tasks_dir() -> PathBuf {
 }
 
 fn classify_status(val: &str) -> &'static str {
-    if val.contains('🟢') || val.to_lowercase().contains("done by ai") { "Done by AI" }
-    else if val.contains('🟡') || val.to_lowercase().contains("yolo") { "YOLO mode" }
-    else if val.to_lowercase().contains("waiting") { "Waiting Approval" }
-    else if val.contains('✅') || val.to_lowercase().contains("verified") { "Verified" }
-    else if val.to_lowercase().contains("re-open") { "Re-open" }
-    else { "Plan" }
+    if val.contains('🟢') || val.to_lowercase().contains("done by ai") {
+        "Done by AI"
+    } else if val.contains('🟡') || val.to_lowercase().contains("yolo") {
+        "YOLO mode"
+    } else if val.to_lowercase().contains("waiting") {
+        "Waiting Approval"
+    } else if val.contains('✅') || val.to_lowercase().contains("verified") {
+        "Verified"
+    } else if val.to_lowercase().contains("re-open") {
+        "Re-open"
+    } else {
+        "Plan"
+    }
 }
 
 fn parse_status(content: &str) -> &'static str {
@@ -142,9 +149,17 @@ fn parse_status(content: &str) -> &'static str {
 
 fn update_legacy_status_line(content: &str, fm_status: &str) -> String {
     let replacement = format!("- **Status:** {fm_status}");
-    let mut updated: String = content.lines().map(|line| {
-        if line.starts_with("- **Status:**") { replacement.clone() } else { line.to_string() }
-    }).collect::<Vec<_>>().join("\n");
+    let mut updated: String = content
+        .lines()
+        .map(|line| {
+            if line.starts_with("- **Status:**") {
+                replacement.clone()
+            } else {
+                line.to_string()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
     if content.ends_with('\n') && !updated.ends_with('\n') {
         updated.push('\n');
     }
@@ -165,16 +180,21 @@ pub fn execute(tool_name: &str, params: &serde_json::Value) -> Result<String> {
                     let path = entry.path();
                     if path.is_file() && path.extension().and_then(|e| e.to_str()) == Some("md") {
                         if let Ok(content) = fs::read_to_string(&path) {
-                            let filename = path.file_name().unwrap_or_default().to_string_lossy().to_string();
-                            
-                            let title = content.lines()
+                            let filename = path
+                                .file_name()
+                                .unwrap_or_default()
+                                .to_string_lossy()
+                                .to_string();
+
+                            let title = content
+                                .lines()
                                 .find(|line| line.starts_with("# "))
                                 .map(|line| line.trim_start_matches("# ").trim().to_string())
                                 .unwrap_or_else(|| filename.clone());
-                            
+
                             let status = parse_status(&content).to_string();
                             let locked = status == "YOLO mode";
-                            
+
                             tasks.push(KanbanTask {
                                 filename,
                                 title,
@@ -191,17 +211,24 @@ pub fn execute(tool_name: &str, params: &serde_json::Value) -> Result<String> {
         "nde_kanban_create_task" => {
             let args = params.get("arguments").unwrap_or(params);
 
-            let title = args.get("title")
+            let title = args
+                .get("title")
                 .and_then(|v| v.as_str())
                 .ok_or_else(|| anyhow!("Missing required field: title"))?;
 
-            let description = args.get("description")
+            let description = args
+                .get("description")
                 .and_then(|v| v.as_str())
                 .unwrap_or("");
 
-            let checklist: Vec<String> = args.get("checklist")
+            let checklist: Vec<String> = args
+                .get("checklist")
                 .and_then(|v| v.as_array())
-                .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|v| v.as_str().map(String::from))
+                        .collect()
+                })
                 .unwrap_or_default();
 
             let dir = get_tasks_dir();
@@ -229,16 +256,30 @@ pub fn execute(tool_name: &str, params: &serde_json::Value) -> Result<String> {
             let checklist_md = if checklist.is_empty() {
                 "- [ ] Implement the feature\n- [ ] Test the implementation\n".to_string()
             } else {
-                checklist.iter().map(|item| format!("- [ ] {}", item)).collect::<Vec<_>>().join("\n") + "\n"
+                checklist
+                    .iter()
+                    .map(|item| format!("- [ ] {}", item))
+                    .collect::<Vec<_>>()
+                    .join("\n")
+                    + "\n"
             };
 
-            let desc = if description.is_empty() { title } else { description };
+            let desc = if description.is_empty() {
+                title
+            } else {
+                description
+            };
             let epoch_secs = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap_or_default()
                 .as_secs();
             let days = epoch_secs / 86400;
-            let now = format!("{}-{:02}-{:02}", 1970 + days / 365, (days % 365 / 30 + 1).min(12), (days % 365 % 30 + 1).min(31));
+            let now = format!(
+                "{}-{:02}-{:02}",
+                1970 + days / 365,
+                (days % 365 / 30 + 1).min(12),
+                (days % 365 % 30 + 1).min(31)
+            );
 
             let content = format!(
                 "# {}\n\n- **Status:** 🔴 `plan`\n- **Created:** {}\n\n## Description\n\n{}\n\n## Checklist\n\n{}",
@@ -253,15 +294,20 @@ pub fn execute(tool_name: &str, params: &serde_json::Value) -> Result<String> {
                 "filename": filename,
                 "title": title,
                 "message": format!("Created task: {}", title)
-            }).to_string())
+            })
+            .to_string())
         }
         "nde_kanban_update_task" => {
             let args = params.get("arguments").unwrap_or(params);
-            
+
             let filename = args.get("filename").and_then(|v| v.as_str()).unwrap_or("");
             let new_status = args.get("status").and_then(|v| v.as_str()).unwrap_or("");
 
-            if filename.is_empty() || filename.contains("..") || filename.contains("/") || filename.contains("\\") {
+            if filename.is_empty()
+                || filename.contains("..")
+                || filename.contains("/")
+                || filename.contains("\\")
+            {
                 return Err(anyhow!("Invalid filename"));
             }
 
@@ -286,13 +332,17 @@ pub fn execute(tool_name: &str, params: &serde_json::Value) -> Result<String> {
                     let frontmatter = &after[..end_offset];
                     let rest = &after[end_offset..]; // starts with \n---
 
-                    let updated_fm: String = frontmatter.lines().map(|line| {
-                        if line.trim_start().starts_with("status:") {
-                            format!("status: {fm_status}")
-                        } else {
-                            line.to_string()
-                        }
-                    }).collect::<Vec<_>>().join("\n");
+                    let updated_fm: String = frontmatter
+                        .lines()
+                        .map(|line| {
+                            if line.trim_start().starts_with("status:") {
+                                format!("status: {fm_status}")
+                            } else {
+                                line.to_string()
+                            }
+                        })
+                        .collect::<Vec<_>>()
+                        .join("\n");
 
                     let mut out = format!("---\n{updated_fm}{rest}");
                     if content.ends_with('\n') && !out.ends_with('\n') {
@@ -313,14 +363,21 @@ pub fn execute(tool_name: &str, params: &serde_json::Value) -> Result<String> {
             let args = params.get("arguments").unwrap_or(params);
             let filename = args.get("filename").and_then(|v| v.as_str()).unwrap_or("");
 
-            if filename.is_empty() || filename.contains("..") || filename.contains("/") || filename.contains("\\") {
+            if filename.is_empty()
+                || filename.contains("..")
+                || filename.contains("/")
+                || filename.contains("\\")
+            {
                 return Err(anyhow!("Invalid filename"));
             }
 
             let filepath = get_tasks_dir().join(filename);
             if filepath.exists() {
                 fs::remove_file(&filepath)?;
-                Ok(json!({"success": true, "message": format!("Deleted task: {}", filename)}).to_string())
+                Ok(
+                    json!({"success": true, "message": format!("Deleted task: {}", filename)})
+                        .to_string(),
+                )
             } else {
                 Err(anyhow!("Task not found: {}", filename))
             }
@@ -329,7 +386,11 @@ pub fn execute(tool_name: &str, params: &serde_json::Value) -> Result<String> {
             let args = params.get("arguments").unwrap_or(params);
             let filename = args.get("filename").and_then(|v| v.as_str()).unwrap_or("");
 
-            if filename.is_empty() || filename.contains("..") || filename.contains("/") || filename.contains("\\") {
+            if filename.is_empty()
+                || filename.contains("..")
+                || filename.contains("/")
+                || filename.contains("\\")
+            {
                 return Err(anyhow!("Invalid filename"));
             }
 
@@ -344,9 +405,16 @@ pub fn execute(tool_name: &str, params: &serde_json::Value) -> Result<String> {
         "nde_kanban_update_task_content" => {
             let args = params.get("arguments").unwrap_or(params);
             let filename = args.get("filename").and_then(|v| v.as_str()).unwrap_or("");
-            let new_content = args.get("content").and_then(|v| v.as_str()).ok_or_else(|| anyhow!("Missing content"))?;
+            let new_content = args
+                .get("content")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| anyhow!("Missing content"))?;
 
-            if filename.is_empty() || filename.contains("..") || filename.contains("/") || filename.contains("\\") {
+            if filename.is_empty()
+                || filename.contains("..")
+                || filename.contains("/")
+                || filename.contains("\\")
+            {
                 return Err(anyhow!("Invalid filename"));
             }
 
@@ -356,7 +424,10 @@ pub fn execute(tool_name: &str, params: &serde_json::Value) -> Result<String> {
             }
 
             fs::write(&filepath, new_content)?;
-            Ok(json!({"success": true, "message": format!("Updated content of {}", filename)}).to_string())
+            Ok(
+                json!({"success": true, "message": format!("Updated content of {}", filename)})
+                    .to_string(),
+            )
         }
         _ => Err(anyhow!("Unknown tool: {}", tool_name)),
     }

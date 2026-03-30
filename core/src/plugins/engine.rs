@@ -186,7 +186,10 @@ impl PluginEngine {
                         push_log(
                             &log_buf,
                             "system",
-                            format!("Plugin '{}' v{} discovered", manifest.name, manifest.version),
+                            format!(
+                                "Plugin '{}' v{} discovered",
+                                manifest.name, manifest.version
+                            ),
                         );
 
                         self.plugins.insert(
@@ -302,7 +305,11 @@ impl PluginEngine {
 
             if !output.status.success() {
                 plugin.state = PluginState::Error;
-                push_log(&plugin.logs, "system", "ERROR: Failed to install dependencies");
+                push_log(
+                    &plugin.logs,
+                    "system",
+                    "ERROR: Failed to install dependencies",
+                );
                 return Err(anyhow!(
                     "Failed to install dependencies for plugin '{}'",
                     plugin_id
@@ -361,12 +368,11 @@ impl PluginEngine {
                 };
                 (python, vec![entry_path.to_string_lossy().to_string()])
             }
-            super::manifest::Language::JavaScript | super::manifest::Language::TypeScript => {
-                ("node".to_string(), vec![entry_path.to_string_lossy().to_string()])
-            }
-            super::manifest::Language::Binary => {
-                (entry_path.to_string_lossy().to_string(), vec![])
-            }
+            super::manifest::Language::JavaScript | super::manifest::Language::TypeScript => (
+                "node".to_string(),
+                vec![entry_path.to_string_lossy().to_string()],
+            ),
+            super::manifest::Language::Binary => (entry_path.to_string_lossy().to_string(), vec![]),
         };
 
         push_log(
@@ -380,10 +386,7 @@ impl PluginEngine {
             .current_dir(&plugin.plugin_dir)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
-            .env(
-                "PLUGIN_ID",
-                &plugin.manifest.id,
-            )
+            .env("PLUGIN_ID", &plugin.manifest.id)
             .env(
                 "PLUGIN_PORT",
                 plugin
@@ -440,11 +443,7 @@ impl PluginEngine {
         );
         plugin.process = Some(child);
         plugin.state = PluginState::Running;
-        tracing::info!(
-            plugin = plugin_id,
-            pid = pid,
-            "Plugin started"
-        );
+        tracing::info!(plugin = plugin_id, pid = pid, "Plugin started");
 
         Ok(())
     }
@@ -553,11 +552,14 @@ impl PluginEngine {
             .values()
             .filter(|p| p.state == PluginState::Running)
             .flat_map(|p| {
-                p.manifest.provides_tools.iter().map(|t| crate::llm::ToolDef {
-                    name: format!("{}_{}", p.manifest.id.replace('-', "_"), t.name),
-                    description: t.description.clone(),
-                    parameters: t.parameters.clone(),
-                })
+                p.manifest
+                    .provides_tools
+                    .iter()
+                    .map(|t| crate::llm::ToolDef {
+                        name: format!("{}_{}", p.manifest.id.replace('-', "_"), t.name),
+                        description: t.description.clone(),
+                        parameters: t.parameters.clone(),
+                    })
             })
             .collect()
     }

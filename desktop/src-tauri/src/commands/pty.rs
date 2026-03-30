@@ -24,7 +24,7 @@ pub async fn spawn_pty(
     state: State<'_, PtyState>,
 ) -> Result<(), String> {
     let pty_system = native_pty_system();
-    
+
     let pair = pty_system
         .openpty(PtySize {
             rows: 24,
@@ -64,13 +64,11 @@ pub async fn spawn_pty(
 }
 
 #[tauri::command]
-pub async fn write_pty(
-    id: String,
-    data: String,
-    state: State<'_, PtyState>,
-) -> Result<(), String> {
+pub async fn write_pty(id: String, data: String, state: State<'_, PtyState>) -> Result<(), String> {
     if let Some(writer) = state.writers.lock().unwrap().get_mut(&id) {
-        writer.write_all(data.as_bytes()).map_err(|e| e.to_string())?;
+        writer
+            .write_all(data.as_bytes())
+            .map_err(|e| e.to_string())?;
     }
     Ok(())
 }

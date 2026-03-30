@@ -121,9 +121,7 @@ pub fn stream_task(
         .with_header(Header::from_bytes("Content-Type", "text/event-stream").unwrap())
         .with_header(Header::from_bytes("Cache-Control", "no-cache").unwrap())
         .with_header(Header::from_bytes("Connection", "keep-alive").unwrap())
-        .with_header(
-            Header::from_bytes("Access-Control-Allow-Origin", "*").unwrap(),
-        )
+        .with_header(Header::from_bytes("Access-Control-Allow-Origin", "*").unwrap())
 }
 
 /// POST /api/agent/tasks/{id}/cancel — cancel a running task.
@@ -226,10 +224,13 @@ pub fn handle_stream_chat(
                     )
                     .unwrap_or_else(|_| uuid::Uuid::new_v4().to_string()),
             };
-            let _ = state
-                .memory
-                .conversations
-                .save_message(&conv_id, "user", Some(&chat_req.message), None, None);
+            let _ = state.memory.conversations.save_message(
+                &conv_id,
+                "user",
+                Some(&chat_req.message),
+                None,
+                None,
+            );
             conv_id
         };
 
@@ -300,14 +301,10 @@ pub fn handle_stream_chat(
 
         return match result {
             Ok(sse_data) => Response::from_data(sse_data)
-                .with_header(
-                    Header::from_bytes("Content-Type", "text/event-stream").unwrap(),
-                )
+                .with_header(Header::from_bytes("Content-Type", "text/event-stream").unwrap())
                 .with_header(Header::from_bytes("Cache-Control", "no-cache").unwrap())
                 .with_header(Header::from_bytes("Connection", "keep-alive").unwrap())
-                .with_header(
-                    Header::from_bytes("Access-Control-Allow-Origin", "*").unwrap(),
-                ),
+                .with_header(Header::from_bytes("Access-Control-Allow-Origin", "*").unwrap()),
             Err(e) => {
                 let mut sse_data = Vec::new();
                 let error_event = serde_json::json!({
@@ -321,12 +318,8 @@ pub fn handle_stream_chat(
                 )
                 .ok();
                 Response::from_data(sse_data)
-                    .with_header(
-                        Header::from_bytes("Content-Type", "text/event-stream").unwrap(),
-                    )
-                    .with_header(
-                        Header::from_bytes("Access-Control-Allow-Origin", "*").unwrap(),
-                    )
+                    .with_header(Header::from_bytes("Content-Type", "text/event-stream").unwrap())
+                    .with_header(Header::from_bytes("Access-Control-Allow-Origin", "*").unwrap())
             }
         };
     }
@@ -370,10 +363,13 @@ fn fallback_stream_chat(
             .unwrap_or_else(|_| uuid::Uuid::new_v4().to_string()),
     };
 
-    let _ = state
-        .memory
-        .conversations
-        .save_message(&conv_id, "user", Some(&chat_req.message), None, None);
+    let _ = state.memory.conversations.save_message(
+        &conv_id,
+        "user",
+        Some(&chat_req.message),
+        None,
+        None,
+    );
 
     let result: Result<String, anyhow::Error> = runtime.block_on(async {
         match ai_launcher_core::agent::AgentRuntime::from_config(config) {
@@ -417,14 +413,10 @@ fn fallback_stream_chat(
             .ok();
 
             Response::from_data(sse_data)
-                .with_header(
-                    Header::from_bytes("Content-Type", "text/event-stream").unwrap(),
-                )
+                .with_header(Header::from_bytes("Content-Type", "text/event-stream").unwrap())
                 .with_header(Header::from_bytes("Cache-Control", "no-cache").unwrap())
                 .with_header(Header::from_bytes("Connection", "keep-alive").unwrap())
-                .with_header(
-                    Header::from_bytes("Access-Control-Allow-Origin", "*").unwrap(),
-                )
+                .with_header(Header::from_bytes("Access-Control-Allow-Origin", "*").unwrap())
         }
         Err(e) => {
             let mut sse_data = Vec::new();
@@ -441,12 +433,8 @@ fn fallback_stream_chat(
             .ok();
 
             Response::from_data(sse_data)
-                .with_header(
-                    Header::from_bytes("Content-Type", "text/event-stream").unwrap(),
-                )
-                .with_header(
-                    Header::from_bytes("Access-Control-Allow-Origin", "*").unwrap(),
-                )
+                .with_header(Header::from_bytes("Content-Type", "text/event-stream").unwrap())
+                .with_header(Header::from_bytes("Access-Control-Allow-Origin", "*").unwrap())
         }
     }
 }

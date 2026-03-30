@@ -42,15 +42,18 @@ impl Tool for WebBrowseTool {
     }
 
     async fn execute(&self, args: serde_json::Value, _sandbox: &Sandbox) -> Result<String> {
-        let url = args.get("url")
+        let url = args
+            .get("url")
             .and_then(|v| v.as_str())
             .ok_or_else(|| anyhow::anyhow!("Missing 'url' argument"))?;
 
-        let extract = args.get("extract")
+        let extract = args
+            .get("extract")
             .and_then(|v| v.as_str())
             .unwrap_or("all");
 
-        let max_length = args.get("max_length")
+        let max_length = args
+            .get("max_length")
             .and_then(|v| v.as_u64())
             .unwrap_or(30000) as usize;
 
@@ -59,7 +62,10 @@ impl Tool for WebBrowseTool {
             .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
             .build()?;
 
-        let response = client.get(url).send().await
+        let response = client
+            .get(url)
+            .send()
+            .await
             .map_err(|e| anyhow::anyhow!("Failed to fetch {}: {}", url, e))?;
 
         let status = response.status();
@@ -67,19 +73,25 @@ impl Tool for WebBrowseTool {
             return Ok(format!("HTTP Error: {} for {}", status, url));
         }
 
-        let content_type = response.headers()
+        let content_type = response
+            .headers()
             .get("content-type")
             .and_then(|v| v.to_str().ok())
             .unwrap_or("")
             .to_string();
 
-        let html = response.text().await
+        let html = response
+            .text()
+            .await
             .map_err(|e| anyhow::anyhow!("Failed to read response: {}", e))?;
 
         // If not HTML, return raw text
         if !content_type.contains("html") {
             let truncated = truncate_text(&html, max_length);
-            return Ok(format!("URL: {}\nContent-Type: {}\n\n{}", url, content_type, truncated));
+            return Ok(format!(
+                "URL: {}\nContent-Type: {}\n\n{}",
+                url, content_type, truncated
+            ));
         }
 
         let mut output = format!("URL: {}\n", url);
@@ -169,11 +181,27 @@ fn extract_readable_text(html: &str) -> String {
     text = remove_tag_block(&text, "header");
 
     // Convert block elements to newlines
-    let block_tags = ["p", "div", "br", "li", "h1", "h2", "h3", "h4", "h5", "h6",
-                       "tr", "blockquote", "pre", "section", "article"];
+    let block_tags = [
+        "p",
+        "div",
+        "br",
+        "li",
+        "h1",
+        "h2",
+        "h3",
+        "h4",
+        "h5",
+        "h6",
+        "tr",
+        "blockquote",
+        "pre",
+        "section",
+        "article",
+    ];
     for tag in &block_tags {
         let patterns = [
-            format!("<{}>", tag), format!("<{} ", tag),
+            format!("<{}>", tag),
+            format!("<{} ", tag),
             format!("</{}>", tag),
         ];
         for pat in &patterns {
@@ -261,9 +289,7 @@ fn decode_entities(text: &str) -> String {
 
 /// Clean up whitespace in text.
 fn clean_text(text: &str) -> String {
-    let mut lines: Vec<&str> = text.lines()
-        .map(|l| l.trim())
-        .collect();
+    let mut lines: Vec<&str> = text.lines().map(|l| l.trim()).collect();
 
     // Remove consecutive blank lines
     let mut result = String::new();
@@ -316,7 +342,10 @@ fn extract_links(html: &str, base_url: &str) -> Vec<(String, String)> {
             } else if href.starts_with('/') {
                 // Get base domain
                 if let Some(domain_end) = base_url.find("//").map(|i| {
-                    base_url[i + 2..].find('/').map(|j| i + 2 + j).unwrap_or(base_url.len())
+                    base_url[i + 2..]
+                        .find('/')
+                        .map(|j| i + 2 + j)
+                        .unwrap_or(base_url.len())
                 }) {
                     format!("{}{}", &base_url[..domain_end], href)
                 } else {
@@ -326,7 +355,10 @@ fn extract_links(html: &str, base_url: &str) -> Vec<(String, String)> {
                 href
             };
 
-            if !link_text.is_empty() && !full_url.starts_with('#') && !full_url.starts_with("javascript:") {
+            if !link_text.is_empty()
+                && !full_url.starts_with('#')
+                && !full_url.starts_with("javascript:")
+            {
                 links.push((link_text, full_url));
             }
         }
@@ -364,7 +396,12 @@ fn truncate_text(text: &str, max: usize) -> String {
     if text.len() <= max {
         text.to_string()
     } else {
-        format!("{}...\n\n[Truncated at {} chars, total: {}]", &text[..max], max, text.len())
+        format!(
+            "{}...\n\n[Truncated at {} chars, total: {}]",
+            &text[..max],
+            max,
+            text.len()
+        )
     }
 }
 
@@ -385,7 +422,10 @@ mod tests {
     #[test]
     fn test_extract_tag_content() {
         let html = "<title>My Page</title>";
-        assert_eq!(extract_tag_content(html, "title"), Some("My Page".to_string()));
+        assert_eq!(
+            extract_tag_content(html, "title"),
+            Some("My Page".to_string())
+        );
     }
 
     #[test]
@@ -397,7 +437,10 @@ mod tests {
     #[test]
     fn test_extract_attribute() {
         let tag = r#"<a href="https://example.com" class="link">"#;
-        assert_eq!(extract_attribute(tag, "href"), Some("https://example.com".to_string()));
+        assert_eq!(
+            extract_attribute(tag, "href"),
+            Some("https://example.com".to_string())
+        );
     }
 
     #[test]

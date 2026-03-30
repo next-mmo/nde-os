@@ -71,8 +71,8 @@ pub async fn list_directory(
             sandbox_resolve(&sandbox, &path)?
         };
 
-        let read = std::fs::read_dir(&dir)
-            .map_err(|e| format!("Cannot read {}: {e}", dir.display()))?;
+        let read =
+            std::fs::read_dir(&dir).map_err(|e| format!("Cannot read {}: {e}", dir.display()))?;
 
         let mut entries: Vec<FileEntry> = Vec::new();
         for item in read.flatten() {
@@ -163,7 +163,11 @@ pub async fn read_file_content(state: State<'_, AppState>, path: String) -> Resu
 
 /// Write file contents. Path must be inside `base_dir`.
 #[tauri::command]
-pub async fn write_file_content(state: State<'_, AppState>, path: String, content: String) -> Result<(), String> {
+pub async fn write_file_content(
+    state: State<'_, AppState>,
+    path: String,
+    content: String,
+) -> Result<(), String> {
     let base_dir = state.base_dir.clone();
 
     tauri::async_runtime::spawn_blocking(move || {
@@ -214,6 +218,81 @@ pub async fn rename_entry(
         let new = sandbox_resolve(&sandbox, &new_path)?;
         std::fs::rename(&old, &new)
             .map_err(|e| format!("Cannot rename {} → {}: {e}", old.display(), new.display()))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+// ── External filesystem commands (for user-picked folders via native dialog) ──
+
+/// List directory contents for a user-selected external folder.
+/// This is used when the user picks a folder via the native OS dialog.
+/// No sandbox — the user explicitly chose this path through the OS file picker.
+#[tauri::command]
+pub async fn list_directory_external(path: String) -> Result<Vec<FileEntry>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let dir = PathBuf::from(&path);
+        if !dir.is_dir() {
+            return Err(format!("Not a directory: {path}"));
+        }
+
+        let read =
+            std::fs::read_dir(&dir).map_err(|e| format!("Cannot read {}: {e}", dir.display()))?;
+
+        let mut entries: Vec<FileEntry> = Vec::new();
+        for item in read.flatten() {
+            let meta = match item.metadata() {
+                Ok(m) => m,
+                Err(_) => continue,
+            };
+            let modified = meta
+                .modified()
+                .ok()
+                .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+                .map(|d| {
+                    chrono::DateTime::from_timestamp(d.as_secs() as i64, 0)
+                        .map(|dt| dt.format("%Y-%m-%d %H:%M").to_string())
+                        .unwrap_or_default()
+                });
+
+            entries.push(FileEntry {
+                name: item.file_name().to_string_lossy().to_string(),
+                path: item.path().to_string_lossy().to_string(),
+                is_dir: meta.is_dir(),
+                size: meta.len(),
+                modified,
+            });
+        }
+
+        // Directories first, then case-insensitive alphabetical
+        entries.sort_by(|a, b| {
+            b.is_dir
+                .cmp(&a.is_dir)
+                .then(a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+        });
+        Ok(entries)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Read file contents from an external (user-picked) path.
+/// No sandbox — the user chose this folder tree through the OS file picker.
+#[tauri::command]
+pub async fn read_file_external(path: String) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        std::fs::read_to_string(&path).map_err(|e| format!("Cannot read file {path}: {e}"))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Write file contents to an external (user-picked) path.
+/// No sandbox — the user chose this folder tree through the OS file picker.
+#[tauri::command]
+pub async fn write_file_external(path: String, content: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        std::fs::write(&path, content).map_err(|e| format!("Cannot write file {path}: {e}"))
     })
     .await
     .map_err(|e| e.to_string())?

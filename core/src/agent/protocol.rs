@@ -17,7 +17,6 @@ use crate::llm::Usage;
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum AgentEvent {
     // ── Lifecycle ────────────────────────────────────────────────────────
-
     /// Task has been created and queued.
     TaskCreated {
         task_id: String,
@@ -73,12 +72,8 @@ pub enum AgentEvent {
     },
 
     // ── Streaming content ───────────────────────────────────────────────
-
     /// A text delta from the LLM (token-level streaming).
-    TextDelta {
-        task_id: String,
-        content: String,
-    },
+    TextDelta { task_id: String, content: String },
 
     /// A tool call is about to be executed.
     ToolCallStart {
@@ -104,7 +99,6 @@ pub enum AgentEvent {
     },
 
     // ── Health ───────────────────────────────────────────────────────────
-
     /// Periodic heartbeat for active tasks.
     Heartbeat {
         task_id: String,
@@ -146,7 +140,10 @@ impl AgentEvent {
         matches!(
             self,
             AgentEvent::TaskCompleted { .. }
-                | AgentEvent::TaskFailed { will_retry: false, .. }
+                | AgentEvent::TaskFailed {
+                    will_retry: false,
+                    ..
+                }
                 | AgentEvent::TaskCancelled { .. }
                 | AgentEvent::TaskTimedOut { .. }
         )

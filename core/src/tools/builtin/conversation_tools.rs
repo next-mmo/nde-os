@@ -42,11 +42,13 @@ impl Tool for ConversationSaveTool {
     }
 
     async fn execute(&self, args: serde_json::Value, sandbox: &Sandbox) -> Result<String> {
-        let role = args.get("role")
+        let role = args
+            .get("role")
             .and_then(|v| v.as_str())
             .ok_or_else(|| anyhow::anyhow!("Missing 'role' argument"))?;
 
-        let content = args.get("content")
+        let content = args
+            .get("content")
             .and_then(|v| v.as_str())
             .ok_or_else(|| anyhow::anyhow!("Missing 'content' argument"))?;
 
@@ -56,7 +58,8 @@ impl Tool for ConversationSaveTool {
         let conv_id = if let Some(id) = args.get("conversation_id").and_then(|v| v.as_str()) {
             id.to_string()
         } else {
-            let title = args.get("title")
+            let title = args
+                .get("title")
                 .and_then(|v| v.as_str())
                 .unwrap_or("Untitled");
             store.create_conversation(title, "agent")?
@@ -64,7 +67,10 @@ impl Tool for ConversationSaveTool {
 
         store.save_message(&conv_id, role, Some(content), None, None)?;
 
-        Ok(format!("Saved {} message to conversation {}", role, conv_id))
+        Ok(format!(
+            "Saved {} message to conversation {}",
+            role, conv_id
+        ))
     }
 }
 
@@ -118,9 +124,7 @@ impl Tool for ConversationSearchTool {
             }
             Ok(output)
         } else {
-            let limit = args.get("limit")
-                .and_then(|v| v.as_u64())
-                .unwrap_or(10) as usize;
+            let limit = args.get("limit").and_then(|v| v.as_u64()).unwrap_or(10) as usize;
 
             let convs = store.list_conversations(limit)?;
             if convs.is_empty() {

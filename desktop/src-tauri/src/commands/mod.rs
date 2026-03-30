@@ -1,12 +1,12 @@
-pub mod apps;
 pub mod agent_tasks;
+pub mod apps;
 pub mod catalog;
 pub mod figma_json;
 pub mod filesystem;
+pub mod git;
 pub mod lifecycle;
+pub mod pty;
 pub mod sandbox;
+pub mod screenshot;
 pub mod shield;
 pub mod system;
-pub mod screenshot;
-pub mod git;
-pub mod pty;

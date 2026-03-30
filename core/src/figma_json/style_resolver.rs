@@ -28,7 +28,10 @@ fn fill_to_css(fill: &FFill) -> Option<String> {
                 .iter()
                 .map(|s| format!("{} {:.1}%", s.color.to_css(), s.position * 100.0))
                 .collect();
-            Some(format!("linear-gradient({angle}deg, {})", stop_str.join(", ")))
+            Some(format!(
+                "linear-gradient({angle}deg, {})",
+                stop_str.join(", ")
+            ))
         }
         FFill::RADIAL_GRADIENT { stops } => {
             let stop_str: Vec<String> = stops
@@ -75,7 +78,12 @@ fn resolve_fills(fills: &[FFill]) -> StyleMap {
                 m.insert("background-position".into(), "center".into());
                 m.insert(
                     "background-repeat".into(),
-                    if scale_mode == "TILE" { "repeat" } else { "no-repeat" }.into(),
+                    if scale_mode == "TILE" {
+                        "repeat"
+                    } else {
+                        "no-repeat"
+                    }
+                    .into(),
                 );
             }
         } else {
@@ -98,7 +106,10 @@ fn resolve_strokes(strokes: &[FStroke]) -> StyleMap {
 
     match align {
         "INSIDE" => {
-            m.insert("box-shadow".into(), format!("inset 0 0 0 {}px {color}", s.weight));
+            m.insert(
+                "box-shadow".into(),
+                format!("inset 0 0 0 {}px {color}", s.weight),
+            );
         }
         "OUTSIDE" => {
             m.insert("box-shadow".into(), format!("0 0 0 {}px {color}", s.weight));
@@ -129,18 +140,36 @@ fn resolve_effects(effects: &[FEffect]) -> StyleMap {
 
     for e in effects {
         match e {
-            FEffect::DROP_SHADOW { color, offset, radius, spread } => {
+            FEffect::DROP_SHADOW {
+                color,
+                offset,
+                radius,
+                spread,
+            } => {
                 let sp = spread.unwrap_or(0.0);
                 shadows.push(format!(
                     "{}px {}px {}px {}px {}",
-                    offset.x, offset.y, radius, sp, color.to_css()
+                    offset.x,
+                    offset.y,
+                    radius,
+                    sp,
+                    color.to_css()
                 ));
             }
-            FEffect::INNER_SHADOW { color, offset, radius, spread } => {
+            FEffect::INNER_SHADOW {
+                color,
+                offset,
+                radius,
+                spread,
+            } => {
                 let sp = spread.unwrap_or(0.0);
                 shadows.push(format!(
                     "inset {}px {}px {}px {}px {}",
-                    offset.x, offset.y, radius, sp, color.to_css()
+                    offset.x,
+                    offset.y,
+                    radius,
+                    sp,
+                    color.to_css()
                 ));
             }
             FEffect::LAYER { radius } => {
@@ -175,7 +204,10 @@ fn resolve_border_radius(br: &Option<FBorderRadius>) -> StyleMap {
         Some(FBorderRadius::PerCorner(corners)) => {
             m.insert(
                 "border-radius".into(),
-                format!("{}px {}px {}px {}px", corners[0], corners[1], corners[2], corners[3]),
+                format!(
+                    "{}px {}px {}px {}px",
+                    corners[0], corners[1], corners[2], corners[3]
+                ),
             );
         }
         _ => {}
@@ -204,7 +236,12 @@ fn resolve_layout(frame: &FFrameData) -> StyleMap {
         m.insert("display".into(), "flex".into());
         m.insert(
             "flex-direction".into(),
-            if mode == "HORIZONTAL" { "row" } else { "column" }.into(),
+            if mode == "HORIZONTAL" {
+                "row"
+            } else {
+                "column"
+            }
+            .into(),
         );
 
         if frame.layout_wrap.as_deref() == Some("WRAP") {
@@ -292,16 +329,26 @@ fn resolve_text_styles(text: &FTextData) -> StyleMap {
     }
     if let Some(ref td) = text.text_decoration {
         match td.as_str() {
-            "UNDERLINE" => { m.insert("text-decoration".into(), "underline".into()); }
-            "STRIKETHROUGH" => { m.insert("text-decoration".into(), "line-through".into()); }
+            "UNDERLINE" => {
+                m.insert("text-decoration".into(), "underline".into());
+            }
+            "STRIKETHROUGH" => {
+                m.insert("text-decoration".into(), "line-through".into());
+            }
             _ => {}
         }
     }
     if let Some(ref tc) = text.text_case {
         match tc.as_str() {
-            "UPPER" => { m.insert("text-transform".into(), "uppercase".into()); }
-            "LOWER" => { m.insert("text-transform".into(), "lowercase".into()); }
-            "TITLE" => { m.insert("text-transform".into(), "capitalize".into()); }
+            "UPPER" => {
+                m.insert("text-transform".into(), "uppercase".into());
+            }
+            "LOWER" => {
+                m.insert("text-transform".into(), "lowercase".into());
+            }
+            "TITLE" => {
+                m.insert("text-transform".into(), "capitalize".into());
+            }
             _ => {}
         }
     }
@@ -454,19 +501,43 @@ mod tests {
     #[test]
     fn solid_fill_becomes_background_color() {
         let fills = vec![FFill::SOLID {
-            color: FColor { r: 1.0, g: 0.0, b: 0.0, a: 1.0 },
+            color: FColor {
+                r: 1.0,
+                g: 0.0,
+                b: 0.0,
+                a: 1.0,
+            },
             opacity: 1.0,
         }];
         let m = resolve_fills(&fills);
-        assert_eq!(m.get("background-color"), Some(&"rgba(255, 0, 0, 1)".to_string()));
+        assert_eq!(
+            m.get("background-color"),
+            Some(&"rgba(255, 0, 0, 1)".to_string())
+        );
     }
 
     #[test]
     fn linear_gradient_becomes_background() {
         let fills = vec![FFill::LINEAR_GRADIENT {
             stops: vec![
-                FGradientStop { position: 0.0, color: FColor { r: 1.0, g: 0.0, b: 0.0, a: 1.0 } },
-                FGradientStop { position: 1.0, color: FColor { r: 0.0, g: 0.0, b: 1.0, a: 1.0 } },
+                FGradientStop {
+                    position: 0.0,
+                    color: FColor {
+                        r: 1.0,
+                        g: 0.0,
+                        b: 0.0,
+                        a: 1.0,
+                    },
+                },
+                FGradientStop {
+                    position: 1.0,
+                    color: FColor {
+                        r: 0.0,
+                        g: 0.0,
+                        b: 1.0,
+                        a: 1.0,
+                    },
+                },
             ],
             angle: 90.0,
         }];
@@ -478,7 +549,12 @@ mod tests {
     #[test]
     fn inside_stroke_becomes_inset_shadow() {
         let strokes = vec![FStroke {
-            color: FColor { r: 1.0, g: 1.0, b: 1.0, a: 0.1 },
+            color: FColor {
+                r: 1.0,
+                g: 1.0,
+                b: 1.0,
+                a: 0.1,
+            },
             weight: 1.0,
             align: Some("INSIDE".into()),
             dash_pattern: None,

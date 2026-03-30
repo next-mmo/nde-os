@@ -1,5 +1,6 @@
 <script lang="ts">
   import { invoke } from '@tauri-apps/api/core';
+  import { open } from '@tauri-apps/plugin-dialog';
   import FileExplorer from './FileExplorer.svelte';
   import SourceControl from './SourceControl.svelte';
   import CodeEditor from './CodeEditor.svelte';
@@ -13,6 +14,9 @@
   let activeSidebar = $state<"explorer" | "scm">("explorer");
   let showTerminal = $state(false);
   let terminalHeight = $state(250);
+  let projectSelected = $state(false);
+  let showSidebar = $state(false);
+  let externalRoot = $state<string | null>(null);
   let isDraggingTerminal = $state(false);
 
   let activeFileName = $state<string>("");
@@ -30,14 +34,31 @@
       case 'css': return 'css';
       case 'html': return 'html';
       case 'md': return 'markdown';
-      case 'svelte': return 'html'; // Monaco doesn't have svelte natively without extension, fallback to html or use specific
+      case 'svelte': return 'html';
+      case 'py': return 'python';
+      case 'toml': return 'ini';
+      case 'yaml': case 'yml': return 'yaml';
+      case 'sh': case 'bash': return 'shell';
       default: return 'plaintext';
     }
   });
 
+  /** Open native OS folder picker */
+  async function openFolder() {
+    const selected = await open({ directory: true, multiple: false, title: 'Open Folder' });
+    if (selected && typeof selected === 'string') {
+      externalRoot = selected;
+      projectSelected = true;
+      showSidebar = true;
+      activeSidebar = 'explorer';
+    }
+  }
+
   async function openFile(path: string, name: string) {
     try {
-      const content = await invoke<string>("read_file_content", { path });
+      // Use external command when browsing a user-picked folder
+      const cmd = externalRoot ? "read_file_external" : "read_file_content";
+      const content = await invoke<string>(cmd, { path });
       activeFilePath = path;
       activeFileName = name;
       fileContent = content;
@@ -51,7 +72,8 @@
     if (!activeFilePath) return;
     try {
       isSaving = true;
-      await invoke("write_file_content", { path: activeFilePath, content: fileContent });
+      const cmd = externalRoot ? "write_file_external" : "write_file_content";
+      await invoke(cmd, { path: activeFilePath, content: fileContent });
     } catch (e) {
       console.error(e);
       alert("Failed to save file: " + e);
@@ -82,43 +104,62 @@
 />
 
 <div class="absolute inset-0 flex h-full overflow-hidden text-left bg-black">
-  <!-- Activity Bar -->
-  <div class="w-12 bg-[#181818] border-r border-white/5 shrink-0 flex flex-col items-center py-4 gap-4 z-20">
-    <!-- svelte-ignore a11y_click_events_have_key_events -->
-    <!-- svelte-ignore a11y_no_static_element_interactions -->
-    <div 
-      class="w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer transition-all {activeSidebar === 'explorer' ? 'bg-indigo-500/20 text-indigo-400' : 'text-white/40 hover:text-white'}"
-      onclick={() => activeSidebar = 'explorer'}
-      title="Explorer"
-    >
-      <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"></path></svg>
+  {#if projectSelected}
+    <!-- Activity Bar (only visible after project opened) -->
+    <div class="w-12 bg-[#181818] border-r border-white/5 shrink-0 flex flex-col items-center py-4 gap-4 z-20">
+      <!-- svelte-ignore a11y_click_events_have_key_events -->
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <div 
+        class="w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer transition-all {activeSidebar === 'explorer' && showSidebar ? 'bg-indigo-500/20 text-indigo-400' : 'text-white/40 hover:text-white'}"
+        onclick={() => { activeSidebar = 'explorer'; showSidebar = activeSidebar === 'explorer' ? !showSidebar : true; }}
+        title="Explorer"
+      >
+        <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"></path></svg>
+      </div>
+      <!-- svelte-ignore a11y_click_events_have_key_events -->
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <div 
+        class="w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer transition-all {activeSidebar === 'scm' && showSidebar ? 'bg-indigo-500/20 text-indigo-400' : 'text-white/40 hover:text-white'}"
+        onclick={() => { activeSidebar = 'scm'; showSidebar = activeSidebar === 'scm' ? !showSidebar : true; }}
+        title="Source Control"
+      >
+        <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2"></path></svg>
+      </div>
+      <div class="flex-1"></div>
+      <!-- svelte-ignore a11y_click_events_have_key_events -->
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <div 
+        class="w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer transition-all {showTerminal ? 'bg-indigo-500/20 text-indigo-400' : 'text-white/40 hover:text-white'}"
+        onclick={() => showTerminal = !showTerminal}
+        title="Toggle Terminal"
+      >
+        <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+      </div>
+      <!-- Close project button at bottom -->
+      <!-- svelte-ignore a11y_click_events_have_key_events -->
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <div 
+        class="w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer transition-all text-white/40 hover:text-rose-400"
+        onclick={() => { projectSelected = false; showSidebar = false; externalRoot = null; activeFilePath = null; fileContent = ''; }}
+        title="Close Project"
+      >
+        <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+      </div>
     </div>
-    <!-- svelte-ignore a11y_click_events_have_key_events -->
-    <!-- svelte-ignore a11y_no_static_element_interactions -->
-    <div 
-      class="w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer transition-all {activeSidebar === 'scm' ? 'bg-indigo-500/20 text-indigo-400' : 'text-white/40 hover:text-white'}"
-      onclick={() => activeSidebar = 'scm'}
-      title="Source Control"
-    >
-      <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2"></path></svg>
-    </div>
-    <div class="flex-1"></div>
-    <!-- svelte-ignore a11y_click_events_have_key_events -->
-    <!-- svelte-ignore a11y_no_static_element_interactions -->
-    <div 
-      class="w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer transition-all {showTerminal ? 'bg-indigo-500/20 text-indigo-400' : 'text-white/40 hover:text-white'}"
-      onclick={() => showTerminal = !showTerminal}
-      title="Toggle Terminal"
-    >
-      <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
-    </div>
-  </div>
 
-  <!-- Sidebar -->
-  {#if activeSidebar === 'explorer'}
-    <FileExplorer onSelectFile={openFile} currentFile={activeFilePath} />
-  {:else}
-    <SourceControl onSelectFile={openFile} />
+    <!-- Sidebar (collapsible) -->
+    {#if showSidebar}
+      {#if activeSidebar === 'explorer'}
+        <FileExplorer
+          onSelectFile={openFile}
+          currentFile={activeFilePath}
+          {externalRoot}
+          onProjectChange={(selected) => { if (!selected) { projectSelected = false; showSidebar = false; externalRoot = null; } }}
+        />
+      {:else}
+        <SourceControl onSelectFile={openFile} />
+      {/if}
+    {/if}
   {/if}
 
   <!-- Editor Area -->
@@ -163,23 +204,41 @@
         </div>
         <div class="text-3xl text-white/50 font-light tracking-wide">OpenCode IDE</div>
         <div class="flex flex-col items-center gap-3 mt-4 text-sm text-white/40">
-          <p>Select a file from the explorer to start editing</p>
-          <div class="flex gap-4 mt-4">
-             <button onclick={() => activeSidebar = 'explorer'} class="px-4 py-2 bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/20 text-indigo-300 rounded transition-colors flex items-center gap-2 shadow-lg">
-                 <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"></path></svg>
-                 Choose Project
-             </button>
-             <button onclick={() => activeSidebar = 'scm'} class="px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 text-white/60 hover:text-white/80 rounded transition-colors flex items-center gap-2 shadow-lg">
-                 <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2"></path></svg>
-                 Open Git
-             </button>
-          </div>
-          <div class="flex gap-4 mt-6 opacity-30">
-            <div class="flex items-center gap-2">
-              <kbd class="px-2 py-1 bg-white/5 rounded border border-white/10 text-xs font-mono font-bold text-white/50">⌘S</kbd>
-              <span>to save</span>
+          {#if projectSelected}
+            <p>Select a file from the explorer to start editing</p>
+            <div class="flex gap-4 mt-4">
+              <button onclick={() => { activeSidebar = 'explorer'; showSidebar = true; }} class="px-4 py-2 bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/20 text-indigo-300 rounded-lg transition-colors flex items-center gap-2 shadow-lg">
+                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"></path></svg>
+                Show Explorer
+              </button>
+              <button onclick={() => { activeSidebar = 'scm'; showSidebar = true; }} class="px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 text-white/60 hover:text-white/80 rounded-lg transition-colors flex items-center gap-2 shadow-lg">
+                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2"></path></svg>
+                Open Git
+              </button>
             </div>
-          </div>
+          {:else}
+            <p>Open a folder to get started</p>
+            <div class="flex gap-4 mt-4">
+              <button onclick={openFolder} class="px-5 py-2.5 bg-indigo-500/20 hover:bg-indigo-500/30 border border-indigo-500/30 text-indigo-300 rounded-lg transition-all flex items-center gap-2.5 shadow-lg hover:shadow-indigo-500/10 font-medium">
+                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"></path></svg>
+                Open Folder
+              </button>
+              <button onclick={() => { projectSelected = true; showSidebar = true; activeSidebar = 'scm'; }} class="px-5 py-2.5 bg-white/5 hover:bg-white/10 border border-white/10 text-white/60 hover:text-white/80 rounded-lg transition-all flex items-center gap-2.5 shadow-lg font-medium">
+                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2"></path></svg>
+                Clone Repository
+              </button>
+            </div>
+            <div class="mt-8 text-xs text-white/20 space-y-2">
+              <div class="flex items-center gap-3">
+                <kbd class="px-2 py-1 bg-white/5 rounded border border-white/10 font-mono font-bold text-white/40">⌘S</kbd>
+                <span>Save file</span>
+              </div>
+              <div class="flex items-center gap-3">
+                <kbd class="px-2 py-1 bg-white/5 rounded border border-white/10 font-mono font-bold text-white/40">⌘`</kbd>
+                <span>Toggle terminal</span>
+              </div>
+            </div>
+          {/if}
         </div>
       </div>
     {/if}

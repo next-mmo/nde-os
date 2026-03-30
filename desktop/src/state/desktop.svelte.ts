@@ -459,8 +459,7 @@ export function bootDesktop() {
     );
     win.resizable = config.resizable!;
     win.expandable = config.expandable!;
-    // Restore saved fullscreen state; default ai-launcher to fullscreen on first run
-    win.fullscreen = typeof savedGeo?.fullscreen === 'boolean' ? savedGeo.fullscreen : true;
+    win.fullscreen = true;
     assignWindowFocus(win);
     desktop.windows.push(win);
   }

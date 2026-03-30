@@ -26,9 +26,14 @@ impl SkillLoader {
         let mut skills = Vec::new();
 
         for search_path in &self.search_paths {
-            if !search_path.exists() { continue; }
+            if !search_path.exists() {
+                continue;
+            }
 
-            let pattern = search_path.join("**/SKILL.md").to_string_lossy().to_string();
+            let pattern = search_path
+                .join("**/SKILL.md")
+                .to_string_lossy()
+                .to_string();
             for entry in glob::glob(&pattern).unwrap_or_else(|_| glob::glob("").unwrap()) {
                 if let Ok(path) = entry {
                     match self.parse_skill(&path) {
@@ -74,16 +79,18 @@ impl SkillLoader {
                         "description" => description = Some(val),
                         "triggers" => {
                             // Parse comma-separated triggers
-                            triggers = Some(
-                                val.split(',').map(|s| s.trim().to_string()).collect()
-                            );
+                            triggers = Some(val.split(',').map(|s| s.trim().to_string()).collect());
                         }
                         _ => {}
                     }
                 }
             }
 
-            SkillFrontmatter { name, description, triggers }
+            SkillFrontmatter {
+                name,
+                description,
+                triggers,
+            }
         } else {
             SkillFrontmatter::default()
         };
@@ -106,7 +113,8 @@ impl SkillLoader {
     /// Find skills matching a query string.
     pub fn find_matching(&self, query: &str, skills: &[Skill]) -> Vec<Skill> {
         let lower = query.to_lowercase();
-        skills.iter()
+        skills
+            .iter()
             .filter(|s| {
                 s.triggers.iter().any(|t| lower.contains(&t.to_lowercase()))
                     || s.name.to_lowercase().contains(&lower)

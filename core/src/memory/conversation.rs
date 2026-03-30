@@ -11,8 +11,8 @@ pub struct ConversationStore {
 
 impl ConversationStore {
     pub fn new(db_path: impl AsRef<Path>) -> Result<Self> {
-        let conn = Connection::open(db_path.as_ref())
-            .context("Failed to open conversation database")?;
+        let conn =
+            Connection::open(db_path.as_ref()).context("Failed to open conversation database")?;
 
         conn.execute_batch(
             "CREATE TABLE IF NOT EXISTS conversations (
@@ -32,10 +32,12 @@ impl ConversationStore {
                 created_at TEXT NOT NULL,
                 FOREIGN KEY (conversation_id) REFERENCES conversations(id)
             );
-            CREATE INDEX IF NOT EXISTS idx_messages_conv ON messages(conversation_id);"
+            CREATE INDEX IF NOT EXISTS idx_messages_conv ON messages(conversation_id);",
         )?;
 
-        Ok(Self { conn: Mutex::new(conn) })
+        Ok(Self {
+            conn: Mutex::new(conn),
+        })
     }
 
     /// Create a new conversation and return its ID.
@@ -83,7 +85,7 @@ impl ConversationStore {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
             "SELECT id, title, channel, created_at, updated_at
-             FROM conversations ORDER BY updated_at DESC LIMIT ?1"
+             FROM conversations ORDER BY updated_at DESC LIMIT ?1",
         )?;
 
         let rows = stmt.query_map(rusqlite::params![limit], |row| {
@@ -108,7 +110,7 @@ impl ConversationStore {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
             "SELECT id, role, content, tool_calls, tool_call_id, created_at
-             FROM messages WHERE conversation_id = ?1 ORDER BY id ASC"
+             FROM messages WHERE conversation_id = ?1 ORDER BY id ASC",
         )?;
 
         let rows = stmt.query_map(rusqlite::params![conversation_id], |row| {

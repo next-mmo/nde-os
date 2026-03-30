@@ -33,11 +33,13 @@ impl Tool for MemoryStoreTool {
     }
 
     async fn execute(&self, args: serde_json::Value, sandbox: &Sandbox) -> Result<String> {
-        let key = args.get("key")
+        let key = args
+            .get("key")
             .and_then(|v| v.as_str())
             .ok_or_else(|| anyhow::anyhow!("Missing 'key' argument"))?;
 
-        let value = args.get("value")
+        let value = args
+            .get("value")
             .and_then(|v| v.as_str())
             .ok_or_else(|| anyhow::anyhow!("Missing 'value' argument"))?;
 
@@ -82,15 +84,18 @@ impl Tool for MemoryRecallTool {
     }
 
     async fn execute(&self, args: serde_json::Value, sandbox: &Sandbox) -> Result<String> {
-        let key = args.get("key")
+        let key = args
+            .get("key")
             .and_then(|v| v.as_str())
             .ok_or_else(|| anyhow::anyhow!("Missing 'key' argument"))?;
 
-        let list_prefix = args.get("list_prefix")
+        let list_prefix = args
+            .get("list_prefix")
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
 
-        let delete = args.get("delete")
+        let delete = args
+            .get("delete")
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
 

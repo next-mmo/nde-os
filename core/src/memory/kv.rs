@@ -10,18 +10,19 @@ pub struct KvStore {
 
 impl KvStore {
     pub fn new(db_path: impl AsRef<Path>) -> Result<Self> {
-        let conn = Connection::open(db_path.as_ref())
-            .context("Failed to open KV database")?;
+        let conn = Connection::open(db_path.as_ref()).context("Failed to open KV database")?;
 
         conn.execute_batch(
             "CREATE TABLE IF NOT EXISTS kv (
                 key TEXT PRIMARY KEY,
                 value TEXT NOT NULL,
                 updated_at TEXT NOT NULL
-            );"
+            );",
         )?;
 
-        Ok(Self { conn: Mutex::new(conn) })
+        Ok(Self {
+            conn: Mutex::new(conn),
+        })
     }
 
     pub fn get(&self, key: &str) -> Result<Option<String>> {

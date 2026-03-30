@@ -26,7 +26,8 @@ impl Tool for FileReadTool {
     }
 
     async fn execute(&self, args: serde_json::Value, sandbox: &Sandbox) -> Result<String> {
-        let path_str = args.get("path")
+        let path_str = args
+            .get("path")
             .and_then(|v| v.as_str())
             .ok_or_else(|| anyhow::anyhow!("Missing 'path' argument"))?;
 
@@ -37,7 +38,11 @@ impl Tool for FileReadTool {
 
         // Truncate very large files
         if content.len() > 100_000 {
-            Ok(format!("{}\n\n... [truncated, {} total bytes]", &content[..100_000], content.len()))
+            Ok(format!(
+                "{}\n\n... [truncated, {} total bytes]",
+                &content[..100_000],
+                content.len()
+            ))
         } else {
             Ok(content)
         }

@@ -57,19 +57,23 @@ impl ComputeMeter {
 
     /// Check if we're within budget. Returns Err if any limit exceeded.
     pub fn check_budget(&self) -> Result<()> {
-        if !self.enabled { return Ok(()); }
+        if !self.enabled {
+            return Ok(());
+        }
 
         if self.tokens_used > self.max_tokens {
             return Err(anyhow!(
                 "Token budget exceeded: {} / {}",
-                self.tokens_used, self.max_tokens
+                self.tokens_used,
+                self.max_tokens
             ));
         }
 
         if self.tool_calls_used > self.max_tool_calls {
             return Err(anyhow!(
                 "Tool call limit exceeded: {} / {}",
-                self.tool_calls_used, self.max_tool_calls
+                self.tool_calls_used,
+                self.max_tool_calls
             ));
         }
 
@@ -77,7 +81,8 @@ impl ComputeMeter {
             if start.elapsed().as_secs() > self.max_time_secs {
                 return Err(anyhow!(
                     "Time budget exceeded: {}s / {}s",
-                    start.elapsed().as_secs(), self.max_time_secs
+                    start.elapsed().as_secs(),
+                    self.max_time_secs
                 ));
             }
         }

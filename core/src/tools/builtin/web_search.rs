@@ -36,11 +36,13 @@ impl Tool for WebSearchTool {
     }
 
     async fn execute(&self, args: serde_json::Value, _sandbox: &Sandbox) -> Result<String> {
-        let query = args.get("query")
+        let query = args
+            .get("query")
             .and_then(|v| v.as_str())
             .ok_or_else(|| anyhow::anyhow!("Missing 'query' argument"))?;
 
-        let max_results = args.get("max_results")
+        let max_results = args
+            .get("max_results")
             .and_then(|v| v.as_u64())
             .unwrap_or(10) as usize;
 
@@ -81,10 +83,15 @@ async fn search_duckduckgo(query: &str, max_results: usize) -> Result<Vec<Search
         .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
         .build()?;
 
-    let response = client.get(&url).send().await
+    let response = client
+        .get(&url)
+        .send()
+        .await
         .map_err(|e| anyhow::anyhow!("Search request failed: {}", e))?;
 
-    let html = response.text().await
+    let html = response
+        .text()
+        .await
         .map_err(|e| anyhow::anyhow!("Failed to read search results: {}", e))?;
 
     let mut results = Vec::new();
@@ -113,7 +120,8 @@ async fn search_duckduckgo(query: &str, max_results: usize) -> Result<Vec<Search
 
         // Extract link text (title)
         let title_start = tag_end + 1;
-        let title_end = html[title_start..].find("</a>")
+        let title_end = html[title_start..]
+            .find("</a>")
             .map(|e| title_start + e)
             .unwrap_or(title_start);
         let title = strip_tags(&html[title_start..title_end]).trim().to_string();
@@ -123,7 +131,8 @@ async fn search_duckduckgo(query: &str, max_results: usize) -> Result<Vec<Search
         let snippet = if let Some(sp) = lower[tag_end..].find(snippet_marker) {
             let snippet_tag_end = html[tag_end + sp..].find('>').map(|e| tag_end + sp + e + 1);
             if let Some(s_start) = snippet_tag_end {
-                let s_end = html[s_start..].find("</")
+                let s_end = html[s_start..]
+                    .find("</")
                     .map(|e| s_start + e)
                     .unwrap_or(s_start);
                 strip_tags(&html[s_start..s_end]).trim().to_string()
@@ -162,7 +171,8 @@ fn resolve_ddg_url(href: &str) -> String {
         // Extract uddg parameter
         if let Some(uddg_start) = href.find("uddg=") {
             let value_start = uddg_start + 5;
-            let value_end = href[value_start..].find('&')
+            let value_end = href[value_start..]
+                .find('&')
                 .map(|e| value_start + e)
                 .unwrap_or(href.len());
             let encoded = &href[value_start..value_end];
@@ -219,11 +229,14 @@ fn parse_results_alternative(html: &str, max_results: usize) -> Vec<SearchResult
                 // Extract text after the link
                 if let Some(a_end) = block[val_start..].find('>') {
                     let text_start = val_start + a_end + 1;
-                    let text_end = block[text_start..].find("</a>")
+                    let text_end = block[text_start..]
+                        .find("</a>")
                         .map(|e| text_start + e)
                         .unwrap_or(text_start + 100);
-                    let title = strip_tags(&block[text_start..std::cmp::min(text_end, block.len())])
-                        .trim().to_string();
+                    let title =
+                        strip_tags(&block[text_start..std::cmp::min(text_end, block.len())])
+                            .trim()
+                            .to_string();
 
                     if !title.is_empty() && url.starts_with("http") {
                         results.push(SearchResult {
@@ -261,9 +274,13 @@ fn strip_tags(html: &str) -> String {
     let mut result = String::with_capacity(html.len());
     let mut in_tag = false;
     for ch in html.chars() {
-        if ch == '<' { in_tag = true; }
-        else if ch == '>' { in_tag = false; }
-        else if !in_tag { result.push(ch); }
+        if ch == '<' {
+            in_tag = true;
+        } else if ch == '>' {
+            in_tag = false;
+        } else if !in_tag {
+            result.push(ch);
+        }
     }
     result
 }
@@ -290,7 +307,10 @@ mod tests {
         let url = "//duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.com&rut=abc";
         assert_eq!(resolve_ddg_url(url), "https://example.com");
 
-        assert_eq!(resolve_ddg_url("https://example.com"), "https://example.com");
+        assert_eq!(
+            resolve_ddg_url("https://example.com"),
+            "https://example.com"
+        );
     }
 
     #[test]

@@ -2,9 +2,11 @@
   import { invoke } from '@tauri-apps/api/core';
   import { onMount } from 'svelte';
 
-  let { onSelectFile, currentFile } = $props<{
+  let { onSelectFile, currentFile, onProjectChange, externalRoot = null } = $props<{
     onSelectFile: (path: string, name: string) => void;
     currentFile: string | null;
+    onProjectChange?: (selected: boolean) => void;
+    externalRoot?: string | null;
   }>();
 
   type FileEntry = {
@@ -18,25 +20,14 @@
   let entries = $state<FileEntry[]>([]);
   let currentDir = $state<string>("");
   let projectRoot = $state<string | null>(null);
-  let projects = $state<FileEntry[]>([]);
 
-  async function loadProjects() {
-    try {
-      let allEntries = await invoke<FileEntry[]>("list_directory", { path: "" });
-      projects = allEntries.filter(e => e.is_dir);
-    } catch (e) {
-      console.error(e);
-    }
-  }
-
-  async function selectProject(path: string) {
-    projectRoot = path;
-    await loadDirectory(path);
-  }
+  // Use the external list command when browsing user-selected folders
+  let useExternalCmd = $derived(!!externalRoot);
 
   async function loadDirectory(path: string) {
     try {
-      entries = await invoke("list_directory", { path });
+      const cmd = useExternalCmd ? "list_directory_external" : "list_directory";
+      entries = await invoke(cmd, { path });
       currentDir = path;
     } catch (e) {
       console.error(e);
@@ -47,7 +38,6 @@
   async function goUp() {
     if (currentDir === "" || currentDir === projectRoot) return;
     
-    // Normalize path separators conceptually 
     let parts = currentDir.replace(/\\/g, '/').split('/');
     if (parts.length > 0) {
       parts.pop();
@@ -56,37 +46,37 @@
     }
   }
 
+  function closeProject() {
+    projectRoot = null;
+    currentDir = "";
+    onProjectChange?.(false);
+  }
+
+  // When externalRoot is provided, auto-load that folder
   onMount(() => {
-    loadProjects();
+    if (externalRoot) {
+      projectRoot = externalRoot;
+      loadDirectory(externalRoot);
+    }
+  });
+
+  // React to externalRoot changes (e.g., user picks a new folder)
+  $effect(() => {
+    if (externalRoot && externalRoot !== projectRoot) {
+      projectRoot = externalRoot;
+      loadDirectory(externalRoot);
+    }
   });
 </script>
 
 <div class="flex flex-col h-full bg-black/40 text-sm font-sans w-64 border-r border-white/10 shrink-0 select-none overflow-y-auto">
-  {#if projectRoot === null}
-    <div class="px-4 py-2 text-xs font-semibold text-white/50 tracking-wider sticky top-0 bg-black/60 backdrop-blur z-10 border-b border-white/5">
-      <span class="uppercase">Select Project</span>
-    </div>
-    <div class="flex-1 py-1">
-      {#each projects as project}
-        <!-- svelte-ignore a11y_click_events_have_key_events -->
-        <!-- svelte-ignore a11y_no_static_element_interactions -->
-        <div 
-          class="flex items-center gap-2 px-4 py-1.5 hover:bg-white/5 cursor-pointer text-white/70 hover:text-white transition-colors"
-          onclick={() => selectProject(project.path)}
-        >
-          <svg class="w-4 h-4 text-indigo-400 shrink-0" fill="currentColor" viewBox="0 0 20 20"><path d="M2 6a2 2 0 012-2h5l2 2h5a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z"></path></svg>
-          <span class="truncate">{project.name}</span>
-        </div>
-      {/each}
-      {#if projects.length === 0}
-        <div class="px-4 py-3 text-white/30 italic text-xs text-center">No folders found in workspace</div>
-      {/if}
-    </div>
-  {:else}
+  {#if projectRoot}
     <div class="px-4 py-2 text-xs font-semibold text-white/50 tracking-wider sticky top-0 bg-black/60 backdrop-blur z-10 flex items-center justify-between border-b border-white/5">
-      <span class="truncate uppercase max-w-[80px]" title={projectRoot}>{projectRoot.split(/[/\\]/).pop() || 'Explorer'}</span>
+      <span class="truncate uppercase max-w-[140px]" title={projectRoot}>{projectRoot.split(/[/\\]/).pop() || 'Explorer'}</span>
       <div class="flex gap-2">
-        <button onclick={() => { projectRoot = null; currentDir = ""; }} class="text-white/40 hover:text-white transition-colors" title="Change Project">🔙</button>
+        <button onclick={closeProject} class="text-white/40 hover:text-white transition-colors" title="Close Folder">
+          <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+        </button>
         {#if currentDir !== projectRoot}
           <button onclick={goUp} class="text-white/40 hover:text-white transition-colors" title="Go Up Directory">↑</button>
           <button onclick={() => loadDirectory(projectRoot!)} class="text-white/40 hover:text-white transition-colors" title="Go to Project Root">🏠</button>
@@ -121,6 +111,10 @@
       {#if entries.length === 0}
         <div class="px-4 py-3 text-white/30 italic text-xs text-center">Folder is empty</div>
       {/if}
+    </div>
+  {:else}
+    <div class="flex-1 flex items-center justify-center text-white/30 text-xs italic">
+      No folder opened
     </div>
   {/if}
 </div>

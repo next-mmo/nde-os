@@ -32,11 +32,13 @@ impl Tool for ShellExecTool {
     }
 
     async fn execute(&self, args: serde_json::Value, sandbox: &Sandbox) -> Result<String> {
-        let command = args.get("command")
+        let command = args
+            .get("command")
             .and_then(|v| v.as_str())
             .ok_or_else(|| anyhow::anyhow!("Missing 'command' argument"))?;
 
-        let timeout_secs = args.get("timeout_secs")
+        let timeout_secs = args
+            .get("timeout_secs")
             .and_then(|v| v.as_u64())
             .unwrap_or(30);
 
@@ -68,7 +70,9 @@ impl Tool for ShellExecTool {
         loop {
             match child.try_wait() {
                 Ok(Some(status)) => {
-                    let stdout = child.stdout.take()
+                    let stdout = child
+                        .stdout
+                        .take()
                         .map(|mut s| {
                             let mut buf = String::new();
                             std::io::Read::read_to_string(&mut s, &mut buf).ok();
@@ -76,7 +80,9 @@ impl Tool for ShellExecTool {
                         })
                         .unwrap_or_default();
 
-                    let stderr = child.stderr.take()
+                    let stderr = child
+                        .stderr
+                        .take()
                         .map(|mut s| {
                             let mut buf = String::new();
                             std::io::Read::read_to_string(&mut s, &mut buf).ok();
@@ -89,7 +95,9 @@ impl Tool for ShellExecTool {
                         output.push_str(&stdout);
                     }
                     if !stderr.is_empty() {
-                        if !output.is_empty() { output.push('\n'); }
+                        if !output.is_empty() {
+                            output.push('\n');
+                        }
                         output.push_str("[stderr] ");
                         output.push_str(&stderr);
                     }
@@ -99,7 +107,11 @@ impl Tool for ShellExecTool {
 
                     // Truncate
                     if output.len() > 50_000 {
-                        return Ok(format!("{}\n... [truncated, {} total bytes]", &output[..50_000], output.len()));
+                        return Ok(format!(
+                            "{}\n... [truncated, {} total bytes]",
+                            &output[..50_000],
+                            output.len()
+                        ));
                     }
                     return Ok(output);
                 }

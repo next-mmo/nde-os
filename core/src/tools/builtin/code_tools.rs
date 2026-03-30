@@ -52,7 +52,13 @@ impl Tool for CodeSearchTool {
 
         // Use native Rust search (no external dependency)
         let mut results = Vec::new();
-        search_files_recursive(&search_dir, pattern, file_pattern, &mut results, max_results)?;
+        search_files_recursive(
+            &search_dir,
+            pattern,
+            file_pattern,
+            &mut results,
+            max_results,
+        )?;
 
         if results.is_empty() {
             Ok(format!("No matches found for pattern: {}", pattern))
@@ -62,11 +68,7 @@ impl Tool for CodeSearchTool {
                 .iter()
                 .map(|r| format!("{}:{}: {}", r.file, r.line_number, r.line.trim()))
                 .collect();
-            Ok(format!(
-                "{} match(es) found:\n{}",
-                total,
-                output.join("\n")
-            ))
+            Ok(format!("{} match(es) found:\n{}", total, output.join("\n")))
         }
     }
 }
@@ -98,7 +100,11 @@ fn search_files_recursive(
 
         // Skip hidden dirs and common noise
         if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-            if name.starts_with('.') || name == "node_modules" || name == "target" || name == ".venv" {
+            if name.starts_with('.')
+                || name == "node_modules"
+                || name == "target"
+                || name == ".venv"
+            {
                 continue;
             }
         }
@@ -261,7 +267,8 @@ impl Tool for CodeSymbolsTool {
     fn definition(&self) -> ToolDef {
         ToolDef {
             name: "code_symbols".into(),
-            description: "List function, struct, class, and import symbols from a source file.".into(),
+            description: "List function, struct, class, and import symbols from a source file."
+                .into(),
             parameters: json!({
                 "type": "object",
                 "properties": {
@@ -303,15 +310,11 @@ impl Tool for CodeSymbolsTool {
                         || trimmed.starts_with("async fn ")
                     {
                         symbols.push(format!("L{}: fn {}", line_num, extract_name(trimmed)));
-                    } else if trimmed.starts_with("pub struct ")
-                        || trimmed.starts_with("struct ")
-                    {
+                    } else if trimmed.starts_with("pub struct ") || trimmed.starts_with("struct ") {
                         symbols.push(format!("L{}: struct {}", line_num, extract_name(trimmed)));
                     } else if trimmed.starts_with("pub enum ") || trimmed.starts_with("enum ") {
                         symbols.push(format!("L{}: enum {}", line_num, extract_name(trimmed)));
-                    } else if trimmed.starts_with("pub trait ")
-                        || trimmed.starts_with("trait ")
-                    {
+                    } else if trimmed.starts_with("pub trait ") || trimmed.starts_with("trait ") {
                         symbols.push(format!("L{}: trait {}", line_num, extract_name(trimmed)));
                     } else if trimmed.starts_with("impl ") {
                         symbols.push(format!("L{}: impl {}", line_num, extract_name(trimmed)));
@@ -335,8 +338,7 @@ impl Tool for CodeSymbolsTool {
                         || trimmed.starts_with("export async function ")
                     {
                         symbols.push(format!("L{}: function {}", line_num, extract_name(trimmed)));
-                    } else if trimmed.starts_with("class ")
-                        || trimmed.starts_with("export class ")
+                    } else if trimmed.starts_with("class ") || trimmed.starts_with("export class ")
                     {
                         symbols.push(format!("L{}: class {}", line_num, extract_name(trimmed)));
                     } else if trimmed.starts_with("const ") || trimmed.starts_with("export const ")

@@ -19,7 +19,8 @@ impl Tool for KanbanGetTasksTool {
     fn definition(&self) -> ToolDef {
         ToolDef {
             name: "kanban_get_tasks".into(),
-            description: "List all Kanban board tasks with their title, status, and filename.".into(),
+            description: "List all Kanban board tasks with their title, status, and filename."
+                .into(),
             parameters: json!({
                 "type": "object",
                 "properties": {},
@@ -61,7 +62,10 @@ impl Tool for KanbanCreateTaskTool {
 
     async fn execute(&self, args: serde_json::Value, _sandbox: &Sandbox) -> Result<String> {
         // If full content is provided, use the kanban create with content pass-through
-        let title = args.get("title").and_then(|v| v.as_str()).unwrap_or("Untitled");
+        let title = args
+            .get("title")
+            .and_then(|v| v.as_str())
+            .unwrap_or("Untitled");
         let content = args.get("content").and_then(|v| v.as_str()).unwrap_or("");
 
         // Build params compatible with kanban::execute

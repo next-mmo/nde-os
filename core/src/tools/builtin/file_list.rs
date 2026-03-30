@@ -39,17 +39,14 @@ impl Tool for FileListTool {
     }
 
     async fn execute(&self, args: serde_json::Value, sandbox: &Sandbox) -> Result<String> {
-        let path_str = args.get("path")
-            .and_then(|v| v.as_str())
-            .unwrap_or(".");
+        let path_str = args.get("path").and_then(|v| v.as_str()).unwrap_or(".");
 
-        let recursive = args.get("recursive")
+        let recursive = args
+            .get("recursive")
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
 
-        let max_depth = args.get("max_depth")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(3) as usize;
+        let max_depth = args.get("max_depth").and_then(|v| v.as_u64()).unwrap_or(3) as usize;
 
         let full_path = sandbox.resolve(Path::new(path_str))?;
 
@@ -58,7 +55,14 @@ impl Tool for FileListTool {
         }
 
         let mut entries = Vec::new();
-        list_dir(&full_path, sandbox.root(), recursive, 0, max_depth, &mut entries)?;
+        list_dir(
+            &full_path,
+            sandbox.root(),
+            recursive,
+            0,
+            max_depth,
+            &mut entries,
+        )?;
 
         // Cap output
         if entries.len() > 500 {
@@ -80,15 +84,15 @@ fn list_dir(
 ) -> Result<()> {
     let indent = "  ".repeat(depth);
 
-    let mut items: Vec<_> = fs::read_dir(dir)?
-        .filter_map(|e| e.ok())
-        .collect();
+    let mut items: Vec<_> = fs::read_dir(dir)?.filter_map(|e| e.ok()).collect();
     items.sort_by_key(|e| e.file_name());
 
     for entry in items {
         let ft = entry.file_type()?;
         let name = entry.file_name().to_string_lossy().to_string();
-        let _rel = entry.path().strip_prefix(root)
+        let _rel = entry
+            .path()
+            .strip_prefix(root)
             .unwrap_or(&entry.path())
             .to_string_lossy()
             .to_string();

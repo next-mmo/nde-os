@@ -100,9 +100,7 @@ async fn send_streaming(
                         println!();
                         return Ok(());
                     }
-                    if let Ok(chunk) =
-                        serde_json::from_str::<serde_json::Value>(data)
-                    {
+                    if let Ok(chunk) = serde_json::from_str::<serde_json::Value>(data) {
                         if let Some(text) = chunk.get("content").and_then(|c| c.as_str()) {
                             print!("{}", text);
                             io::stdout().flush()?;

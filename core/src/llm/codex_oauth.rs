@@ -6,7 +6,7 @@
 //!
 //! Tokens are saved in Codex CLI-compatible format so both paths interoperate.
 
-use super::{LlmProvider, LlmResponse, Message, ToolDef};
+use super::{LlmProvider, LlmResponse, Message, StopReason, ToolDef, Usage};
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -34,13 +34,25 @@ fn base64url_encode(data: &[u8]) -> String {
     let mut i = 0;
     while i < data.len() {
         let b0 = data[i] as u32;
-        let b1 = if i + 1 < data.len() { data[i + 1] as u32 } else { 0 };
-        let b2 = if i + 2 < data.len() { data[i + 2] as u32 } else { 0 };
+        let b1 = if i + 1 < data.len() {
+            data[i + 1] as u32
+        } else {
+            0
+        };
+        let b2 = if i + 2 < data.len() {
+            data[i + 2] as u32
+        } else {
+            0
+        };
         let triple = (b0 << 16) | (b1 << 8) | b2;
         result.push(CHARS[((triple >> 18) & 0x3F) as usize] as char);
         result.push(CHARS[((triple >> 12) & 0x3F) as usize] as char);
-        if i + 1 < data.len() { result.push(CHARS[((triple >> 6) & 0x3F) as usize] as char); }
-        if i + 2 < data.len() { result.push(CHARS[(triple & 0x3F) as usize] as char); }
+        if i + 1 < data.len() {
+            result.push(CHARS[((triple >> 6) & 0x3F) as usize] as char);
+        }
+        if i + 2 < data.len() {
+            result.push(CHARS[(triple & 0x3F) as usize] as char);
+        }
         i += 3;
     }
     result
@@ -59,7 +71,10 @@ impl PkceChallenge {
         let verifier = base64url_encode(&bytes);
         let digest = Sha256::digest(verifier.as_bytes());
         let challenge = base64url_encode(&digest);
-        Self { verifier, challenge }
+        Self {
+            verifier,
+            challenge,
+        }
     }
 }
 
@@ -121,7 +136,9 @@ fn save_codex_auth(auth: &CodexCliAuth) -> Result<()> {
 pub fn get_codex_access_token() -> Result<String> {
     let auth = read_codex_auth()?;
     let tokens = auth.tokens.context("No tokens")?;
-    tokens.access_token.filter(|t| !t.is_empty())
+    tokens
+        .access_token
+        .filter(|t| !t.is_empty())
         .context("No access token found")
 }
 
@@ -148,7 +165,11 @@ pub fn start_oauth_flow() -> OAuthFlowState {
         urlencoding::encode(SCOPE),
         urlencoding::encode(AUDIENCE),
     );
-    OAuthFlowState { pkce, state, auth_url }
+    OAuthFlowState {
+        pkce,
+        state,
+        auth_url,
+    }
 }
 
 // ── Token Exchange ───────────────────────────────────────────────────────────
@@ -182,7 +203,11 @@ pub async fn exchange_code(code: &str, verifier: &str) -> Result<TokenResponse> 
     if !resp.status().is_success() {
         let status = resp.status();
         let text = resp.text().await.unwrap_or_default();
-        return Err(anyhow::anyhow!("Token exchange failed ({}): {}", status, text));
+        return Err(anyhow::anyhow!(
+            "Token exchange failed ({}): {}",
+            status,
+            text
+        ));
     }
 
     resp.json::<TokenResponse>()
@@ -206,7 +231,11 @@ pub async fn refresh_token(refresh: &str) -> Result<TokenResponse> {
     if !resp.status().is_success() {
         let status = resp.status();
         let text = resp.text().await.unwrap_or_default();
-        return Err(anyhow::anyhow!("Token refresh failed ({}): {}", status, text));
+        return Err(anyhow::anyhow!(
+            "Token refresh failed ({}): {}",
+            status,
+            text
+        ));
     }
 
     resp.json::<TokenResponse>()
@@ -219,8 +248,8 @@ pub async fn refresh_token(refresh: &str) -> Result<TokenResponse> {
 /// Run a one-shot HTTP server to receive the OAuth callback.
 /// Uses SO_REUSEADDR + eviction + timeout for robustness.
 pub async fn run_callback_server(expected_state: &str) -> Result<String> {
-    use tokio::net::TcpListener;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::net::TcpListener;
 
     let addr = format!("127.0.0.1:{}", CALLBACK_PORT);
 
@@ -248,10 +277,8 @@ pub async fn run_callback_server(expected_state: &str) -> Result<String> {
     let listener = TcpListener::from_std(std_listener)?;
     tracing::info!(port = CALLBACK_PORT, "OAuth callback server listening");
 
-    let accept_result = tokio::time::timeout(
-        std::time::Duration::from_secs(300),
-        listener.accept(),
-    ).await;
+    let accept_result =
+        tokio::time::timeout(std::time::Duration::from_secs(300), listener.accept()).await;
 
     let (mut stream, _) = match accept_result {
         Ok(Ok(conn)) => conn,
@@ -325,10 +352,15 @@ pub async fn complete_oauth_flow(flow: &OAuthFlowState) -> Result<CodexCliAuth> 
     };
 
     save_codex_auth(&auth)?;
-    let email = auth.tokens.as_ref()
+    let email = auth
+        .tokens
+        .as_ref()
         .and_then(|t| t.id_token.as_deref())
         .and_then(decode_jwt_email);
-    tracing::info!(?email, "OAuth completed, tokens saved to ~/.codex/auth.json");
+    tracing::info!(
+        ?email,
+        "OAuth completed, tokens saved to ~/.codex/auth.json"
+    );
     Ok(auth)
 }
 
@@ -361,8 +393,12 @@ impl CodexTokenStore {
         })
     }
 
-    pub fn save(&self, _data_dir: &Path) -> Result<()> { Ok(()) }
-    pub fn is_expired(&self) -> bool { false }
+    pub fn save(&self, _data_dir: &Path) -> Result<()> {
+        Ok(())
+    }
+    pub fn is_expired(&self) -> bool {
+        false
+    }
 
     pub async fn get_valid_token(&mut self, _data_dir: &Path) -> Result<String> {
         // Try reading fresh from disk (Codex CLI may have refreshed)
@@ -401,7 +437,9 @@ impl CodexTokenStore {
                 Err(e) => tracing::warn!("Token refresh failed: {}", e),
             }
         }
-        Err(anyhow::anyhow!("No valid token — sign in again via LLM Providers"))
+        Err(anyhow::anyhow!(
+            "No valid token — sign in again via LLM Providers"
+        ))
     }
 }
 
@@ -418,11 +456,15 @@ impl CodexOAuthStatus {
     pub fn from_store(_data_dir: &Path) -> Self {
         match read_codex_auth() {
             Ok(auth) => {
-                let has_token = auth.tokens.as_ref()
+                let has_token = auth
+                    .tokens
+                    .as_ref()
                     .and_then(|t| t.access_token.as_ref())
                     .map_or(false, |t| !t.is_empty());
                 if has_token {
-                    let email = auth.tokens.as_ref()
+                    let email = auth
+                        .tokens
+                        .as_ref()
                         .and_then(|t| t.id_token.as_deref())
                         .and_then(decode_jwt_email);
                     let plan_type = if auth.auth_mode.as_deref() == Some("chatgpt") {
@@ -430,12 +472,24 @@ impl CodexOAuthStatus {
                     } else {
                         auth.auth_mode
                     };
-                    Self { authenticated: true, email, plan_type }
+                    Self {
+                        authenticated: true,
+                        email,
+                        plan_type,
+                    }
                 } else {
-                    Self { authenticated: false, email: None, plan_type: None }
+                    Self {
+                        authenticated: false,
+                        email: None,
+                        plan_type: None,
+                    }
                 }
             }
-            _ => Self { authenticated: false, email: None, plan_type: None },
+            _ => Self {
+                authenticated: false,
+                email: None,
+                plan_type: None,
+            },
         }
     }
 }
@@ -445,6 +499,7 @@ impl CodexOAuthStatus {
 pub struct CodexOAuthProvider {
     model: String,
     data_dir: PathBuf,
+    workspace_dir: PathBuf,
 }
 
 impl CodexOAuthProvider {
@@ -452,6 +507,7 @@ impl CodexOAuthProvider {
         Ok(Self {
             model: model.to_string(),
             data_dir: data_dir.to_path_buf(),
+            workspace_dir: data_dir.join("workspace"),
         })
     }
 }
@@ -459,26 +515,217 @@ impl CodexOAuthProvider {
 #[async_trait]
 impl LlmProvider for CodexOAuthProvider {
     async fn chat(&self, messages: &[Message], tools: &[ToolDef]) -> Result<LlmResponse> {
-        let mut store = CodexTokenStore::load(&self.data_dir).unwrap_or_default();
-        let token = store.get_valid_token(&self.data_dir).await
-            .context("Codex not authenticated — sign in via LLM Providers settings")?;
+        if !CodexOAuthStatus::from_store(&self.data_dir).authenticated {
+            return Err(anyhow::anyhow!(
+                "Codex not authenticated — sign in via LLM Providers settings"
+            ));
+        }
 
-        let provider = super::openai_compat::OpenAiCompatProvider::new(
-            "https://api.openai.com/v1",
-            &self.model,
-            &token,
-        );
-        provider.chat(messages, tools).await
+        std::fs::create_dir_all(&self.workspace_dir).with_context(|| {
+            format!(
+                "Failed to initialize Codex workspace at {}",
+                self.workspace_dir.display()
+            )
+        })?;
+
+        let prompt = render_exec_prompt(messages, tools);
+        let output = tokio::process::Command::new("codex")
+            .arg("exec")
+            .arg("--skip-git-repo-check")
+            .arg("--ephemeral")
+            .arg("--model")
+            .arg(&self.model)
+            .arg("--sandbox")
+            .arg("workspace-write")
+            .arg("-c")
+            .arg("approval_policy=\"never\"")
+            .arg("-c")
+            .arg("mcp_servers.playwright.enabled=false")
+            .arg("-c")
+            .arg("mcp_servers.context7.enabled=false")
+            .arg("-C")
+            .arg(&self.workspace_dir)
+            .arg("--json")
+            .arg(&prompt)
+            .output()
+            .await
+            .context("Failed to launch Codex CLI")?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+            let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            let detail = if !stderr.is_empty() {
+                stderr
+            } else if !stdout.is_empty() {
+                stdout
+            } else {
+                format!("codex exited with status {}", output.status)
+            };
+            return Err(anyhow::anyhow!("Codex CLI error: {}", detail));
+        }
+
+        parse_exec_output(&output.stdout)
     }
 
-    fn name(&self) -> &str { "codex_oauth" }
+    fn name(&self) -> &str {
+        "codex_oauth"
+    }
+}
+
+fn render_exec_prompt(messages: &[Message], tools: &[ToolDef]) -> String {
+    let mut prompt = String::from(
+        "You are acting as the NDE-OS chat assistant.\n\
+Continue the conversation transcript below and return only the assistant's next reply.\n\
+Use the current workspace when the user asks about files, code, or commands.\n\
+Do not include role labels in your final answer.\n",
+    );
+
+    if !tools.is_empty() {
+        prompt.push_str("\nAvailable NDE-OS tool names for context:\n");
+        for tool in tools {
+            prompt.push_str("- ");
+            prompt.push_str(&tool.name);
+            prompt.push('\n');
+        }
+    }
+
+    prompt.push_str("\nConversation transcript:\n");
+    for message in messages {
+        match message {
+            Message::System { content } => {
+                prompt.push_str("\n[system]\n");
+                prompt.push_str(content.trim());
+                prompt.push('\n');
+            }
+            Message::User { content } => {
+                prompt.push_str("\n[user]\n");
+                prompt.push_str(content.trim());
+                prompt.push('\n');
+            }
+            Message::Assistant {
+                content,
+                tool_calls,
+            } => {
+                if let Some(content) = content.as_deref() {
+                    if !content.trim().is_empty() {
+                        prompt.push_str("\n[assistant]\n");
+                        prompt.push_str(content.trim());
+                        prompt.push('\n');
+                    }
+                }
+                if !tool_calls.is_empty() {
+                    prompt.push_str("\n[assistant_tool_calls]\n");
+                    for tool_call in tool_calls {
+                        prompt.push_str("- ");
+                        prompt.push_str(&tool_call.name);
+                        prompt.push_str(": ");
+                        prompt.push_str(&tool_call.arguments.to_string());
+                        prompt.push('\n');
+                    }
+                }
+            }
+            Message::Tool {
+                tool_call_id,
+                content,
+            } => {
+                prompt.push_str("\n[tool_result ");
+                prompt.push_str(tool_call_id);
+                prompt.push_str("]\n");
+                prompt.push_str(content.trim());
+                prompt.push('\n');
+            }
+        }
+    }
+
+    prompt.push_str("\nReply with the next assistant message only.");
+    prompt
+}
+
+#[derive(Deserialize)]
+struct CodexExecEvent {
+    #[serde(rename = "type")]
+    event_type: String,
+    #[serde(default)]
+    item: Option<CodexExecItem>,
+    #[serde(default)]
+    usage: Option<CodexExecUsage>,
+}
+
+#[derive(Deserialize)]
+struct CodexExecItem {
+    #[serde(rename = "type")]
+    item_type: String,
+    #[serde(default)]
+    text: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct CodexExecUsage {
+    #[serde(default)]
+    input_tokens: u32,
+    #[serde(default)]
+    output_tokens: u32,
+}
+
+fn parse_exec_output(stdout: &[u8]) -> Result<LlmResponse> {
+    let mut content = String::new();
+    let mut usage = None;
+
+    for line in String::from_utf8_lossy(stdout).lines() {
+        let trimmed = line.trim();
+        if !trimmed.starts_with('{') {
+            continue;
+        }
+
+        let event: CodexExecEvent = match serde_json::from_str(trimmed) {
+            Ok(event) => event,
+            Err(_) => continue,
+        };
+
+        match event.event_type.as_str() {
+            "item.completed" => {
+                if let Some(item) = event.item {
+                    if item.item_type == "agent_message" {
+                        if let Some(text) = item.text {
+                            if !content.is_empty() {
+                                content.push_str("\n\n");
+                            }
+                            content.push_str(text.trim());
+                        }
+                    }
+                }
+            }
+            "turn.completed" => {
+                usage = event.usage.map(|u| Usage {
+                    prompt_tokens: u.input_tokens,
+                    completion_tokens: u.output_tokens,
+                });
+            }
+            _ => {}
+        }
+    }
+
+    if content.trim().is_empty() {
+        return Err(anyhow::anyhow!(
+            "Codex CLI returned no assistant message in JSON output"
+        ));
+    }
+
+    Ok(LlmResponse {
+        content: Some(content),
+        tool_calls: vec![],
+        stop_reason: StopReason::EndTurn,
+        usage,
+    })
 }
 
 // ── JWT Email Extraction ─────────────────────────────────────────────────────
 
 fn decode_jwt_email(token: &str) -> Option<String> {
     let parts: Vec<&str> = token.split('.').collect();
-    if parts.len() < 2 { return None; }
+    if parts.len() < 2 {
+        return None;
+    }
     let payload = parts[1];
     let padded = match payload.len() % 4 {
         2 => format!("{}==", payload),
@@ -488,7 +735,9 @@ fn decode_jwt_email(token: &str) -> Option<String> {
     let standard = padded.replace('-', "+").replace('_', "/");
     let bytes = base64_decode(&standard)?;
     let json: serde_json::Value = serde_json::from_slice(&bytes).ok()?;
-    json.get("email").and_then(|v| v.as_str()).map(|s| s.to_string())
+    json.get("email")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
 }
 
 fn base64_decode(input: &str) -> Option<Vec<u8>> {
@@ -498,14 +747,85 @@ fn base64_decode(input: &str) -> Option<Vec<u8>> {
     let mut i = 0;
     while i < bytes.len() {
         let b0 = TABLE.iter().position(|&c| c == bytes[i])? as u32;
-        let b1 = if i + 1 < bytes.len() { TABLE.iter().position(|&c| c == bytes[i + 1])? as u32 } else { 0 };
-        let b2 = if i + 2 < bytes.len() { TABLE.iter().position(|&c| c == bytes[i + 2])? as u32 } else { 0 };
-        let b3 = if i + 3 < bytes.len() { TABLE.iter().position(|&c| c == bytes[i + 3])? as u32 } else { 0 };
+        let b1 = if i + 1 < bytes.len() {
+            TABLE.iter().position(|&c| c == bytes[i + 1])? as u32
+        } else {
+            0
+        };
+        let b2 = if i + 2 < bytes.len() {
+            TABLE.iter().position(|&c| c == bytes[i + 2])? as u32
+        } else {
+            0
+        };
+        let b3 = if i + 3 < bytes.len() {
+            TABLE.iter().position(|&c| c == bytes[i + 3])? as u32
+        } else {
+            0
+        };
         let triple = (b0 << 18) | (b1 << 12) | (b2 << 6) | b3;
         output.push(((triple >> 16) & 0xFF) as u8);
-        if i + 2 < bytes.len() { output.push(((triple >> 8) & 0xFF) as u8); }
-        if i + 3 < bytes.len() { output.push((triple & 0xFF) as u8); }
+        if i + 2 < bytes.len() {
+            output.push(((triple >> 8) & 0xFF) as u8);
+        }
+        if i + 3 < bytes.len() {
+            output.push((triple & 0xFF) as u8);
+        }
         i += 4;
     }
     Some(output)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_render_exec_prompt_includes_roles_and_tools() {
+        let messages = vec![
+            Message::system("System guidance"),
+            Message::user("List files"),
+            Message::assistant_tool_calls(vec![super::super::ToolCall {
+                id: "tool-1".into(),
+                name: "file_list".into(),
+                arguments: serde_json::json!({ "path": "." }),
+            }]),
+            Message::tool_result("tool-1", "config\nlogs"),
+        ];
+        let tools = vec![ToolDef {
+            name: "file_list".into(),
+            description: "List files".into(),
+            parameters: serde_json::json!({ "type": "object" }),
+        }];
+
+        let prompt = render_exec_prompt(&messages, &tools);
+
+        assert!(prompt.contains("[system]"));
+        assert!(prompt.contains("[user]"));
+        assert!(prompt.contains("[assistant_tool_calls]"));
+        assert!(prompt.contains("[tool_result tool-1]"));
+        assert!(prompt.contains("file_list"));
+    }
+
+    #[test]
+    fn test_parse_exec_output_extracts_message_and_usage() {
+        let stdout = br#"
+2026-03-30T18:32:39Z WARN something noisy
+{"type":"thread.started","thread_id":"abc"}
+{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"OK"}}
+{"type":"turn.completed","usage":{"input_tokens":10,"output_tokens":4}}
+"#;
+
+        let response = parse_exec_output(stdout).unwrap();
+
+        assert_eq!(response.content.as_deref(), Some("OK"));
+        assert!(response.tool_calls.is_empty());
+        assert_eq!(response.usage.unwrap().prompt_tokens, 10);
+    }
+
+    #[test]
+    fn test_parse_exec_output_requires_agent_message() {
+        let stdout = br#"{"type":"turn.completed","usage":{"input_tokens":10,"output_tokens":4}}"#;
+        let err = parse_exec_output(stdout).unwrap_err().to_string();
+        assert!(err.contains("no assistant message"));
+    }
 }

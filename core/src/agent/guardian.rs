@@ -51,17 +51,25 @@ pub struct Guardian {
 
 impl Guardian {
     /// Create a new guardian for a specific task.
-    pub fn new(
-        task_id: &str,
-        config: &GuardianConfig,
-        audit_dir: &Path,
-    ) -> Result<Self> {
+    pub fn new(task_id: &str, config: &GuardianConfig, audit_dir: &Path) -> Result<Self> {
         let scanner = InjectionScanner::new(config.injection_scan);
         let audit = AuditTrail::new(audit_dir, config.audit_trail)?;
         let meter = ComputeMeter::new(
-            if config.max_tokens == 0 { u64::MAX } else { config.max_tokens },
-            if config.max_time_secs == 0 { u64::MAX } else { config.max_time_secs },
-            if config.max_tool_calls == 0 { u64::MAX } else { config.max_tool_calls },
+            if config.max_tokens == 0 {
+                u64::MAX
+            } else {
+                config.max_tokens
+            },
+            if config.max_time_secs == 0 {
+                u64::MAX
+            } else {
+                config.max_time_secs
+            },
+            if config.max_tool_calls == 0 {
+                u64::MAX
+            } else {
+                config.max_tool_calls
+            },
         );
 
         Ok(Self {
@@ -124,11 +132,7 @@ impl Guardian {
     // ── Tool authorization ──────────────────────────────────────────────
 
     /// Authorize a tool call. Records to audit trail and checks budget.
-    pub fn authorize_tool(
-        &mut self,
-        tool_name: &str,
-        args: &serde_json::Value,
-    ) -> Result<()> {
+    pub fn authorize_tool(&mut self, tool_name: &str, args: &serde_json::Value) -> Result<()> {
         // Record the tool call in audit trail
         self.audit.log(
             "tool_call",
@@ -151,7 +155,8 @@ impl Guardian {
 
     /// Record an arbitrary action in the audit trail.
     pub fn record_action(&mut self, event_type: &str, data: &str) -> Result<()> {
-        self.audit.log(event_type, &format!("task={} {}", self.task_id, data))
+        self.audit
+            .log(event_type, &format!("task={} {}", self.task_id, data))
     }
 
     /// Record tool execution result.
@@ -163,7 +168,11 @@ impl Guardian {
         duration_ms: u64,
     ) -> Result<()> {
         self.audit.log(
-            if is_error { "tool_error" } else { "tool_result" },
+            if is_error {
+                "tool_error"
+            } else {
+                "tool_result"
+            },
             &format!(
                 "task={} tool={} duration_ms={} output_len={}",
                 self.task_id,
@@ -205,12 +214,7 @@ mod tests {
 
     fn test_guardian_with_dir() -> (Guardian, tempfile::TempDir) {
         let dir = tempfile::tempdir().unwrap();
-        let g = Guardian::new(
-            "test-task",
-            &GuardianConfig::default(),
-            dir.path(),
-        )
-        .unwrap();
+        let g = Guardian::new("test-task", &GuardianConfig::default(), dir.path()).unwrap();
         (g, dir)
     }
 

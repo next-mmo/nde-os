@@ -6,9 +6,9 @@ use tiny_http::Response;
 
 use crate::response::*;
 
+use serde_json::Value;
 use std::fs;
 use std::path::Path;
-use serde_json::Value;
 
 // ── Channels ────────────────────────────────────────────────────────────────
 
@@ -18,22 +18,28 @@ pub fn list_channels(data_dir: &Path) -> Response<Cursor<Vec<u8>>> {
     let mut tg_running = false;
     let mut dc_running = false;
     let mut sl_running = false;
-    
+
     let config_path = data_dir.join("channels.json");
     if let Ok(config_str) = fs::read_to_string(&config_path) {
         if let Ok(config) = serde_json::from_str::<serde_json::Value>(&config_str) {
             if let Some(tg) = config.get("telegram") {
-                if tg.get("enabled").and_then(|e| e.as_bool()).unwrap_or(false) && tg.get("token").and_then(|t| t.as_str()).unwrap_or("") != "" {
+                if tg.get("enabled").and_then(|e| e.as_bool()).unwrap_or(false)
+                    && tg.get("token").and_then(|t| t.as_str()).unwrap_or("") != ""
+                {
                     tg_running = true;
                 }
             }
             if let Some(dc) = config.get("discord") {
-                if dc.get("enabled").and_then(|e| e.as_bool()).unwrap_or(false) && dc.get("token").and_then(|t| t.as_str()).unwrap_or("") != "" {
+                if dc.get("enabled").and_then(|e| e.as_bool()).unwrap_or(false)
+                    && dc.get("token").and_then(|t| t.as_str()).unwrap_or("") != ""
+                {
                     dc_running = true;
                 }
             }
             if let Some(sl) = config.get("slack") {
-                if sl.get("enabled").and_then(|e| e.as_bool()).unwrap_or(false) && sl.get("token").and_then(|t| t.as_str()).unwrap_or("") != "" {
+                if sl.get("enabled").and_then(|e| e.as_bool()).unwrap_or(false)
+                    && sl.get("token").and_then(|t| t.as_str()).unwrap_or("") != ""
+                {
                     sl_running = true;
                 }
             }
@@ -78,40 +84,57 @@ pub fn list_channels(data_dir: &Path) -> Response<Cursor<Vec<u8>>> {
 }
 
 /// POST /api/channels/{name}/configure
-pub fn configure_channel(req: &mut tiny_http::Request, data_dir: &Path) -> Response<Cursor<Vec<u8>>> {
+pub fn configure_channel(
+    req: &mut tiny_http::Request,
+    data_dir: &Path,
+) -> Response<Cursor<Vec<u8>>> {
     let mut content = String::new();
     if req.as_reader().read_to_string(&mut content).is_err() {
         return err(400, "Invalid request body");
     }
-    
+
     let payload: Value = match serde_json::from_str(&content) {
         Ok(v) => v,
         Err(e) => return err(400, &format!("Invalid JSON: {}", e)),
     };
-    
-    let channel_type = payload.get("channel_type").and_then(|v| v.as_str()).unwrap_or("");
-    let enabled = payload.get("enabled").and_then(|v| v.as_bool()).unwrap_or(false);
+
+    let channel_type = payload
+        .get("channel_type")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    let enabled = payload
+        .get("enabled")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
     let token = payload.get("token").and_then(|v| v.as_str()).unwrap_or("");
-    
+
     if channel_type.is_empty() {
         return err(400, "Missing channel_type");
     }
-    
+
     let config_path = data_dir.join("channels.json");
     let mut root_config = match fs::read_to_string(&config_path) {
-        Ok(content) => serde_json::from_str::<serde_json::Value>(&content).unwrap_or(serde_json::json!({})),
+        Ok(content) => {
+            serde_json::from_str::<serde_json::Value>(&content).unwrap_or(serde_json::json!({}))
+        }
         Err(_) => serde_json::json!({}),
     };
-    
+
     if let Some(obj) = root_config.as_object_mut() {
-        obj.insert(channel_type.to_string(), serde_json::json!({
-            "enabled": enabled,
-            "token": token
-        }));
+        obj.insert(
+            channel_type.to_string(),
+            serde_json::json!({
+                "enabled": enabled,
+                "token": token
+            }),
+        );
     }
-    
-    let _ = fs::write(&config_path, serde_json::to_string_pretty(&root_config).unwrap_or_default());
-    
+
+    let _ = fs::write(
+        &config_path,
+        serde_json::to_string_pretty(&root_config).unwrap_or_default(),
+    );
+
     // Apply to current process env vars so they work immediately
     if enabled && !token.is_empty() {
         match channel_type {
@@ -128,7 +151,7 @@ pub fn configure_channel(req: &mut tiny_http::Request, data_dir: &Path) -> Respo
             _ => {}
         }
     }
-    
+
     ok("Channel configured", serde_json::json!({ "success": true }))
 }
 
@@ -154,11 +177,13 @@ pub fn list_agent_tools() -> Response<Cursor<Vec<u8>>> {
     let defs: Vec<serde_json::Value> = registry
         .definitions()
         .into_iter()
-        .map(|d| serde_json::json!({
-            "name": d.name,
-            "description": d.description,
-            "parameters": d.parameters,
-        }))
+        .map(|d| {
+            serde_json::json!({
+                "name": d.name,
+                "description": d.description,
+                "parameters": d.parameters,
+            })
+        })
         .collect();
     ok(&format!("{} agent tools", defs.len()), defs)
 }
@@ -184,12 +209,14 @@ pub fn list_skills() -> Response<Cursor<Vec<u8>>> {
         Ok(skills) => {
             let entries: Vec<serde_json::Value> = skills
                 .iter()
-                .map(|s| serde_json::json!({
-                    "name": s.name,
-                    "description": s.description,
-                    "path": s.path,
-                    "triggers": s.triggers,
-                }))
+                .map(|s| {
+                    serde_json::json!({
+                        "name": s.name,
+                        "description": s.description,
+                        "path": s.path,
+                        "triggers": s.triggers,
+                    })
+                })
                 .collect();
             ok(&format!("{} skills", entries.len()), entries)
         }
@@ -209,7 +236,16 @@ pub fn list_knowledge(data_dir: &Path) -> Response<Cursor<Vec<u8>>> {
         Ok(kg) => {
             // Get all entity types by searching broadly
             let mut all_entities = Vec::new();
-            for entity_type in &["app", "concept", "project", "architecture", "security", "llm", "plugins", "channels"] {
+            for entity_type in &[
+                "app",
+                "concept",
+                "project",
+                "architecture",
+                "security",
+                "llm",
+                "plugins",
+                "channels",
+            ] {
                 if let Ok(entities) = kg.find_by_type(entity_type) {
                     all_entities.extend(entities);
                 }
@@ -217,7 +253,10 @@ pub fn list_knowledge(data_dir: &Path) -> Response<Cursor<Vec<u8>>> {
             // Also do a wildcard search to catch anything
             if let Ok(entities) = kg.search("%") {
                 for entity in entities {
-                    if !all_entities.iter().any(|e: &ai_launcher_core::knowledge::Entity| e.id == entity.id) {
+                    if !all_entities
+                        .iter()
+                        .any(|e: &ai_launcher_core::knowledge::Entity| e.id == entity.id)
+                    {
                         all_entities.push(entity);
                     }
                 }
@@ -225,12 +264,14 @@ pub fn list_knowledge(data_dir: &Path) -> Response<Cursor<Vec<u8>>> {
 
             let entries: Vec<serde_json::Value> = all_entities
                 .iter()
-                .map(|e| serde_json::json!({
-                    "id": e.id,
-                    "key": e.name,
-                    "value": e.metadata,
-                    "category": e.entity_type,
-                }))
+                .map(|e| {
+                    serde_json::json!({
+                        "id": e.id,
+                        "key": e.name,
+                        "value": e.metadata,
+                        "category": e.entity_type,
+                    })
+                })
                 .collect();
             ok(&format!("{} knowledge entries", entries.len()), entries)
         }
@@ -245,29 +286,38 @@ pub fn list_knowledge(data_dir: &Path) -> Response<Cursor<Vec<u8>>> {
 pub fn search_knowledge(query: &str, data_dir: &Path) -> Response<Cursor<Vec<u8>>> {
     let db_path = data_dir.join("knowledge.db");
     match ai_launcher_core::knowledge::KnowledgeGraph::new(&db_path) {
-        Ok(kg) => {
-            match kg.search(query) {
-                Ok(entities) => {
-                    let entries: Vec<serde_json::Value> = entities
-                        .iter()
-                        .map(|e| serde_json::json!({
+        Ok(kg) => match kg.search(query) {
+            Ok(entities) => {
+                let entries: Vec<serde_json::Value> = entities
+                    .iter()
+                    .map(|e| {
+                        serde_json::json!({
                             "id": e.id,
                             "key": e.name,
                             "value": e.metadata,
                             "category": e.entity_type,
-                        }))
-                        .collect();
-                    ok(&format!("Knowledge search: {} ({} results)", query, entries.len()), entries)
-                }
-                Err(e) => {
-                    eprintln!("Knowledge search error: {}", e);
-                    ok(&format!("Knowledge search: {}", query), serde_json::json!([]))
-                }
+                        })
+                    })
+                    .collect();
+                ok(
+                    &format!("Knowledge search: {} ({} results)", query, entries.len()),
+                    entries,
+                )
             }
-        }
+            Err(e) => {
+                eprintln!("Knowledge search error: {}", e);
+                ok(
+                    &format!("Knowledge search: {}", query),
+                    serde_json::json!([]),
+                )
+            }
+        },
         Err(e) => {
             eprintln!("Knowledge graph error: {}", e);
-            ok(&format!("Knowledge search: {}", query), serde_json::json!([]))
+            ok(
+                &format!("Knowledge search: {}", query),
+                serde_json::json!([]),
+            )
         }
     }
 }
@@ -278,25 +328,23 @@ pub fn search_knowledge(query: &str, data_dir: &Path) -> Response<Cursor<Vec<u8>
 pub fn list_memory(data_dir: &Path) -> Response<Cursor<Vec<u8>>> {
     let db_path = data_dir.join("memory.db");
     match ai_launcher_core::memory::KvStore::new(&db_path) {
-        Ok(kv) => {
-            match kv.list_keys("") {
-                Ok(keys) => {
-                    let mut entries = Vec::new();
-                    for key in &keys {
-                        let value = kv.get(key).unwrap_or(None).unwrap_or_default();
-                        entries.push(serde_json::json!({
-                            "key": key,
-                            "value": value,
-                        }));
-                    }
-                    ok(&format!("{} memory entries", entries.len()), entries)
+        Ok(kv) => match kv.list_keys("") {
+            Ok(keys) => {
+                let mut entries = Vec::new();
+                for key in &keys {
+                    let value = kv.get(key).unwrap_or(None).unwrap_or_default();
+                    entries.push(serde_json::json!({
+                        "key": key,
+                        "value": value,
+                    }));
                 }
-                Err(e) => {
-                    eprintln!("Memory list error: {}", e);
-                    ok("0 memory entries", serde_json::json!([]))
-                }
+                ok(&format!("{} memory entries", entries.len()), entries)
             }
-        }
+            Err(e) => {
+                eprintln!("Memory list error: {}", e);
+                ok("0 memory entries", serde_json::json!([]))
+            }
+        },
         Err(e) => {
             eprintln!("Memory store error: {}", e);
             ok("0 memory entries", serde_json::json!([]))
@@ -308,18 +356,17 @@ pub fn list_memory(data_dir: &Path) -> Response<Cursor<Vec<u8>>> {
 pub fn get_memory(key: &str, data_dir: &Path) -> Response<Cursor<Vec<u8>>> {
     let db_path = data_dir.join("memory.db");
     match ai_launcher_core::memory::KvStore::new(&db_path) {
-        Ok(kv) => {
-            match kv.get(key) {
-                Ok(Some(value)) => {
-                    ok(&format!("Memory: {}", key), serde_json::json!({
-                        "key": key,
-                        "value": value,
-                    }))
-                }
-                Ok(None) => err(404, &format!("Memory key not found: {}", key)),
-                Err(e) => err(500, &format!("Memory read error: {}", e)),
-            }
-        }
+        Ok(kv) => match kv.get(key) {
+            Ok(Some(value)) => ok(
+                &format!("Memory: {}", key),
+                serde_json::json!({
+                    "key": key,
+                    "value": value,
+                }),
+            ),
+            Ok(None) => err(404, &format!("Memory key not found: {}", key)),
+            Err(e) => err(500, &format!("Memory read error: {}", e)),
+        },
         Err(e) => err(500, &format!("Memory store error: {}", e)),
     }
 }
@@ -333,18 +380,27 @@ pub fn viking_status(rt: &tokio::runtime::Runtime) -> Response<Cursor<Vec<u8>>> 
 
     if healthy {
         match rt.block_on(async { client.status().await }) {
-            Ok(status) => ok("OpenViking connected", serde_json::json!({
-                "connected": true,
-                "status": status,
-            })),
-            Err(_) => ok("OpenViking connected", serde_json::json!({
-                "connected": true,
-            })),
+            Ok(status) => ok(
+                "OpenViking connected",
+                serde_json::json!({
+                    "connected": true,
+                    "status": status,
+                }),
+            ),
+            Err(_) => ok(
+                "OpenViking connected",
+                serde_json::json!({
+                    "connected": true,
+                }),
+            ),
         }
     } else {
-        ok("OpenViking not available", serde_json::json!({
-            "connected": false,
-            "message": "OpenViking server not running on localhost:1933. Install with: pip install openviking"
-        }))
+        ok(
+            "OpenViking not available",
+            serde_json::json!({
+                "connected": false,
+                "message": "OpenViking server not running on localhost:1933. Install with: pip install openviking"
+            }),
+        )
     }
 }

@@ -47,9 +47,11 @@ impl ScheduleStore {
                  next_run TEXT,
                  run_count INTEGER NOT NULL DEFAULT 0,
                  created_at TEXT NOT NULL
-             );"
+             );",
         )?;
-        Ok(Self { conn: StdMutex::new(conn) })
+        Ok(Self {
+            conn: StdMutex::new(conn),
+        })
     }
 
     pub fn add(&self, cron_expr: &str, input: &str) -> Result<String> {
@@ -61,7 +63,13 @@ impl ScheduleStore {
         conn.execute(
             "INSERT INTO schedules (id, cron_expr, input, enabled, next_run, created_at)
              VALUES (?1, ?2, ?3, 1, ?4, ?5)",
-            params![id, cron_expr, input, next.map(|t| t.to_rfc3339()), now.to_rfc3339()],
+            params![
+                id,
+                cron_expr,
+                input,
+                next.map(|t| t.to_rfc3339()),
+                now.to_rfc3339()
+            ],
         )?;
         Ok(id)
     }
@@ -85,33 +93,34 @@ impl ScheduleStore {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
             "SELECT id, cron_expr, input, enabled, last_run, next_run, run_count, created_at
-             FROM schedules ORDER BY created_at DESC"
+             FROM schedules ORDER BY created_at DESC",
         )?;
 
-        let schedules = stmt.query_map([], |row| {
-            let parse_dt = |s: Option<String>| -> Option<DateTime<Utc>> {
-                s.and_then(|s| DateTime::parse_from_rfc3339(&s).ok())
-                    .map(|dt| dt.with_timezone(&Utc))
-            };
-
-            Ok(Schedule {
-                id: row.get(0)?,
-                cron_expr: row.get(1)?,
-                input: row.get(2)?,
-                enabled: row.get::<_, i32>(3)? != 0,
-                last_run: parse_dt(row.get(4)?),
-                next_run: parse_dt(row.get(5)?),
-                run_count: row.get(6)?,
-                created_at: {
-                    let s: String = row.get(7)?;
-                    DateTime::parse_from_rfc3339(&s)
+        let schedules = stmt
+            .query_map([], |row| {
+                let parse_dt = |s: Option<String>| -> Option<DateTime<Utc>> {
+                    s.and_then(|s| DateTime::parse_from_rfc3339(&s).ok())
                         .map(|dt| dt.with_timezone(&Utc))
-                        .unwrap_or_else(|_| Utc::now())
-                },
-            })
-        })?
-        .filter_map(|r| r.ok())
-        .collect();
+                };
+
+                Ok(Schedule {
+                    id: row.get(0)?,
+                    cron_expr: row.get(1)?,
+                    input: row.get(2)?,
+                    enabled: row.get::<_, i32>(3)? != 0,
+                    last_run: parse_dt(row.get(4)?),
+                    next_run: parse_dt(row.get(5)?),
+                    run_count: row.get(6)?,
+                    created_at: {
+                        let s: String = row.get(7)?;
+                        DateTime::parse_from_rfc3339(&s)
+                            .map(|dt| dt.with_timezone(&Utc))
+                            .unwrap_or_else(|_| Utc::now())
+                    },
+                })
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
 
         Ok(schedules)
     }
@@ -121,33 +130,34 @@ impl ScheduleStore {
         let mut stmt = conn.prepare(
             "SELECT id, cron_expr, input, enabled, last_run, next_run, run_count, created_at
              FROM schedules
-             WHERE enabled = 1 AND next_run IS NOT NULL AND next_run <= ?1"
+             WHERE enabled = 1 AND next_run IS NOT NULL AND next_run <= ?1",
         )?;
 
-        let schedules = stmt.query_map(params![now.to_rfc3339()], |row| {
-            let parse_dt = |s: Option<String>| -> Option<DateTime<Utc>> {
-                s.and_then(|s| DateTime::parse_from_rfc3339(&s).ok())
-                    .map(|dt| dt.with_timezone(&Utc))
-            };
-
-            Ok(Schedule {
-                id: row.get(0)?,
-                cron_expr: row.get(1)?,
-                input: row.get(2)?,
-                enabled: true,
-                last_run: parse_dt(row.get(4)?),
-                next_run: parse_dt(row.get(5)?),
-                run_count: row.get(6)?,
-                created_at: {
-                    let s: String = row.get(7)?;
-                    DateTime::parse_from_rfc3339(&s)
+        let schedules = stmt
+            .query_map(params![now.to_rfc3339()], |row| {
+                let parse_dt = |s: Option<String>| -> Option<DateTime<Utc>> {
+                    s.and_then(|s| DateTime::parse_from_rfc3339(&s).ok())
                         .map(|dt| dt.with_timezone(&Utc))
-                        .unwrap_or_else(|_| Utc::now())
-                },
-            })
-        })?
-        .filter_map(|r| r.ok())
-        .collect();
+                };
+
+                Ok(Schedule {
+                    id: row.get(0)?,
+                    cron_expr: row.get(1)?,
+                    input: row.get(2)?,
+                    enabled: true,
+                    last_run: parse_dt(row.get(4)?),
+                    next_run: parse_dt(row.get(5)?),
+                    run_count: row.get(6)?,
+                    created_at: {
+                        let s: String = row.get(7)?;
+                        DateTime::parse_from_rfc3339(&s)
+                            .map(|dt| dt.with_timezone(&Utc))
+                            .unwrap_or_else(|_| Utc::now())
+                    },
+                })
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
 
         Ok(schedules)
     }
@@ -159,11 +169,7 @@ impl ScheduleStore {
         conn.execute(
             "UPDATE schedules SET last_run = ?1, next_run = ?2, run_count = run_count + 1
              WHERE id = ?3",
-            params![
-                now.to_rfc3339(),
-                next.map(|t| t.to_rfc3339()),
-                id
-            ],
+            params![now.to_rfc3339(), next.map(|t| t.to_rfc3339()), id],
         )?;
         Ok(())
     }

@@ -65,10 +65,14 @@ pub fn add_provider(
     };
 
     let name = config.name.clone();
-    
+
     // --- Verify provider is usable before adding ---
     let verify_res = rt.block_on(async {
-        tracing::info!("Verifying provider '{}' (type={})...", config.name, config.provider_type);
+        tracing::info!(
+            "Verifying provider '{}' (type={})...",
+            config.name,
+            config.provider_type
+        );
         ai_launcher_core::llm::verify_provider_config(&config).await
     });
 
@@ -135,10 +139,13 @@ pub fn codex_oauth_start(
             already_authenticated: bool,
         }
 
-        return ok("Already authenticated — provider added", StartResp {
-            auth_url: String::new(),
-            already_authenticated: true,
-        });
+        return ok(
+            "Already authenticated — provider added",
+            StartResp {
+                auth_url: String::new(),
+                already_authenticated: true,
+            },
+        );
     }
 
     // Not authenticated — start built-in PKCE OAuth flow
@@ -154,12 +161,16 @@ pub fn codex_oauth_start(
     rt.spawn(async move {
         match codex_oauth::complete_oauth_flow(&flow).await {
             Ok(auth) => {
-                let email = auth.tokens.as_ref()
+                let email = auth
+                    .tokens
+                    .as_ref()
                     .and_then(|t| t.id_token.as_deref())
                     .and_then(|t| {
                         // Extract email for logging
                         let parts: Vec<&str> = t.split('.').collect();
-                        if parts.len() < 2 { return None; }
+                        if parts.len() < 2 {
+                            return None;
+                        }
                         Some(parts[1].to_string())
                     });
                 tracing::info!(?email, "OAuth flow completed, adding provider");
@@ -177,10 +188,13 @@ pub fn codex_oauth_start(
         already_authenticated: bool,
     }
 
-    ok("OAuth flow started — complete login in your browser", StartResp {
-        auth_url,
-        already_authenticated: false,
-    })
+    ok(
+        "OAuth flow started — complete login in your browser",
+        StartResp {
+            auth_url,
+            already_authenticated: false,
+        },
+    )
 }
 
 /// Helper: add/replace the codex-chatgpt provider and make it active.
@@ -217,7 +231,11 @@ fn open_browser(url: &str) {
     #[cfg(target_os = "windows")]
     {
         let _ = std::process::Command::new("powershell")
-            .args(["-NoProfile", "-Command", &format!("Start-Process '{}'", url)])
+            .args([
+                "-NoProfile",
+                "-Command",
+                &format!("Start-Process '{}'", url),
+            ])
             .spawn();
     }
     #[cfg(target_os = "macos")]
@@ -231,9 +249,11 @@ fn open_browser(url: &str) {
 }
 
 /// GET /api/models/recommendations — get recommended GGUF models based on system RAM.
-pub fn recommend_gguf_models(mgr: &ai_launcher_core::app_manager::AppManager) -> Response<Cursor<Vec<u8>>> {
-    use ai_launcher_core::system_metrics::snapshot_resource_usage;
+pub fn recommend_gguf_models(
+    mgr: &ai_launcher_core::app_manager::AppManager,
+) -> Response<Cursor<Vec<u8>>> {
     use ai_launcher_core::llm::gguf::GgufModelRecommendation;
+    use ai_launcher_core::system_metrics::snapshot_resource_usage;
 
     let ram_bytes = match snapshot_resource_usage(mgr.base_dir()) {
         Ok(usage) => usage.memory_total_bytes,
@@ -268,6 +288,8 @@ pub fn list_local_models() -> Response<Cursor<Vec<u8>>> {
 }
 
 /// POST /api/models/verify — verify a provider config can run without errors.
+/// Tests the actual connection (API key, model availability, server reachability)
+/// without saving the provider.
 pub fn verify_provider(
     req: &mut Request,
     rt: &tokio::runtime::Runtime,
@@ -282,38 +304,75 @@ pub fn verify_provider(
         Err(e) => return err(400, &format!("Invalid JSON: {}", e)),
     };
 
-    match config.provider_type.as_str() {
-        "gguf" | "llama-cpp" | "llama.cpp" => {
-            let result = rt.block_on(async {
-                let data_dir = std::env::var("AI_LAUNCHER_DATA_DIR")
-                    .map(std::path::PathBuf::from)
-                    .unwrap_or_else(|_| {
-                        if cfg!(windows) {
-                            std::env::var("LOCALAPPDATA")
-                                .map(|p| std::path::PathBuf::from(p).join("ai-launcher"))
-                                .unwrap_or_else(|_| std::path::PathBuf::from("C:\\ai-launcher-data"))
-                        } else {
-                            std::env::var("HOME")
-                                .map(std::path::PathBuf::from)
-                                .unwrap_or_else(|_| std::path::PathBuf::from("/tmp"))
-                                .join(".ai-launcher")
-                        }
-                    });
-                let provider = ai_launcher_core::llm::gguf::GgufProvider::new(
-                    &data_dir,
-                    &config.model,
-                    config.base_url.as_deref(),
-                    None,
-                );
-                provider.verify().await
-            });
-            ok("GGUF verification result", result)
-        }
-        _ => {
-            // For non-GGUF, just report that config is parseable
-            #[derive(serde::Serialize)]
-            struct SimpleVerify { ok: bool, error: Option<String> }
-            ok("Provider config is valid", SimpleVerify { ok: true, error: None })
-        }
+    #[derive(serde::Serialize)]
+    struct VerifyResult {
+        ok: bool,
+        error: Option<String>,
+        model_exists: bool,
+        server_available: bool,
+    }
+
+    // For GGUF, use the detailed GGUF verify which checks model file + server binary
+    if matches!(
+        config.provider_type.as_str(),
+        "gguf" | "llama-cpp" | "llama.cpp"
+    ) {
+        let result = rt.block_on(async {
+            let data_dir = std::env::var("AI_LAUNCHER_DATA_DIR")
+                .map(std::path::PathBuf::from)
+                .unwrap_or_else(|_| {
+                    if cfg!(windows) {
+                        std::env::var("LOCALAPPDATA")
+                            .map(|p| std::path::PathBuf::from(p).join("ai-launcher"))
+                            .unwrap_or_else(|_| std::path::PathBuf::from("C:\\ai-launcher-data"))
+                    } else {
+                        std::env::var("HOME")
+                            .map(std::path::PathBuf::from)
+                            .unwrap_or_else(|_| std::path::PathBuf::from("/tmp"))
+                            .join(".ai-launcher")
+                    }
+                });
+            let provider = ai_launcher_core::llm::gguf::GgufProvider::new(
+                &data_dir,
+                &config.model,
+                config.base_url.as_deref(),
+                None,
+            );
+            provider.verify().await
+        });
+        return ok("GGUF verification result", result);
+    }
+
+    // For all other providers (Ollama, OpenAI, Anthropic, Groq, etc.),
+    // use the same verify_provider_config that add_provider uses.
+    // This actually tests the connection: pings Ollama, sends a test message to APIs, etc.
+    let verify_res = rt.block_on(async {
+        tracing::info!(
+            "Verify-only test for '{}' (type={})...",
+            config.name,
+            config.provider_type
+        );
+        ai_launcher_core::llm::verify_provider_config(&config).await
+    });
+
+    match verify_res {
+        Ok(()) => ok(
+            "Provider verification passed",
+            VerifyResult {
+                ok: true,
+                error: None,
+                model_exists: true,
+                server_available: true,
+            },
+        ),
+        Err(e) => ok(
+            "Provider verification failed",
+            VerifyResult {
+                ok: false,
+                error: Some(e.to_string()),
+                model_exists: false,
+                server_available: false,
+            },
+        ),
     }
 }

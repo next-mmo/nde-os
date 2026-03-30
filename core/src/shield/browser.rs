@@ -6,8 +6,8 @@ use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum BrowserEngine {
-    Wayfern,   // Chromium-based with C++ fingerprint patches
-    Camoufox,  // Firefox-based with C++ fingerprint patches
+    Wayfern,  // Chromium-based with C++ fingerprint patches
+    Camoufox, // Firefox-based with C++ fingerprint patches
 }
 
 impl BrowserEngine {
@@ -74,12 +74,13 @@ impl ProxyConfig {
 
     /// Format as Chromium --proxy-server argument
     pub fn to_chromium_arg(&self) -> String {
-        format!("--proxy-server={}://{}:{}", 
+        format!(
+            "--proxy-server={}://{}:{}",
             match self.proxy_type {
                 ProxyType::Http | ProxyType::Https => "http",
                 ProxyType::Socks4 | ProxyType::Socks5 => "socks5",
             },
-            self.host, 
+            self.host,
             self.port
         )
     }
@@ -109,9 +110,7 @@ fn find_chromium_executable(install_dir: &Path) -> Result<PathBuf> {
         if let Ok(entries) = std::fs::read_dir(install_dir) {
             let app_dir = entries
                 .filter_map(|e| e.ok())
-                .find(|e| {
-                    e.path().extension().is_some_and(|ext| ext == "app")
-                })
+                .find(|e| e.path().extension().is_some_and(|ext| ext == "app"))
                 .map(|e| e.path().join("Contents").join("MacOS"));
 
             if let Some(macos_dir) = app_dir {
@@ -152,16 +151,11 @@ fn find_firefox_executable(install_dir: &Path) -> Result<PathBuf> {
         if let Ok(entries) = std::fs::read_dir(install_dir) {
             let app_dir = entries
                 .filter_map(|e| e.ok())
-                .find(|e| {
-                    e.path().extension().is_some_and(|ext| ext == "app")
-                })
+                .find(|e| e.path().extension().is_some_and(|ext| ext == "app"))
                 .map(|e| e.path().join("Contents").join("MacOS"));
 
             if let Some(macos_dir) = app_dir {
-                vec![
-                    macos_dir.join("camoufox"),
-                    macos_dir.join("firefox"),
-                ]
+                vec![macos_dir.join("camoufox"), macos_dir.join("firefox")]
             } else {
                 vec![]
             }
@@ -193,8 +187,12 @@ pub fn build_launch_args(
     headless: bool,
 ) -> Vec<String> {
     match engine {
-        BrowserEngine::Wayfern => build_chromium_args(profile_data_dir, proxy, url, debugging_port, headless),
-        BrowserEngine::Camoufox => build_firefox_args(profile_data_dir, proxy, url, debugging_port, headless),
+        BrowserEngine::Wayfern => {
+            build_chromium_args(profile_data_dir, proxy, url, debugging_port, headless)
+        }
+        BrowserEngine::Camoufox => {
+            build_firefox_args(profile_data_dir, proxy, url, debugging_port, headless)
+        }
     }
 }
 
@@ -276,8 +274,14 @@ mod tests {
 
     #[test]
     fn test_browser_engine_roundtrip() {
-        assert_eq!(BrowserEngine::from_str("wayfern").unwrap(), BrowserEngine::Wayfern);
-        assert_eq!(BrowserEngine::from_str("camoufox").unwrap(), BrowserEngine::Camoufox);
+        assert_eq!(
+            BrowserEngine::from_str("wayfern").unwrap(),
+            BrowserEngine::Wayfern
+        );
+        assert_eq!(
+            BrowserEngine::from_str("camoufox").unwrap(),
+            BrowserEngine::Camoufox
+        );
         assert!(BrowserEngine::from_str("unknown").is_err());
         assert_eq!(BrowserEngine::Wayfern.as_str(), "wayfern");
         assert_eq!(BrowserEngine::Camoufox.as_str(), "camoufox");
@@ -309,7 +313,9 @@ mod tests {
         let dir = std::path::PathBuf::from("/profiles/test-uuid/profile");
         let args = build_chromium_args(&dir, None, None, Some(9222), false);
         assert!(args.iter().any(|a| a.contains("--user-data-dir=")));
-        assert!(args.iter().any(|a| a.contains("--remote-debugging-port=9222")));
+        assert!(args
+            .iter()
+            .any(|a| a.contains("--remote-debugging-port=9222")));
     }
 
     #[test]

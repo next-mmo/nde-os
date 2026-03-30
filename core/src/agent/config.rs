@@ -34,32 +34,58 @@ pub struct AgentConfig {
     pub workspace: String,
 }
 
-fn default_name() -> String { "assistant".into() }
-fn default_max_iterations() -> usize { 25 }
-fn default_provider() -> String { "gguf".into() }
-fn default_model() -> String { "tinyllama-1.1b".into() }
-fn default_workspace() -> String { "workspace".into() }
+fn default_name() -> String {
+    "assistant".into()
+}
+fn default_max_iterations() -> usize {
+    25
+}
+fn default_provider() -> String {
+    "gguf".into()
+}
+fn default_model() -> String {
+    "tinyllama-1.1b".into()
+}
+fn default_workspace() -> String {
+    "workspace".into()
+}
 fn default_tools() -> Vec<String> {
     vec![
         // Filesystem
-        "file_read".into(), "file_write".into(), "file_delete".into(),
-        "file_list".into(), "file_search".into(), "file_patch".into(),
+        "file_read".into(),
+        "file_write".into(),
+        "file_delete".into(),
+        "file_list".into(),
+        "file_search".into(),
+        "file_patch".into(),
         // Shell
         "shell_exec".into(),
         // Code
-        "code_search".into(), "code_edit".into(), "code_symbols".into(),
+        "code_search".into(),
+        "code_edit".into(),
+        "code_symbols".into(),
         // Memory
-        "memory_store".into(), "memory_recall".into(),
-        "conversation_save".into(), "conversation_search".into(),
+        "memory_store".into(),
+        "memory_recall".into(),
+        "conversation_save".into(),
+        "conversation_search".into(),
         // Knowledge
-        "knowledge_store".into(), "knowledge_query".into(),
+        "knowledge_store".into(),
+        "knowledge_query".into(),
         // Web (Phase 3)
-        "web_browse".into(), "web_search".into(), "http_fetch".into(),
+        "web_browse".into(),
+        "web_search".into(),
+        "http_fetch".into(),
         // Git (Phase 3)
         "git".into(),
         // System
-        "app_list".into(), "app_install".into(), "app_launch".into(), "app_stop".into(),
-        "system_info".into(), "skill_list".into(), "nde_screenshot".into(),
+        "app_list".into(),
+        "app_install".into(),
+        "app_launch".into(),
+        "app_stop".into(),
+        "system_info".into(),
+        "skill_list".into(),
+        "nde_screenshot".into(),
     ]
 }
 
@@ -90,8 +116,7 @@ impl AgentConfig {
 
     /// Parse from a TOML string.
     pub fn from_str(toml_str: &str) -> Result<Self> {
-        let raw: RawConfig = toml::from_str(toml_str)
-            .context("Failed to parse TOML config")?;
+        let raw: RawConfig = toml::from_str(toml_str).context("Failed to parse TOML config")?;
         Ok(raw.into_agent_config())
     }
 }
@@ -138,19 +163,29 @@ struct RawSandbox {
 impl RawConfig {
     fn into_agent_config(self) -> AgentConfig {
         // Resolve API key from env var if specified
-        let api_key = self.model.api_key_env.as_ref()
+        let api_key = self
+            .model
+            .api_key_env
+            .as_ref()
             .and_then(|env_name| std::env::var(env_name).ok());
 
         AgentConfig {
             name: self.agent.name.unwrap_or_else(default_name),
-            max_iterations: self.agent.max_iterations.unwrap_or_else(default_max_iterations),
+            max_iterations: self
+                .agent
+                .max_iterations
+                .unwrap_or_else(default_max_iterations),
             system_prompt: self.agent.system_prompt.unwrap_or_default(),
             model_provider: self.model.provider.unwrap_or_else(default_provider),
             model_name: self.model.model.unwrap_or_else(default_model),
             base_url: self.model.base_url,
             api_key,
             api_key_env: self.model.api_key_env,
-            enabled_tools: if self.tools.enabled.is_empty() { default_tools() } else { self.tools.enabled },
+            enabled_tools: if self.tools.enabled.is_empty() {
+                default_tools()
+            } else {
+                self.tools.enabled
+            },
             workspace: self.sandbox.workspace.unwrap_or_else(default_workspace),
         }
     }

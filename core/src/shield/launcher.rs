@@ -102,7 +102,10 @@ impl BrowserLauncher {
         cmd.args(&args);
 
         // Set environment for sandboxing
-        cmd.env("DISPLAY", std::env::var("DISPLAY").unwrap_or_else(|_| ":0".into()));
+        cmd.env(
+            "DISPLAY",
+            std::env::var("DISPLAY").unwrap_or_else(|_| ":0".into()),
+        );
 
         // For Wayfern/Chromium, suppress first-run dialogs
         if profile.engine == BrowserEngine::Wayfern {
@@ -113,10 +116,12 @@ impl BrowserLauncher {
         cmd.stdout(std::process::Stdio::null());
         cmd.stderr(std::process::Stdio::null());
 
-        let mut child = cmd.spawn()
-            .with_context(|| format!("Failed to spawn {} process", profile.engine.display_name()))?;
+        let mut child = cmd.spawn().with_context(|| {
+            format!("Failed to spawn {} process", profile.engine.display_name())
+        })?;
 
-        let process_id = child.id()
+        let process_id = child
+            .id()
             .context("Failed to get process ID of spawned browser")?;
 
         tracing::info!(
@@ -129,12 +134,15 @@ impl BrowserLauncher {
         // Record the running instance
         {
             let mut instances = self.instances.lock().await;
-            instances.insert(profile_id.to_string(), BrowserInstance {
-                profile_id: profile_id.to_string(),
-                process_id,
-                cdp_port,
-                engine: profile.engine.clone(),
-            });
+            instances.insert(
+                profile_id.to_string(),
+                BrowserInstance {
+                    profile_id: profile_id.to_string(),
+                    process_id,
+                    cdp_port,
+                    engine: profile.engine.clone(),
+                },
+            );
         }
 
         // Update profile metadata
@@ -239,7 +247,11 @@ impl BrowserLauncher {
         let profile_mgr = ProfileManager::new(&self.base_dir);
 
         for (id, instance) in instances {
-            tracing::info!("Stopping {} (PID {})", instance.engine.display_name(), instance.process_id);
+            tracing::info!(
+                "Stopping {} (PID {})",
+                instance.engine.display_name(),
+                instance.process_id
+            );
             kill_process(instance.process_id);
             let _ = profile_mgr.set_stopped(&id);
         }
@@ -412,4 +424,3 @@ mod tests {
         assert!(result.unwrap_err().to_string().contains("Coming soon"));
     }
 }
-

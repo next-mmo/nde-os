@@ -96,15 +96,12 @@ impl LlmManager {
 
     /// Add a provider from config — resolves env vars for API keys.
     pub fn add_from_config(&mut self, config: ProviderConfig) -> Result<()> {
-        let api_key = config
-            .api_key
-            .clone()
-            .or_else(|| {
-                config
-                    .api_key_env
-                    .as_ref()
-                    .and_then(|env_name| std::env::var(env_name).ok())
-            });
+        let api_key = config.api_key.clone().or_else(|| {
+            config
+                .api_key_env
+                .as_ref()
+                .and_then(|env_name| std::env::var(env_name).ok())
+        });
 
         let provider = super::create_provider(
             &config.provider_type,
@@ -117,12 +114,12 @@ impl LlmManager {
         if self.active.is_empty() {
             self.active = name.clone();
         }
-        
+
         // Remove old config with same name if it exists, to support updates
         self.configs.retain(|c| c.name != name);
         self.providers.insert(name, provider);
         self.configs.push(config);
-        
+
         self.save_to_disk();
         Ok(())
     }
@@ -183,12 +180,7 @@ impl LlmManager {
     pub fn remove(&mut self, name: &str) -> bool {
         let removed = self.providers.remove(name).is_some();
         if removed && self.active == name {
-            self.active = self
-                .providers
-                .keys()
-                .next()
-                .cloned()
-                .unwrap_or_default();
+            self.active = self.providers.keys().next().cloned().unwrap_or_default();
         }
         self.configs.retain(|c| c.name != name);
         if removed {

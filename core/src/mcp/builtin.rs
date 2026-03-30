@@ -333,16 +333,14 @@ fn register_tools(server: &mut McpServer) {
 
 /// Get the list of built-in MCP server info for the API.
 pub fn builtin_server_info() -> Vec<serde_json::Value> {
-    vec![
-        json!({
-            "name": "nde-os-tools",
-            "description": "NDE-OS built-in sandboxed tools — filesystem, shell, code analysis, web browsing, git, memory, knowledge graph, OpenViking context database, and system management",
-            "transport": "stdio",
-            "status": "running",
-            "tools_count": 22,
-            "version": "0.2.0"
-        }),
-    ]
+    vec![json!({
+        "name": "nde-os-tools",
+        "description": "NDE-OS built-in sandboxed tools — filesystem, shell, code analysis, web browsing, git, memory, knowledge graph, OpenViking context database, and system management",
+        "transport": "stdio",
+        "status": "running",
+        "tools_count": 22,
+        "version": "0.2.0"
+    })]
 }
 
 /// Get MCP tool definitions for the API.
@@ -382,7 +380,9 @@ mod tests {
             "id": 1,
             "method": "tools/list"
         });
-        let resp = server.handle_request(&serde_json::to_string(&req).unwrap()).unwrap();
+        let resp = server
+            .handle_request(&serde_json::to_string(&req).unwrap())
+            .unwrap();
         let parsed: serde_json::Value = serde_json::from_str(&resp).unwrap();
         let tools = parsed["result"]["tools"].as_array().unwrap();
         assert!(tools.len() >= 22, "Expected 22+ tools, got {}", tools.len());
@@ -413,7 +413,9 @@ mod tests {
             "id": 1,
             "method": "tools/list"
         });
-        let resp = server.handle_request(&serde_json::to_string(&req).unwrap()).unwrap();
+        let resp = server
+            .handle_request(&serde_json::to_string(&req).unwrap())
+            .unwrap();
         let parsed: serde_json::Value = serde_json::from_str(&resp).unwrap();
         let tools = parsed["result"]["tools"].as_array().unwrap();
         assert!(tools.len() >= 22, "Expected 22+ tools, got {}", tools.len());
@@ -442,12 +444,21 @@ mod tests {
                 "arguments": { "path": "hello.txt" }
             }
         });
-        let resp = server.handle_request(&serde_json::to_string(&req).unwrap()).unwrap();
+        let resp = server
+            .handle_request(&serde_json::to_string(&req).unwrap())
+            .unwrap();
         let parsed: serde_json::Value = serde_json::from_str(&resp).unwrap();
 
         let text = parsed["result"]["content"][0]["text"].as_str().unwrap();
-        assert!(text.contains("Hello from MCP!"), "Expected file content, got: {}", text);
-        assert!(parsed["result"]["isError"].is_null(), "Should not be an error");
+        assert!(
+            text.contains("Hello from MCP!"),
+            "Expected file content, got: {}",
+            text
+        );
+        assert!(
+            parsed["result"]["isError"].is_null(),
+            "Should not be an error"
+        );
 
         // Clean up
         std::fs::remove_dir_all(&tmp).ok();
@@ -470,9 +481,14 @@ mod tests {
                 "arguments": { "path": "test_output.txt", "content": "Written via MCP gateway!" }
             }
         });
-        let resp = server.handle_request(&serde_json::to_string(&write_req).unwrap()).unwrap();
+        let resp = server
+            .handle_request(&serde_json::to_string(&write_req).unwrap())
+            .unwrap();
         let parsed: serde_json::Value = serde_json::from_str(&resp).unwrap();
-        assert!(parsed["result"]["isError"].is_null(), "Write should not error");
+        assert!(
+            parsed["result"]["isError"].is_null(),
+            "Write should not error"
+        );
 
         // Read it back via MCP
         let read_req = serde_json::json!({
@@ -484,10 +500,16 @@ mod tests {
                 "arguments": { "path": "test_output.txt" }
             }
         });
-        let resp = server.handle_request(&serde_json::to_string(&read_req).unwrap()).unwrap();
+        let resp = server
+            .handle_request(&serde_json::to_string(&read_req).unwrap())
+            .unwrap();
         let parsed: serde_json::Value = serde_json::from_str(&resp).unwrap();
         let text = parsed["result"]["content"][0]["text"].as_str().unwrap();
-        assert!(text.contains("Written via MCP gateway!"), "Round-trip failed: {}", text);
+        assert!(
+            text.contains("Written via MCP gateway!"),
+            "Round-trip failed: {}",
+            text
+        );
 
         // Clean up
         std::fs::remove_dir_all(&tmp).ok();
@@ -500,7 +522,11 @@ mod tests {
 
         let server = create_executable_server(&tmp).unwrap();
 
-        let cmd = if cfg!(windows) { "echo hello_mcp" } else { "echo hello_mcp" };
+        let cmd = if cfg!(windows) {
+            "echo hello_mcp"
+        } else {
+            "echo hello_mcp"
+        };
         let req = serde_json::json!({
             "jsonrpc": "2.0",
             "id": 5,
@@ -510,10 +536,16 @@ mod tests {
                 "arguments": { "command": cmd }
             }
         });
-        let resp = server.handle_request(&serde_json::to_string(&req).unwrap()).unwrap();
+        let resp = server
+            .handle_request(&serde_json::to_string(&req).unwrap())
+            .unwrap();
         let parsed: serde_json::Value = serde_json::from_str(&resp).unwrap();
         let text = parsed["result"]["content"][0]["text"].as_str().unwrap();
-        assert!(text.contains("hello_mcp"), "Shell should echo, got: {}", text);
+        assert!(
+            text.contains("hello_mcp"),
+            "Shell should echo, got: {}",
+            text
+        );
 
         // Clean up
         std::fs::remove_dir_all(&tmp).ok();
@@ -536,7 +568,9 @@ mod tests {
                 "arguments": { "path": "../../../etc/passwd" }
             }
         });
-        let resp = server.handle_request(&serde_json::to_string(&req).unwrap()).unwrap();
+        let resp = server
+            .handle_request(&serde_json::to_string(&req).unwrap())
+            .unwrap();
         let parsed: serde_json::Value = serde_json::from_str(&resp).unwrap();
         let is_error = parsed["result"]["isError"].as_bool().unwrap_or(false);
         assert!(is_error, "Path traversal should be blocked");

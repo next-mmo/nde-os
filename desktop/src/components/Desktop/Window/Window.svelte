@@ -28,7 +28,6 @@
   let isDragging = $state(false);
   let isResizing = $state(false);
   let windowEl = $state<HTMLElement>();
-  let previousTransform = $state("");
 
   const MIN_WIDTH = 320;
   const MIN_HEIGHT = 200;
@@ -89,11 +88,18 @@
     document.addEventListener("pointerup", onUp);
   }
 
-  function handleTitleBarDblClick(event: MouseEvent) {
-    event.preventDefault();
-    event.stopPropagation();
-    if (window.expandable) {
-      toggleFullscreenState(window.id);
+  let lastTitleBarClick = 0;
+  function handleTitleBarPointerDown(event: PointerEvent) {
+    const now = Date.now();
+    if (now - lastTitleBarClick < 350) {
+      event.preventDefault();
+      event.stopPropagation();
+      if (window.expandable) {
+        toggleFullscreenState(window.id);
+      }
+      lastTitleBarClick = 0;
+    } else {
+      lastTitleBarClick = now;
     }
   }
 
@@ -104,22 +110,14 @@
   if (savedGeo) {
     window.width = savedGeo.width;
     window.height = savedGeo.height;
-    if (typeof savedGeo.fullscreen === 'boolean') {
-      window.fullscreen = savedGeo.fullscreen;
-    }
   }
 
   const defaultPosition = () => {
     const vw = globalThis.innerWidth ?? 1280;
     const vh = globalThis.innerHeight ?? 800;
-    if (savedGeo && savedGeo.x >= -window.width / 2 && savedGeo.x < vw - 50 && savedGeo.y >= 0 && savedGeo.y < vh - 50) {
-      return { x: savedGeo.x, y: savedGeo.y };
-    }
-    const offsetX = ((window.id.length * 53) % 120) - 60;
-    const offsetY = ((window.id.length * 37) % 30);
     return {
-      x: Math.max(24, Math.round((vw - window.width) / 2) + offsetX),
-      y: 10 + offsetY,
+      x: Math.max(24, Math.round((vw - window.width) / 2)),
+      y: Math.max(30, Math.round((vh - window.height) / 2 * 0.6)),
     };
   };
 
@@ -139,11 +137,7 @@
 
   $effect(() => {
     if (!windowEl) return;
-    if (window.fullscreen) {
-      draggingEnabled = false;
-    } else {
-      draggingEnabled = true;
-    }
+    draggingEnabled = !window.fullscreen;
   });
 
   const windowTitle = $derived(
@@ -167,7 +161,7 @@
 
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 <section
-  class="absolute grid grid-rows-[auto_1fr] rounded-xl overflow-hidden border border-black/10 dark:border-white/10 bg-white/50 dark:bg-gray-800/50 backdrop-blur-[26px] shadow-[0_16px_36px_rgba(0,0,0,0.22),0_48px_96px_rgba(0,0,0,0.18)] transition-shadow {isActive ? 'shadow-[0_20px_44px_rgba(0,0,0,0.3),0_56px_120px_rgba(0,0,0,0.24)]! ring-1 ring-black/5 dark:ring-white/10' : ''} {window.fullscreen ? 'inset-0! w-full! h-full! transform-none! rounded-none!' : ''} {window.minimized ? 'opacity-0 pointer-events-none invisible' : 'opacity-100 visible pointer-events-auto'}"
+  class="absolute grid grid-rows-[auto_1fr] rounded-xl overflow-hidden border border-black/10 dark:border-white/10 bg-white/50 dark:bg-gray-800/50 backdrop-blur-[26px] shadow-[0_16px_36px_rgba(0,0,0,0.22),0_48px_96px_rgba(0,0,0,0.18)] transition-shadow {isActive ? 'shadow-[0_20px_44px_rgba(0,0,0,0.3),0_56px_120px_rgba(0,0,0,0.24)]! ring-1 ring-black/5 dark:ring-white/10' : ''} {window.fullscreen ? 'inset-0! w-full! h-full! rounded-none! translate-none!' : ''} {window.minimized ? 'opacity-0 pointer-events-none invisible' : 'opacity-100 visible pointer-events-auto'}"
   data-window={window.app_id}
   aria-label={window.title}
   tabindex="-1"
@@ -193,7 +187,7 @@
   ])}
 >
   <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <header class="window-drag-handle grid grid-cols-[auto_1fr_auto] items-center gap-4 px-4 pt-[0.9rem] pb-[0.7rem] bg-linear-to-b from-white/90 to-white/60 dark:from-gray-700/90 dark:to-gray-800/70 border-b border-black/10 dark:border-white/10" ondblclick={handleTitleBarDblClick} oncontextmenu={handleContextMenu}>
+  <header class="window-drag-handle grid grid-cols-[auto_1fr_auto] items-center gap-4 px-4 pt-[0.9rem] pb-[0.7rem] bg-linear-to-b from-white/90 to-white/60 dark:from-gray-700/90 dark:to-gray-800/70 border-b border-black/10 dark:border-white/10" onpointerdown={handleTitleBarPointerDown} oncontextmenu={handleContextMenu}>
     <TrafficLights {window} />
     <div class="grid justify-items-center text-center gap-[0.08rem]">
       <strong class="text-[0.9rem] font-semibold text-gray-900 dark:text-gray-100">{windowTitle}</strong>

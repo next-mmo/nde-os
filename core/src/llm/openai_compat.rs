@@ -13,7 +13,11 @@ pub struct OpenAiCompatProvider {
 impl OpenAiCompatProvider {
     pub fn new(base_url: &str, model: &str, api_key: &str) -> Self {
         Self {
-            client: reqwest::Client::new(),
+            client: reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(120))
+                .connect_timeout(std::time::Duration::from_secs(10))
+                .build()
+                .unwrap_or_else(|_| reqwest::Client::new()),
             base_url: base_url.trim_end_matches('/').to_string(),
             model: model.to_string(),
             api_key: api_key.to_string(),
@@ -21,8 +25,7 @@ impl OpenAiCompatProvider {
     }
 
     pub fn from_env(model: &str) -> Result<Self> {
-        let key = std::env::var("OPENAI_API_KEY")
-            .context("OPENAI_API_KEY not set")?;
+        let key = std::env::var("OPENAI_API_KEY").context("OPENAI_API_KEY not set")?;
         Ok(Self::new("https://api.openai.com/v1", model, &key))
     }
 }
@@ -99,47 +102,74 @@ struct OaiUsage {
 // ── Conversions ──────────────────────────────────────────────────────────────
 
 fn to_oai_messages(messages: &[Message]) -> Vec<OaiMessage> {
-    messages.iter().map(|m| match m {
-        Message::System { content } => OaiMessage {
-            role: "system".into(), content: Some(content.clone()),
-            tool_calls: None, tool_call_id: None,
-        },
-        Message::User { content } => OaiMessage {
-            role: "user".into(), content: Some(content.clone()),
-            tool_calls: None, tool_call_id: None,
-        },
-        Message::Assistant { content, tool_calls } => {
-            let tc = if tool_calls.is_empty() { None } else {
-                Some(tool_calls.iter().map(|tc| OaiToolCall {
-                    id: tc.id.clone(),
-                    call_type: "function".into(),
-                    function: OaiFunctionCall {
-                        name: tc.name.clone(),
-                        arguments: tc.arguments.to_string(),
-                    },
-                }).collect())
-            };
-            OaiMessage {
-                role: "assistant".into(), content: content.clone(),
-                tool_calls: tc, tool_call_id: None,
+    messages
+        .iter()
+        .map(|m| match m {
+            Message::System { content } => OaiMessage {
+                role: "system".into(),
+                content: Some(content.clone()),
+                tool_calls: None,
+                tool_call_id: None,
+            },
+            Message::User { content } => OaiMessage {
+                role: "user".into(),
+                content: Some(content.clone()),
+                tool_calls: None,
+                tool_call_id: None,
+            },
+            Message::Assistant {
+                content,
+                tool_calls,
+            } => {
+                let tc = if tool_calls.is_empty() {
+                    None
+                } else {
+                    Some(
+                        tool_calls
+                            .iter()
+                            .map(|tc| OaiToolCall {
+                                id: tc.id.clone(),
+                                call_type: "function".into(),
+                                function: OaiFunctionCall {
+                                    name: tc.name.clone(),
+                                    arguments: tc.arguments.to_string(),
+                                },
+                            })
+                            .collect(),
+                    )
+                };
+                OaiMessage {
+                    role: "assistant".into(),
+                    content: content.clone(),
+                    tool_calls: tc,
+                    tool_call_id: None,
+                }
             }
-        }
-        Message::Tool { tool_call_id, content } => OaiMessage {
-            role: "tool".into(), content: Some(content.clone()),
-            tool_calls: None, tool_call_id: Some(tool_call_id.clone()),
-        },
-    }).collect()
+            Message::Tool {
+                tool_call_id,
+                content,
+            } => OaiMessage {
+                role: "tool".into(),
+                content: Some(content.clone()),
+                tool_calls: None,
+                tool_call_id: Some(tool_call_id.clone()),
+            },
+        })
+        .collect()
 }
 
 fn to_oai_tools(tools: &[ToolDef]) -> Vec<OaiTool> {
-    tools.iter().map(|t| OaiTool {
-        tool_type: "function".into(),
-        function: OaiFunction {
-            name: t.name.clone(),
-            description: t.description.clone(),
-            parameters: t.parameters.clone(),
-        },
-    }).collect()
+    tools
+        .iter()
+        .map(|t| OaiTool {
+            tool_type: "function".into(),
+            function: OaiFunction {
+                name: t.name.clone(),
+                description: t.description.clone(),
+                parameters: t.parameters.clone(),
+            },
+        })
+        .collect()
 }
 
 // ── Provider impl ────────────────────────────────────────────────────────────
@@ -153,7 +183,8 @@ impl LlmProvider for OpenAiCompatProvider {
             tools: to_oai_tools(tools),
         };
 
-        let resp = self.client
+        let resp = self
+            .client
             .post(format!("{}/chat/completions", self.base_url))
             .header("Authorization", format!("Bearer {}", self.api_key))
             .header("Content-Type", "application/json")
@@ -168,13 +199,20 @@ impl LlmProvider for OpenAiCompatProvider {
             return Err(anyhow::anyhow!("OpenAI API error {}: {}", status, text));
         }
 
-        let data: ChatResponse = resp.json().await
+        let data: ChatResponse = resp
+            .json()
+            .await
             .context("Failed to parse OpenAI response")?;
 
-        let choice = data.choices.into_iter().next()
+        let choice = data
+            .choices
+            .into_iter()
+            .next()
             .ok_or_else(|| anyhow::anyhow!("No choices in OpenAI response"))?;
 
-        let tool_calls: Vec<ToolCall> = choice.message.tool_calls
+        let tool_calls: Vec<ToolCall> = choice
+            .message
+            .tool_calls
             .unwrap_or_default()
             .into_iter()
             .map(|tc| {
@@ -206,5 +244,7 @@ impl LlmProvider for OpenAiCompatProvider {
         })
     }
 
-    fn name(&self) -> &str { "openai_compat" }
+    fn name(&self) -> &str {
+        "openai_compat"
+    }
 }

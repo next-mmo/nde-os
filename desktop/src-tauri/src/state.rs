@@ -61,8 +61,9 @@ mod tests {
             AppManager::new(&base_dir).expect("manager should be created"),
         ));
 
-        let count = tauri::async_runtime::block_on(with_manager(manager, |mgr| Ok(mgr.total_count())))
-            .expect("operation should succeed");
+        let count =
+            tauri::async_runtime::block_on(with_manager(manager, |mgr| Ok(mgr.total_count())))
+                .expect("operation should succeed");
 
         assert_eq!(count, 0);
         fs::remove_dir_all(base_dir).ok();
@@ -75,9 +76,10 @@ mod tests {
             AppManager::new(&base_dir).expect("manager should be created"),
         ));
 
-        let result: Result<(), String> = tauri::async_runtime::block_on(with_manager(manager, |_| {
-            Err("expected failure".to_string())
-        }));
+        let result: Result<(), String> =
+            tauri::async_runtime::block_on(with_manager(manager, |_| {
+                Err("expected failure".to_string())
+            }));
 
         assert_eq!(result.unwrap_err(), "expected failure");
         fs::remove_dir_all(base_dir).ok();

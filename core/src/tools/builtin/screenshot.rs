@@ -46,11 +46,19 @@ impl Tool for ScreenshotTool {
         let x = args.get("x").and_then(|v| v.as_i64()).map(|v| v as i32);
         let y = args.get("y").and_then(|v| v.as_i64()).map(|v| v as i32);
         let width = args.get("width").and_then(|v| v.as_u64()).map(|v| v as u32);
-        let height = args.get("height").and_then(|v| v.as_u64()).map(|v| v as u32);
+        let height = args
+            .get("height")
+            .and_then(|v| v.as_u64())
+            .map(|v| v as u32);
         let do_ocr = args.get("ocr").and_then(|v| v.as_bool()).unwrap_or(false);
 
         let area = if let (Some(x), Some(y), Some(w), Some(h)) = (x, y, width, height) {
-            Some(crate::screenshot::capture::CaptureArea { x, y, width: w, height: h })
+            Some(crate::screenshot::capture::CaptureArea {
+                x,
+                y,
+                width: w,
+                height: h,
+            })
         } else {
             None
         };
@@ -67,15 +75,20 @@ impl Tool for ScreenshotTool {
         } else {
             let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
             let filename = format!("screenshot_{}.png", timestamp);
-            
+
             // Save to sandbox root
             let save_path = sandbox.resolve(std::path::Path::new(&filename))?;
-            
-            // It's possible we want to just save it and return the base64 anyway, 
+
+            // It's possible we want to just save it and return the base64 anyway,
             // but saving it locally is safer. Let's return the path.
-            image.save(&save_path).context("Failed to save screenshot image")?;
-            
-            Ok(format!("Screenshot captured successfully and saved to {}", filename))
+            image
+                .save(&save_path)
+                .context("Failed to save screenshot image")?;
+
+            Ok(format!(
+                "Screenshot captured successfully and saved to {}",
+                filename
+            ))
         }
     }
 }

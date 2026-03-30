@@ -38,7 +38,11 @@ impl AgentState {
 
         let runtime = tokio::runtime::Runtime::new()?;
 
-        Ok(Self { memory, config, runtime })
+        Ok(Self {
+            memory,
+            config,
+            runtime,
+        })
     }
 }
 
@@ -75,7 +79,10 @@ pub struct AutocompleteResponse {
 
 // ── Handlers ─────────────────────────────────────────────────────────────────
 
-pub fn sync_model_config(config: &mut AgentConfig, manager: &std::sync::Arc<Mutex<ai_launcher_core::llm::manager::LlmManager>>) {
+pub fn sync_model_config(
+    config: &mut AgentConfig,
+    manager: &std::sync::Arc<Mutex<ai_launcher_core::llm::manager::LlmManager>>,
+) {
     if let Ok(m) = manager.lock() {
         let active_name = m.status().into_iter().find(|s| s.is_active).map(|s| s.name);
         if let Some(active) = active_name {
@@ -88,7 +95,11 @@ pub fn sync_model_config(config: &mut AgentConfig, manager: &std::sync::Arc<Mute
 }
 
 /// POST /api/agent/chat — send message, get response
-pub fn agent_chat(req: &mut Request, state: &Mutex<AgentState>, llm_manager: &std::sync::Arc<Mutex<ai_launcher_core::llm::manager::LlmManager>>) -> Response<Cursor<Vec<u8>>> {
+pub fn agent_chat(
+    req: &mut Request,
+    state: &Mutex<AgentState>,
+    llm_manager: &std::sync::Arc<Mutex<ai_launcher_core::llm::manager::LlmManager>>,
+) -> Response<Cursor<Vec<u8>>> {
     let body = match crate::response::read_body(req) {
         Some(b) => b,
         None => return err(400, "Missing request body"),
@@ -117,7 +128,11 @@ pub fn agent_chat(req: &mut Request, state: &Mutex<AgentState>, llm_manager: &st
 
     // Save user message
     if let Err(e) = state.memory.conversations.save_message(
-        &conv_id, "user", Some(&chat_req.message), None, None,
+        &conv_id,
+        "user",
+        Some(&chat_req.message),
+        None,
+        None,
     ) {
         return err(500, &format!("Failed to save message: {}", e));
     }
@@ -137,26 +152,37 @@ pub fn agent_chat(req: &mut Request, state: &Mutex<AgentState>, llm_manager: &st
     match response_text {
         Ok(text) => {
             // Save assistant response
-            state.memory.conversations.save_message(
-                &conv_id, "assistant", Some(&text), None, None,
-            ).ok();
+            state
+                .memory
+                .conversations
+                .save_message(&conv_id, "assistant", Some(&text), None, None)
+                .ok();
 
-            ok("Chat response", ChatResponse {
-                response: text,
-                conversation_id: conv_id,
-            })
+            ok(
+                "Chat response",
+                ChatResponse {
+                    response: text,
+                    conversation_id: conv_id,
+                },
+            )
         }
         Err(e) => {
             // Return error but still provide conversation_id
-            let error_msg = format!("Agent error: {}. Check that your LLM provider is running.", e);
-            json_resp(502, &json!({
-                "success": false,
-                "message": error_msg,
-                "data": {
-                    "conversation_id": conv_id,
-                    "response": null
-                }
-            }))
+            let error_msg = format!(
+                "Agent error: {}. Check that your LLM provider is running.",
+                e
+            );
+            json_resp(
+                502,
+                &json!({
+                    "success": false,
+                    "message": error_msg,
+                    "data": {
+                        "conversation_id": conv_id,
+                        "response": null
+                    }
+                }),
+            )
         }
     }
 }
@@ -180,19 +206,25 @@ pub fn get_conversation_messages(id: &str, state: &Mutex<AgentState>) -> Respons
 }
 
 /// GET /api/agent/config — get current agent config
-pub fn agent_config(state: &Mutex<AgentState>, llm_manager: &std::sync::Arc<Mutex<ai_launcher_core::llm::manager::LlmManager>>) -> Response<Cursor<Vec<u8>>> {
+pub fn agent_config(
+    state: &Mutex<AgentState>,
+    llm_manager: &std::sync::Arc<Mutex<ai_launcher_core::llm::manager::LlmManager>>,
+) -> Response<Cursor<Vec<u8>>> {
     let state = state.lock().unwrap();
     let mut config = state.config.clone();
     sync_model_config(&mut config, llm_manager);
 
-    ok("Agent configuration", json!({
-        "name": config.name,
-        "provider": config.model_provider,
-        "model": config.model_name,
-        "max_iterations": config.max_iterations,
-        "tools": config.enabled_tools,
-        "workspace": config.workspace,
-    }))
+    ok(
+        "Agent configuration",
+        json!({
+            "name": config.name,
+            "provider": config.model_provider,
+            "model": config.model_name,
+            "max_iterations": config.max_iterations,
+            "tools": config.enabled_tools,
+            "workspace": config.workspace,
+        }),
+    )
 }
 
 /// POST /api/agent/autocomplete — get code suggestions
@@ -217,7 +249,9 @@ pub fn agent_autocomplete(
     );
 
     let messages = vec![
-        ai_launcher_core::llm::Message::system("You are OpenCode autocomplete. Provide raw code ONLY."),
+        ai_launcher_core::llm::Message::system(
+            "You are OpenCode autocomplete. Provide raw code ONLY.",
+        ),
         ai_launcher_core::llm::Message::user(&prompt),
     ];
 
@@ -230,13 +264,15 @@ pub fn agent_autocomplete(
     let response_text = rt.block_on(async {
         if let Some(c) = provider_config {
             let api_key = c.api_key.clone().or_else(|| {
-                c.api_key_env.as_ref().and_then(|env| std::env::var(env).ok())
+                c.api_key_env
+                    .as_ref()
+                    .and_then(|env| std::env::var(env).ok())
             });
             match ai_launcher_core::llm::create_provider(
                 &c.provider_type,
                 &c.model,
                 c.base_url.as_deref(),
-                api_key.as_deref()
+                api_key.as_deref(),
             ) {
                 Ok(provider) => match provider.chat(&messages, &[]).await {
                     Ok(resp) => Ok(resp.content.unwrap_or_default()),
@@ -250,10 +286,24 @@ pub fn agent_autocomplete(
     });
 
     match response_text {
-        Ok(text) => ok("Autocomplete successful", AutocompleteResponse {
-            // strip surrounding backticks if the LLM leaked them
-            completion: text.trim_start_matches("```").trim_start_matches("javascript").trim_start_matches("typescript").trim_start_matches("rust").trim_start_matches("svelte").trim_start_matches("css").trim_start_matches("html").trim_start_matches("\n").trim_end_matches("```").trim_end_matches("\n").to_string(),
-        }),
+        Ok(text) => ok(
+            "Autocomplete successful",
+            AutocompleteResponse {
+                // strip surrounding backticks if the LLM leaked them
+                completion: text
+                    .trim_start_matches("```")
+                    .trim_start_matches("javascript")
+                    .trim_start_matches("typescript")
+                    .trim_start_matches("rust")
+                    .trim_start_matches("svelte")
+                    .trim_start_matches("css")
+                    .trim_start_matches("html")
+                    .trim_start_matches("\n")
+                    .trim_end_matches("```")
+                    .trim_end_matches("\n")
+                    .to_string(),
+            },
+        ),
         Err(e) => err(500, &e),
     }
 }

@@ -27,8 +27,8 @@ pub struct Relation {
 
 impl KnowledgeGraph {
     pub fn new(db_path: impl AsRef<Path>) -> Result<Self> {
-        let conn = Connection::open(db_path.as_ref())
-            .context("Failed to open knowledge database")?;
+        let conn =
+            Connection::open(db_path.as_ref()).context("Failed to open knowledge database")?;
 
         conn.execute_batch(
             "CREATE TABLE IF NOT EXISTS entities (
@@ -51,10 +51,12 @@ impl KnowledgeGraph {
             );
             CREATE INDEX IF NOT EXISTS idx_entities_type ON entities(entity_type);
             CREATE INDEX IF NOT EXISTS idx_relations_source ON relations(source_id);
-            CREATE INDEX IF NOT EXISTS idx_relations_target ON relations(target_id);"
+            CREATE INDEX IF NOT EXISTS idx_relations_target ON relations(target_id);",
         )?;
 
-        Ok(Self { conn: Mutex::new(conn) })
+        Ok(Self {
+            conn: Mutex::new(conn),
+        })
     }
 
     /// Add or update an entity.
@@ -81,7 +83,13 @@ impl KnowledgeGraph {
         conn.execute(
             "INSERT INTO relations (source_id, target_id, relation_type, metadata, created_at)
              VALUES (?1, ?2, ?3, ?4, ?5)",
-            rusqlite::params![relation.source_id, relation.target_id, relation.relation_type, meta, now],
+            rusqlite::params![
+                relation.source_id,
+                relation.target_id,
+                relation.relation_type,
+                meta,
+                now
+            ],
         )?;
         Ok(())
     }
@@ -90,7 +98,7 @@ impl KnowledgeGraph {
     pub fn find_by_type(&self, entity_type: &str) -> Result<Vec<Entity>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT id, entity_type, name, metadata FROM entities WHERE entity_type = ?1"
+            "SELECT id, entity_type, name, metadata FROM entities WHERE entity_type = ?1",
         )?;
 
         let rows = stmt.query_map(rusqlite::params![entity_type], |row| {
@@ -115,7 +123,7 @@ impl KnowledgeGraph {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
             "SELECT source_id, target_id, relation_type, metadata
-             FROM relations WHERE source_id = ?1 OR target_id = ?1"
+             FROM relations WHERE source_id = ?1 OR target_id = ?1",
         )?;
 
         let rows = stmt.query_map(rusqlite::params![entity_id], |row| {
@@ -138,9 +146,8 @@ impl KnowledgeGraph {
     /// Search entities by name (case-insensitive).
     pub fn search(&self, query: &str) -> Result<Vec<Entity>> {
         let conn = self.conn.lock().unwrap();
-        let mut stmt = conn.prepare(
-            "SELECT id, entity_type, name, metadata FROM entities WHERE name LIKE ?1"
-        )?;
+        let mut stmt = conn
+            .prepare("SELECT id, entity_type, name, metadata FROM entities WHERE name LIKE ?1")?;
 
         let pattern = format!("%{}%", query);
         let rows = stmt.query_map(rusqlite::params![pattern], |row| {

@@ -80,47 +80,73 @@ struct OllamaResponse {
 // ── Conversions ──────────────────────────────────────────────────────────────
 
 fn to_ollama_messages(messages: &[Message]) -> Vec<OllamaMessage> {
-    messages.iter().map(|m| match m {
-        Message::System { content } => OllamaMessage {
-            role: "system".into(), content: content.clone(),
-            tool_calls: None, tool_call_id: None,
-        },
-        Message::User { content } => OllamaMessage {
-            role: "user".into(), content: content.clone(),
-            tool_calls: None, tool_call_id: None,
-        },
-        Message::Assistant { content, tool_calls } => {
-            let tc = if tool_calls.is_empty() { None } else {
-                Some(tool_calls.iter().map(|tc| OllamaToolCall {
-                    id: Some(tc.id.clone()),
-                    function: OllamaFunctionCall {
-                        name: tc.name.clone(),
-                        arguments: tc.arguments.clone(),
-                    },
-                }).collect())
-            };
-            OllamaMessage {
-                role: "assistant".into(),
-                content: content.clone().unwrap_or_default(),
-                tool_calls: tc, tool_call_id: None,
+    messages
+        .iter()
+        .map(|m| match m {
+            Message::System { content } => OllamaMessage {
+                role: "system".into(),
+                content: content.clone(),
+                tool_calls: None,
+                tool_call_id: None,
+            },
+            Message::User { content } => OllamaMessage {
+                role: "user".into(),
+                content: content.clone(),
+                tool_calls: None,
+                tool_call_id: None,
+            },
+            Message::Assistant {
+                content,
+                tool_calls,
+            } => {
+                let tc = if tool_calls.is_empty() {
+                    None
+                } else {
+                    Some(
+                        tool_calls
+                            .iter()
+                            .map(|tc| OllamaToolCall {
+                                id: Some(tc.id.clone()),
+                                function: OllamaFunctionCall {
+                                    name: tc.name.clone(),
+                                    arguments: tc.arguments.clone(),
+                                },
+                            })
+                            .collect(),
+                    )
+                };
+                OllamaMessage {
+                    role: "assistant".into(),
+                    content: content.clone().unwrap_or_default(),
+                    tool_calls: tc,
+                    tool_call_id: None,
+                }
             }
-        }
-        Message::Tool { tool_call_id, content } => OllamaMessage {
-            role: "tool".into(), content: content.clone(),
-            tool_calls: None, tool_call_id: Some(tool_call_id.clone()),
-        },
-    }).collect()
+            Message::Tool {
+                tool_call_id,
+                content,
+            } => OllamaMessage {
+                role: "tool".into(),
+                content: content.clone(),
+                tool_calls: None,
+                tool_call_id: Some(tool_call_id.clone()),
+            },
+        })
+        .collect()
 }
 
 fn to_ollama_tools(tools: &[ToolDef]) -> Vec<OllamaTool> {
-    tools.iter().map(|t| OllamaTool {
-        tool_type: "function".into(),
-        function: OllamaFunction {
-            name: t.name.clone(),
-            description: t.description.clone(),
-            parameters: t.parameters.clone(),
-        },
-    }).collect()
+    tools
+        .iter()
+        .map(|t| OllamaTool {
+            tool_type: "function".into(),
+            function: OllamaFunction {
+                name: t.name.clone(),
+                description: t.description.clone(),
+                parameters: t.parameters.clone(),
+            },
+        })
+        .collect()
 }
 
 // ── Provider impl ────────────────────────────────────────────────────────────
@@ -135,7 +161,8 @@ impl LlmProvider for OllamaProvider {
             tools: to_ollama_tools(tools),
         };
 
-        let resp = self.client
+        let resp = self
+            .client
             .post(format!("{}/api/chat", self.base_url))
             .json(&body)
             .send()
@@ -148,9 +175,14 @@ impl LlmProvider for OllamaProvider {
             return Err(anyhow::anyhow!("Ollama API error {}: {}", status, text));
         }
 
-        let data: OllamaResponse = resp.json().await.context("Failed to parse Ollama response")?;
+        let data: OllamaResponse = resp
+            .json()
+            .await
+            .context("Failed to parse Ollama response")?;
 
-        let tool_calls: Vec<ToolCall> = data.message.tool_calls
+        let tool_calls: Vec<ToolCall> = data
+            .message
+            .tool_calls
             .unwrap_or_default()
             .into_iter()
             .enumerate()
@@ -184,5 +216,7 @@ impl LlmProvider for OllamaProvider {
         })
     }
 
-    fn name(&self) -> &str { "ollama" }
+    fn name(&self) -> &str {
+        "ollama"
+    }
 }

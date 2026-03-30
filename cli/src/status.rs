@@ -15,9 +15,20 @@ pub async fn show_status(client: &reqwest::Client, api: &str) -> Result<()> {
                 let d = &json["data"];
                 println!("  OS:          {}", d["os"].as_str().unwrap_or("?"));
                 println!("  Arch:        {}", d["arch"].as_str().unwrap_or("?"));
-                println!("  Python:      {}", d["python_version"].as_str().unwrap_or("not found"));
-                println!("  GPU:         {}", if d["gpu_detected"].as_bool() == Some(true) { "detected".green() } else { "none".yellow() });
-                println!("  Apps:        {} total, {} running",
+                println!(
+                    "  Python:      {}",
+                    d["python_version"].as_str().unwrap_or("not found")
+                );
+                println!(
+                    "  GPU:         {}",
+                    if d["gpu_detected"].as_bool() == Some(true) {
+                        "detected".green()
+                    } else {
+                        "none".yellow()
+                    }
+                );
+                println!(
+                    "  Apps:        {} total, {} running",
                     d["total_apps"].as_u64().unwrap_or(0),
                     d["running_apps"].as_u64().unwrap_or(0)
                 );
@@ -30,7 +41,11 @@ pub async fn show_status(client: &reqwest::Client, api: &str) -> Result<()> {
 
     // Resources
     println!("\n{}", "Resources".bold().underline());
-    match client.get(format!("{}/api/system/resources", api)).send().await {
+    match client
+        .get(format!("{}/api/system/resources", api))
+        .send()
+        .await
+    {
         Ok(resp) => {
             if let Ok(json) = resp.json::<serde_json::Value>().await {
                 let d = &json["data"];

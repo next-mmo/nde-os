@@ -1,10 +1,10 @@
 // ── Filesystem tools ─────────────────────────────────────────────────────────
-mod file_read;
-mod file_write;
 mod file_delete;
 mod file_list;
-mod file_search;
 mod file_patch;
+mod file_read;
+mod file_search;
+mod file_write;
 
 // ── Shell ────────────────────────────────────────────────────────────────────
 mod shell_exec;
@@ -13,17 +13,17 @@ mod shell_exec;
 pub mod code_tools;
 
 // ── Memory tools ─────────────────────────────────────────────────────────────
-mod memory_tools;
 mod conversation_tools;
+mod memory_tools;
 
 // ── Knowledge tools ──────────────────────────────────────────────────────────
 mod knowledge_tools;
 
 // ── System integration tools ─────────────────────────────────────────────────
 mod app_tools;
-mod system_info;
 mod http_fetch;
 mod skill_list;
+mod system_info;
 
 #[cfg(feature = "screenshot")]
 pub mod screenshot;

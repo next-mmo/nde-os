@@ -149,7 +149,11 @@ impl AppManifest {
             python_version: "3".into(),
             needs_gpu: false,
             pip_deps: vec![],
-            launch_cmd: if cfg!(windows) { "ollama.exe serve".into() } else { "ollama serve".into() },
+            launch_cmd: if cfg!(windows) {
+                "ollama.exe serve".into()
+            } else {
+                "ollama serve".into()
+            },
             port: 11434,
             env: vec![],
             disk_size: "~1.2GB + models".into(),
@@ -159,11 +163,19 @@ impl AppManifest {
 
     /// Get the pip command for this platform
     pub fn pip_cmd() -> &'static str {
-        if cfg!(windows) { "pip" } else { "pip3" }
+        if cfg!(windows) {
+            "pip"
+        } else {
+            "pip3"
+        }
     }
 
     /// Get the python command for this platform
     pub fn python_cmd() -> &'static str {
-        if cfg!(windows) { "python" } else { "python3" }
+        if cfg!(windows) {
+            "python"
+        } else {
+            "python3"
+        }
     }
 }

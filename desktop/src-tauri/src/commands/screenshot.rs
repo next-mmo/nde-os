@@ -46,7 +46,8 @@ pub async fn capture_screenshot(
             .map_err(|e: anyhow::Error| format!("Failed to extract text: {}", e))?;
         response.text = Some(text);
     } else {
-        let base64: String = image_to_base64(&image).map_err(|e: anyhow::Error| format!("Failed to encode image: {}", e))?;
+        let base64: String = image_to_base64(&image)
+            .map_err(|e: anyhow::Error| format!("Failed to encode image: {}", e))?;
         response.base64_image = Some(format!("data:image/png;base64,{}", base64));
     }
 

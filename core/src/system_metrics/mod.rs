@@ -29,7 +29,8 @@ pub fn snapshot_resource_usage(base_dir: &Path) -> Result<ResourceUsage> {
     let memory_total_bytes = system.total_memory();
     let memory_used_bytes = system.used_memory();
 
-    let resolved_base_dir = std::fs::canonicalize(base_dir).unwrap_or_else(|_| base_dir.to_path_buf());
+    let resolved_base_dir =
+        std::fs::canonicalize(base_dir).unwrap_or_else(|_| base_dir.to_path_buf());
     let disks = Disks::new_with_refreshed_list();
     let disk_snapshots: Vec<DiskSnapshot> = disks
         .iter()
@@ -43,7 +44,12 @@ pub fn snapshot_resource_usage(base_dir: &Path) -> Result<ResourceUsage> {
 
     let disk = select_disk_snapshot(&resolved_base_dir, &disk_snapshots)
         .or_else(|| disk_snapshots.first())
-        .ok_or_else(|| anyhow!("No disk metrics available for {}", resolved_base_dir.to_string_lossy()))?;
+        .ok_or_else(|| {
+            anyhow!(
+                "No disk metrics available for {}",
+                resolved_base_dir.to_string_lossy()
+            )
+        })?;
 
     let disk_used_bytes = disk.total_bytes.saturating_sub(disk.available_bytes);
 
@@ -58,7 +64,10 @@ pub fn snapshot_resource_usage(base_dir: &Path) -> Result<ResourceUsage> {
     })
 }
 
-pub(crate) fn select_disk_snapshot<'a>(path: &Path, disks: &'a [DiskSnapshot]) -> Option<&'a DiskSnapshot> {
+pub(crate) fn select_disk_snapshot<'a>(
+    path: &Path,
+    disks: &'a [DiskSnapshot],
+) -> Option<&'a DiskSnapshot> {
     disks
         .iter()
         .filter(|disk| path_has_prefix(path, &disk.mount_point))

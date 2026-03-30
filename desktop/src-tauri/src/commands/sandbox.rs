@@ -11,7 +11,10 @@ pub struct DiskUsage {
 }
 
 #[tauri::command]
-pub async fn verify_sandbox(state: State<'_, AppState>, app_id: String) -> Result<SandboxVerifyResult, String> {
+pub async fn verify_sandbox(
+    state: State<'_, AppState>,
+    app_id: String,
+) -> Result<SandboxVerifyResult, String> {
     with_manager(state.manager.clone(), move |mgr| {
         mgr.verify_sandbox(&app_id).map_err(|e| e.to_string())
     })
@@ -19,7 +22,10 @@ pub async fn verify_sandbox(state: State<'_, AppState>, app_id: String) -> Resul
 }
 
 #[tauri::command]
-pub async fn get_disk_usage(state: State<'_, AppState>, app_id: String) -> Result<DiskUsage, String> {
+pub async fn get_disk_usage(
+    state: State<'_, AppState>,
+    app_id: String,
+) -> Result<DiskUsage, String> {
     with_manager(state.manager.clone(), move |mgr| {
         let bytes = mgr.disk_usage(&app_id).map_err(|e| e.to_string())?;
         let human_readable = if bytes > 1_073_741_824 {

@@ -54,7 +54,10 @@ fn status_installed() {
 
 #[test]
 fn status_running() {
-    let s = AppStatus::Running { pid: 1234, port: 7860 };
+    let s = AppStatus::Running {
+        pid: 1234,
+        port: 7860,
+    };
     let json = serde_json::to_string(&s).unwrap();
     assert!(json.contains("Running"));
     assert!(json.contains("1234"));
@@ -63,7 +66,9 @@ fn status_running() {
 
 #[test]
 fn status_error() {
-    let s = AppStatus::Error { message: "boom".into() };
+    let s = AppStatus::Error {
+        message: "boom".into(),
+    };
     let json = serde_json::to_string(&s).unwrap();
     assert!(json.contains("Error"));
     assert!(json.contains("boom"));
@@ -87,6 +92,9 @@ fn installed_app_roundtrip() {
 #[test]
 fn python_cmd_cross_platform() {
     let cmd = AppManifest::python_cmd();
-    if cfg!(windows) { assert_eq!(cmd, "python"); }
-    else { assert_eq!(cmd, "python3"); }
+    if cfg!(windows) {
+        assert_eq!(cmd, "python");
+    } else {
+        assert_eq!(cmd, "python3");
+    }
 }

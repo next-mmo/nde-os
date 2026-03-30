@@ -32,6 +32,33 @@ fn get_base_dir() -> PathBuf {
     }
 }
 
+/// Sync the AgentManager's internal LLM provider with the current active model.
+/// Called after any model switch/add/OAuth so chat streaming uses the right provider.
+fn sync_agent_provider(
+    llm_manager: &Arc<Mutex<LlmManager>>,
+    agent_manager: &Arc<tokio::sync::Mutex<AgentManager>>,
+    agent_state: &Mutex<AgentState>,
+    rt: &tokio::runtime::Runtime,
+) {
+    let mut config = {
+        let state = agent_state.lock().unwrap();
+        state.config.clone()
+    };
+    agent_handler::sync_model_config(&mut config, llm_manager);
+    rt.block_on(async {
+        let mut mgr = agent_manager.lock().await;
+        if let Err(e) = mgr.update_provider(&config) {
+            tracing::warn!("Failed to sync AgentManager provider: {}", e);
+        } else {
+            tracing::info!(
+                provider = %config.model_provider,
+                model = %config.model_name,
+                "AgentManager provider synced"
+            );
+        }
+    });
+}
+
 /// Route a request to the appropriate handler
 fn route(
     req: &mut Request,
@@ -71,11 +98,21 @@ fn route(
         (Method::Post, "/api/apps") => return handlers::install_app(req, mgr),
         (Method::Post, "/api/store/upload") => return handlers::store_upload(req, mgr),
         // Agent chat API
-        (Method::Post, "/api/agent/chat") => return agent_handler::agent_chat(req, agent, &llm_manager),
-        (Method::Post, "/api/agent/chat/stream") => {
-            return stream_handler::handle_stream_chat(req, rt, agent, &llm_manager, Some(agent_manager));
+        (Method::Post, "/api/agent/chat") => {
+            return agent_handler::agent_chat(req, agent, &llm_manager)
         }
-        (Method::Post, "/api/agent/autocomplete") => return agent_handler::agent_autocomplete(req, &llm_manager, rt),
+        (Method::Post, "/api/agent/chat/stream") => {
+            return stream_handler::handle_stream_chat(
+                req,
+                rt,
+                agent,
+                &llm_manager,
+                Some(agent_manager),
+            );
+        }
+        (Method::Post, "/api/agent/autocomplete") => {
+            return agent_handler::agent_autocomplete(req, &llm_manager, rt)
+        }
         // Task-based agent API (Phase 3)
         (Method::Post, "/api/agent/tasks") => {
             return stream_handler::spawn_task(req, rt, agent_manager);
@@ -83,23 +120,45 @@ fn route(
         (Method::Get, "/api/agent/tasks") => {
             return stream_handler::list_tasks(agent_manager, rt);
         }
-        (Method::Get, "/api/agent/conversations") => return agent_handler::list_conversations(agent),
-        (Method::Get, "/api/agent/config") => return agent_handler::agent_config(agent, &llm_manager),
+        (Method::Get, "/api/agent/conversations") => {
+            return agent_handler::list_conversations(agent)
+        }
+        (Method::Get, "/api/agent/config") => {
+            return agent_handler::agent_config(agent, &llm_manager)
+        }
         (Method::Get, "/api/agent/tools") => return subsystem_handler::list_agent_tools(),
         // Plugin API
         (Method::Get, "/api/plugins") => return plugin_handler::list_plugins(plugin_engine),
-        (Method::Post, "/api/plugins/discover") => return plugin_handler::discover_plugins(rt, plugin_engine),
+        (Method::Post, "/api/plugins/discover") => {
+            return plugin_handler::discover_plugins(rt, plugin_engine)
+        }
         // Model/Provider API
         (Method::Get, "/api/models") => return model_handler::list_models(&llm_manager),
         (Method::Get, "/api/models/active") => return model_handler::active_model(&llm_manager),
-        (Method::Get, "/api/models/recommendations") => return model_handler::recommend_gguf_models(mgr),
+        (Method::Get, "/api/models/recommendations") => {
+            return model_handler::recommend_gguf_models(mgr)
+        }
         (Method::Get, "/api/models/local") => return model_handler::list_local_models(),
-        (Method::Post, "/api/models/switch") => return model_handler::switch_model(req, &llm_manager),
-        (Method::Post, "/api/models/providers") => return model_handler::add_provider(req, &llm_manager, rt),
+        (Method::Post, "/api/models/switch") => {
+            let resp = model_handler::switch_model(req, &llm_manager);
+            sync_agent_provider(&llm_manager, agent_manager, agent, rt);
+            return resp;
+        }
+        (Method::Post, "/api/models/providers") => {
+            let resp = model_handler::add_provider(req, &llm_manager, rt);
+            sync_agent_provider(&llm_manager, agent_manager, agent, rt);
+            return resp;
+        }
         (Method::Post, "/api/models/verify") => return model_handler::verify_provider(req, rt),
         // Codex OAuth
-        (Method::Post, "/api/codex/oauth/start") => return model_handler::codex_oauth_start(req, llm_manager.clone(), rt, data_dir),
-        (Method::Get, "/api/codex/oauth/status") => return model_handler::codex_oauth_status(data_dir),
+        (Method::Post, "/api/codex/oauth/start") => {
+            let resp = model_handler::codex_oauth_start(req, llm_manager.clone(), rt, data_dir);
+            sync_agent_provider(&llm_manager, agent_manager, agent, rt);
+            return resp;
+        }
+        (Method::Get, "/api/codex/oauth/status") => {
+            return model_handler::codex_oauth_status(data_dir)
+        }
         // Channels
         (Method::Get, "/api/channels") => return subsystem_handler::list_channels(data_dir),
         // MCP
@@ -194,12 +253,12 @@ fn route(
     if path.starts_with("/api/apps/") || path.starts_with("/api/sandbox/") {
         let parts: Vec<&str> = path.trim_start_matches('/').split('/').collect();
         return match (method, parts.as_slice()) {
-            (Method::Get,    ["api", "apps", id])            => handlers::get_app(id, mgr),
-            (Method::Delete, ["api", "apps", id])            => handlers::uninstall_app(id, mgr),
-            (Method::Post,   ["api", "apps", id, "launch"])  => handlers::launch_app(id, mgr),
-            (Method::Post,   ["api", "apps", id, "stop"])    => handlers::stop_app(id, mgr),
-            (Method::Get,    ["api", "sandbox", id, "verify"]) => handlers::verify_sandbox(id, mgr),
-            (Method::Get,    ["api", "sandbox", id, "disk"])   => handlers::disk_usage(id, mgr),
+            (Method::Get, ["api", "apps", id]) => handlers::get_app(id, mgr),
+            (Method::Delete, ["api", "apps", id]) => handlers::uninstall_app(id, mgr),
+            (Method::Post, ["api", "apps", id, "launch"]) => handlers::launch_app(id, mgr),
+            (Method::Post, ["api", "apps", id, "stop"]) => handlers::stop_app(id, mgr),
+            (Method::Get, ["api", "sandbox", id, "verify"]) => handlers::verify_sandbox(id, mgr),
+            (Method::Get, ["api", "sandbox", id, "disk"]) => handlers::disk_usage(id, mgr),
             _ => err(404, &format!("Not found: {}", path)),
         };
     }
@@ -232,23 +291,22 @@ fn main() {
 
     let mgr = Arc::new(AppManager::new(&base_dir).expect("Failed to init AppManager"));
     let agent = Arc::new(Mutex::new(
-        AgentState::new(&base_dir).expect("Failed to init AgentState")
+        AgentState::new(&base_dir).expect("Failed to init AgentState"),
     ));
 
     // Phase 2: Tokio runtime for async operations
-    let rt = Arc::new(
-        tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime"),
-    );
+    let rt = Arc::new(tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime"));
 
     // Phase 2: Plugin engine
     // In dev mode (running from repo root), use repo plugins/ directly for hot reload.
     // In production, fall back to base_dir/plugins.
     let plugins_dir = {
-        let repo_plugins = std::env::current_dir()
-            .unwrap_or_default()
-            .join("plugins");
+        let repo_plugins = std::env::current_dir().unwrap_or_default().join("plugins");
         if repo_plugins.exists() && repo_plugins.is_dir() {
-            println!("  [plugins] Dev mode: using repo plugins/ at {}", repo_plugins.display());
+            println!(
+                "  [plugins] Dev mode: using repo plugins/ at {}",
+                repo_plugins.display()
+            );
             repo_plugins
         } else {
             base_dir.join("plugins")
@@ -300,27 +358,8 @@ fn main() {
         new_mgr
     });
 
-    // Auto-add default GGUF and Ollama provider if none exist (zero-config local inference)
-    if llm_mgr.configs().is_empty() {
-        let _ = llm_mgr.add_from_config(ai_launcher_core::llm::manager::ProviderConfig {
-            name: "local-gguf".into(),
-            provider_type: "gguf".into(),
-            model: "tinyllama-1.1b".into(),
-            base_url: None,
-            api_key: None,
-            api_key_env: None,
-            max_tokens: 2048,
-        });
-        let _ = llm_mgr.add_from_config(ai_launcher_core::llm::manager::ProviderConfig {
-            name: "local-ollama".into(),
-            provider_type: "ollama".into(),
-            model: "llama3.2".into(),
-            base_url: None,
-            api_key: None,
-            api_key_env: None,
-            max_tokens: 4096,
-        });
-    }
+    // No auto-add: users configure providers manually via the ModelSettings UI.
+    // Default form values (model name, base URL) are pre-filled in the frontend.
 
     let llm_manager = Arc::new(Mutex::new(llm_mgr));
 

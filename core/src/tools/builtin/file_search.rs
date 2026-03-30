@@ -44,19 +44,20 @@ impl Tool for FileSearchTool {
     }
 
     async fn execute(&self, args: serde_json::Value, sandbox: &Sandbox) -> Result<String> {
-        let query = args.get("query")
+        let query = args
+            .get("query")
             .and_then(|v| v.as_str())
             .ok_or_else(|| anyhow::anyhow!("Missing 'query' argument"))?;
 
-        let path_str = args.get("path")
-            .and_then(|v| v.as_str())
-            .unwrap_or(".");
+        let path_str = args.get("path").and_then(|v| v.as_str()).unwrap_or(".");
 
-        let extensions: Vec<String> = args.get("extensions")
+        let extensions: Vec<String> = args
+            .get("extensions")
             .and_then(|v| serde_json::from_value(v.clone()).ok())
             .unwrap_or_default();
 
-        let max_results = args.get("max_results")
+        let max_results = args
+            .get("max_results")
             .and_then(|v| v.as_u64())
             .unwrap_or(50) as usize;
 
@@ -64,7 +65,14 @@ impl Tool for FileSearchTool {
         let query_lower = query.to_lowercase();
 
         let mut results = Vec::new();
-        search_dir(&full_path, sandbox.root(), &query_lower, &extensions, max_results, &mut results)?;
+        search_dir(
+            &full_path,
+            sandbox.root(),
+            &query_lower,
+            &extensions,
+            max_results,
+            &mut results,
+        )?;
 
         if results.is_empty() {
             Ok(format!("No matches found for '{}'", query))
@@ -73,7 +81,10 @@ impl Tool for FileSearchTool {
             let truncated = total >= max_results;
             let mut output = results.join("\n");
             if truncated {
-                output.push_str(&format!("\n\n... [showing {}/{} max results]", total, max_results));
+                output.push_str(&format!(
+                    "\n\n... [showing {}/{} max results]",
+                    total, max_results
+                ));
             }
             Ok(output)
         }
@@ -103,9 +114,9 @@ fn search_dir(
         }
 
         let path = entry.path();
-        let ft = entry.file_type().unwrap_or_else(|_| {
-            fs::metadata(&path).unwrap().file_type()
-        });
+        let ft = entry
+            .file_type()
+            .unwrap_or_else(|_| fs::metadata(&path).unwrap().file_type());
 
         if ft.is_dir() {
             // Skip hidden directories
@@ -116,9 +127,7 @@ fn search_dir(
         } else if ft.is_file() {
             // Check extension filter
             if !extensions.is_empty() {
-                let ext = path.extension()
-                    .and_then(|e| e.to_str())
-                    .unwrap_or("");
+                let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
                 if !extensions.iter().any(|e| e.eq_ignore_ascii_case(ext)) {
                     continue;
                 }

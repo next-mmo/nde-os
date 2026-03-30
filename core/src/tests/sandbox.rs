@@ -1,5 +1,5 @@
-use crate::sandbox::Sandbox;
 use super::temp_base;
+use crate::sandbox::Sandbox;
 use std::path::Path;
 
 #[test]
@@ -60,7 +60,11 @@ fn blocks_absolute_path() {
     let ws = tmp.path().join("absolute").join("workspace");
     let sandbox = Sandbox::new(&ws).unwrap();
     sandbox.init_workspace().unwrap();
-    let escape = if cfg!(windows) { "C:\\Windows\\System32" } else { "/etc/passwd" };
+    let escape = if cfg!(windows) {
+        "C:\\Windows\\System32"
+    } else {
+        "/etc/passwd"
+    };
     assert!(sandbox.resolve(Path::new(escape)).is_err());
 }
 

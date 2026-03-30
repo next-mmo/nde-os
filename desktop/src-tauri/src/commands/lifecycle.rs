@@ -8,7 +8,10 @@ pub struct LaunchResult {
     pub port: u16,
 }
 
-async fn launch_app_with_manager(manager: SharedAppManager, app_id: String) -> Result<LaunchResult, String> {
+async fn launch_app_with_manager(
+    manager: SharedAppManager,
+    app_id: String,
+) -> Result<LaunchResult, String> {
     with_manager(manager, move |mgr| {
         let (pid, port) = mgr.launch(&app_id).map_err(|e| e.to_string())?;
         Ok(LaunchResult { pid, port })
@@ -16,7 +19,10 @@ async fn launch_app_with_manager(manager: SharedAppManager, app_id: String) -> R
     .await
 }
 
-async fn stop_app_with_manager(manager: SharedAppManager, app_id: String) -> Result<String, String> {
+async fn stop_app_with_manager(
+    manager: SharedAppManager,
+    app_id: String,
+) -> Result<String, String> {
     with_manager(manager, move |mgr| {
         mgr.stop(&app_id).map_err(|e| e.to_string())?;
         Ok(format!("'{}' stopped", app_id))
@@ -25,7 +31,10 @@ async fn stop_app_with_manager(manager: SharedAppManager, app_id: String) -> Res
 }
 
 #[tauri::command]
-pub async fn launch_app(state: State<'_, AppState>, app_id: String) -> Result<LaunchResult, String> {
+pub async fn launch_app(
+    state: State<'_, AppState>,
+    app_id: String,
+) -> Result<LaunchResult, String> {
     launch_app_with_manager(state.manager.clone(), app_id).await
 }
 

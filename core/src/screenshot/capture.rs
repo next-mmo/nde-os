@@ -37,7 +37,8 @@ pub fn capture_screen(area: Option<CaptureArea>) -> Result<DynamicImage> {
 
     // Use the maximum scale factor across all monitors for the canvas.
     // This ensures we can fit all monitor images without clipping.
-    let max_scale = monitors.iter()
+    let max_scale = monitors
+        .iter()
         .map(|m| m.scale_factor())
         .fold(1.0_f32, f32::max);
 
@@ -81,7 +82,9 @@ pub fn capture_screen(area: Option<CaptureArea>) -> Result<DynamicImage> {
 pub fn image_to_base64(image: &DynamicImage) -> Result<String> {
     let mut bytes: Vec<u8> = Vec::new();
     let mut cursor = std::io::Cursor::new(&mut bytes);
-    image.write_to(&mut cursor, image::ImageFormat::Png).context("Failed to encode image to PNG")?;
+    image
+        .write_to(&mut cursor, image::ImageFormat::Png)
+        .context("Failed to encode image to PNG")?;
     Ok(general_purpose::STANDARD.encode(&bytes))
 }
 
@@ -96,16 +99,29 @@ mod tests {
         for (i, m) in monitors.iter().enumerate() {
             println!(
                 "  Monitor {}: pos=({},{}) size={}x{} scale={}",
-                i, m.x(), m.y(), m.width(), m.height(), m.scale_factor()
+                i,
+                m.x(),
+                m.y(),
+                m.width(),
+                m.height(),
+                m.scale_factor()
             );
             // Test raw capture per monitor
             match m.capture_image() {
                 Ok(img) => {
                     println!("    Raw capture: {}x{}", img.width(), img.height());
                     // Check if image is all black
-                    let non_black = img.pixels().filter(|p| p.0[0] > 0 || p.0[1] > 0 || p.0[2] > 0).count();
+                    let non_black = img
+                        .pixels()
+                        .filter(|p| p.0[0] > 0 || p.0[1] > 0 || p.0[2] > 0)
+                        .count();
                     let total = (img.width() * img.height()) as usize;
-                    println!("    Non-black pixels: {} / {} ({:.1}%)", non_black, total, non_black as f64 / total as f64 * 100.0);
+                    println!(
+                        "    Non-black pixels: {} / {} ({:.1}%)",
+                        non_black,
+                        total,
+                        non_black as f64 / total as f64 * 100.0
+                    );
                     let path = format!("test_monitor_{}.png", i);
                     img.save(&path).expect("Failed to save monitor image");
                     println!("    Saved to {}", path);
@@ -118,9 +134,17 @@ mod tests {
         let img = capture_screen(None).expect("capture_screen failed");
         println!("Full capture: {}x{}", img.width(), img.height());
         let rgba = img.to_rgba8();
-        let non_black = rgba.pixels().filter(|p| p.0[0] > 0 || p.0[1] > 0 || p.0[2] > 0).count();
+        let non_black = rgba
+            .pixels()
+            .filter(|p| p.0[0] > 0 || p.0[1] > 0 || p.0[2] > 0)
+            .count();
         let total = (rgba.width() * rgba.height()) as usize;
-        println!("Non-black pixels: {} / {} ({:.1}%)", non_black, total, non_black as f64 / total as f64 * 100.0);
+        println!(
+            "Non-black pixels: {} / {} ({:.1}%)",
+            non_black,
+            total,
+            non_black as f64 / total as f64 * 100.0
+        );
         img.save("test_fullscreen.png").expect("Failed to save");
         println!("Saved test_fullscreen.png");
         assert!(non_black > 0, "Screenshot is completely black!");
@@ -128,13 +152,26 @@ mod tests {
 
     #[test]
     fn test_area_capture() {
-        let area = CaptureArea { x: 100, y: 100, width: 400, height: 300 };
+        let area = CaptureArea {
+            x: 100,
+            y: 100,
+            width: 400,
+            height: 300,
+        };
         let img = capture_screen(Some(area)).expect("area capture failed");
         println!("Area capture: {}x{}", img.width(), img.height());
         let rgba = img.to_rgba8();
-        let non_black = rgba.pixels().filter(|p| p.0[0] > 0 || p.0[1] > 0 || p.0[2] > 0).count();
+        let non_black = rgba
+            .pixels()
+            .filter(|p| p.0[0] > 0 || p.0[1] > 0 || p.0[2] > 0)
+            .count();
         let total = (rgba.width() * rgba.height()) as usize;
-        println!("Non-black pixels: {} / {} ({:.1}%)", non_black, total, non_black as f64 / total as f64 * 100.0);
+        println!(
+            "Non-black pixels: {} / {} ({:.1}%)",
+            non_black,
+            total,
+            non_black as f64 / total as f64 * 100.0
+        );
         img.save("test_area.png").expect("Failed to save");
         println!("Saved test_area.png");
         assert!(non_black > 0, "Area screenshot is completely black!");

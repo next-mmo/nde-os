@@ -2,11 +2,11 @@ mod commands;
 mod state;
 
 use ai_launcher_core::shield::launcher::BrowserLauncher;
-use tauri::Manager;
 use commands::shield::ShieldLauncherState;
 use state::AppState;
 use std::path::PathBuf;
 use std::sync::Arc;
+use tauri::Manager;
 use tokio::sync::Mutex;
 
 /// Cross-platform base directory
@@ -83,6 +83,9 @@ pub fn run() {
             commands::filesystem::rename_entry,
             commands::filesystem::read_file_content,
             commands::filesystem::write_file_content,
+            commands::filesystem::list_directory_external,
+            commands::filesystem::read_file_external,
+            commands::filesystem::write_file_external,
             // shield browser
             commands::shield::list_shield_profiles,
             commands::shield::get_shield_profile,

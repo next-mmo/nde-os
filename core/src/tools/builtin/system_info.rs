@@ -26,13 +26,20 @@ impl Tool for SystemInfoTool {
         let mut output = String::from("=== NDE-OS System Info ===\n\n");
 
         // OS info
-        output.push_str(&format!("Platform: {} {}\n", std::env::consts::OS, std::env::consts::ARCH));
+        output.push_str(&format!(
+            "Platform: {} {}\n",
+            std::env::consts::OS,
+            std::env::consts::ARCH
+        ));
 
         // Sandbox info
         output.push_str(&format!("Sandbox root: {}\n", sandbox.root().display()));
 
         let sandbox_usage = sandbox.disk_usage().unwrap_or(0);
-        output.push_str(&format!("Sandbox disk usage: {}\n", format_bytes(sandbox_usage)));
+        output.push_str(&format!(
+            "Sandbox disk usage: {}\n",
+            format_bytes(sandbox_usage)
+        ));
 
         // System resources
         match system_metrics::snapshot_resource_usage(sandbox.root()) {

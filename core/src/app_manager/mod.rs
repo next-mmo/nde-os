@@ -1,4 +1,7 @@
-use crate::manifest::{AppManifest, AppStatus, InstalledApp, SourceType, StoreUploadRequest, StoreUploadResult, ValidationError};
+use crate::manifest::{
+    AppManifest, AppStatus, InstalledApp, SourceType, StoreUploadRequest, StoreUploadResult,
+    ValidationError,
+};
 use crate::sandbox::Sandbox;
 use crate::uv_env::{self, UvEnv};
 use anyhow::{anyhow, Context, Result};
@@ -99,7 +102,11 @@ impl AppManager {
         let possible_dirs = vec![
             current_dir.join("manifests").join(&manifest.id),
             current_dir.join("..").join("manifests").join(&manifest.id),
-            current_dir.join("..").join("..").join("manifests").join(&manifest.id),
+            current_dir
+                .join("..")
+                .join("..")
+                .join("manifests")
+                .join(&manifest.id),
         ];
 
         let mut found = false;
@@ -111,7 +118,7 @@ impl AppManager {
                 break;
             }
         }
-        
+
         if !found {
             println!("  [install] Warning: No local manifest directory found to copy files from.");
         }
@@ -120,7 +127,10 @@ impl AppManager {
         println!("  [2/4] Setting up Python environment...");
         let uv = self.uv_for_app(&manifest.id, &manifest.python_version);
         if let Err(e) = uv.ensure_python() {
-            println!("  [uv] Python setup skipped: {} (will use system Python)", e);
+            println!(
+                "  [uv] Python setup skipped: {} (will use system Python)",
+                e
+            );
         }
 
         // 3. Create venv (best-effort)
@@ -128,7 +138,10 @@ impl AppManager {
         let has_venv = match uv.create_venv() {
             Ok(()) => true,
             Err(e) => {
-                println!("  [uv] Venv creation skipped: {} (will use system Python)", e);
+                println!(
+                    "  [uv] Venv creation skipped: {} (will use system Python)",
+                    e
+                );
                 false
             }
         };
@@ -137,7 +150,10 @@ impl AppManager {
         if has_venv && !manifest.pip_deps.is_empty() {
             println!("  [4/5] Installing dependencies via uv...");
             if let Err(e) = uv.install_deps(&manifest.pip_deps) {
-                println!("  [uv] Dep install issue: {} (app may need manual setup)", e);
+                println!(
+                    "  [uv] Dep install issue: {} (app may need manual setup)",
+                    e
+                );
             }
             let req_file = sandbox.root().join("requirements.txt");
             uv.install_requirements(&req_file).ok();
@@ -157,7 +173,9 @@ impl AppManager {
                 .current_dir(sandbox.root())
                 .status();
             match npm_run {
-                Ok(status) if !status.success() => println!("  [npm] install exited with {}", status),
+                Ok(status) if !status.success() => {
+                    println!("  [npm] install exited with {}", status)
+                }
                 Err(e) => println!("  [npm] install failed: {}", e),
                 _ => println!("  [npm] installed successfully"),
             }
@@ -265,7 +283,7 @@ impl AppManager {
             let mut running = self.running.lock().unwrap();
             if let Some(mut child) = running.remove(app_id) {
                 let pid = child.id();
-                
+
                 #[cfg(windows)]
                 {
                     std::process::Command::new("taskkill")
@@ -273,12 +291,12 @@ impl AppManager {
                         .output()
                         .ok();
                 }
-                
+
                 #[cfg(not(windows))]
                 {
                     child.kill().ok();
                 }
-                
+
                 child.wait().ok();
             } else {
                 return Err(anyhow!("App '{}' is not running", app_id));
@@ -321,7 +339,7 @@ impl AppManager {
             AppManifest::sample_node_fullstack(),
             AppManifest::sample_counter(),
             AppManifest::stable_diffusion(),
-            AppManifest::ollama()
+            AppManifest::ollama(),
         ]
     }
 
@@ -329,10 +347,18 @@ impl AppManager {
         Sandbox::new(&self.app_workspace(app_id))?.disk_usage()
     }
 
-    pub fn running_count(&self) -> usize { self.running.lock().unwrap().len() }
-    pub fn total_count(&self) -> usize { self.registry.lock().unwrap().len() }
-    pub fn base_dir(&self) -> &Path { &self.base_dir }
-    pub fn uv_bin(&self) -> &Path { &self.uv_bin }
+    pub fn running_count(&self) -> usize {
+        self.running.lock().unwrap().len()
+    }
+    pub fn total_count(&self) -> usize {
+        self.registry.lock().unwrap().len()
+    }
+    pub fn base_dir(&self) -> &Path {
+        &self.base_dir
+    }
+    pub fn uv_bin(&self) -> &Path {
+        &self.uv_bin
+    }
 
     /// Get uv info for the system endpoint
     pub fn uv_info(&self) -> serde_json::Value {
@@ -345,7 +371,10 @@ impl AppManager {
 
     fn save_registry(&self) -> Result<()> {
         let reg = self.registry.lock().unwrap();
-        fs::write(self.base_dir.join("registry.json"), serde_json::to_string_pretty(&*reg)?)?;
+        fs::write(
+            self.base_dir.join("registry.json"),
+            serde_json::to_string_pretty(&*reg)?,
+        )?;
         Ok(())
     }
 
@@ -467,7 +496,10 @@ impl AppManager {
 
         let app_id = manifest.id.clone();
         let app_name = manifest.name.clone();
-        log.push(format!("[upload] Parsed manifest: id={}, name={}", app_id, app_name));
+        log.push(format!(
+            "[upload] Parsed manifest: id={}, name={}",
+            app_id, app_name
+        ));
 
         // ── 4. Validate manifest fields ─────────────────────────────────
         let mut manifest_errors = Vec::new();
@@ -558,33 +590,31 @@ impl AppManager {
         let mut errors = Vec::new();
 
         match req.source_type {
-            SourceType::Folder => {
-                match &req.source_path {
-                    None => errors.push(ValidationError {
-                        field: "source_path".into(),
-                        message: "source_path is required for folder upload".into(),
-                    }),
-                    Some(p) => {
-                        let path = Path::new(p);
-                        if !path.exists() {
-                            errors.push(ValidationError {
-                                field: "source_path".into(),
-                                message: format!("Path does not exist: {}", p),
-                            });
-                        } else if !path.is_dir() {
-                            errors.push(ValidationError {
-                                field: "source_path".into(),
-                                message: format!("Path is not a directory: {}", p),
-                            });
-                        } else if !path.join("manifest.json").exists() {
-                            errors.push(ValidationError {
-                                field: "source_path".into(),
-                                message: "Directory does not contain manifest.json".into(),
-                            });
-                        }
+            SourceType::Folder => match &req.source_path {
+                None => errors.push(ValidationError {
+                    field: "source_path".into(),
+                    message: "source_path is required for folder upload".into(),
+                }),
+                Some(p) => {
+                    let path = Path::new(p);
+                    if !path.exists() {
+                        errors.push(ValidationError {
+                            field: "source_path".into(),
+                            message: format!("Path does not exist: {}", p),
+                        });
+                    } else if !path.is_dir() {
+                        errors.push(ValidationError {
+                            field: "source_path".into(),
+                            message: format!("Path is not a directory: {}", p),
+                        });
+                    } else if !path.join("manifest.json").exists() {
+                        errors.push(ValidationError {
+                            field: "source_path".into(),
+                            message: "Directory does not contain manifest.json".into(),
+                        });
                     }
                 }
-            }
+            },
             SourceType::Zip => {
                 match &req.source_path {
                     None => errors.push(ValidationError {
@@ -605,13 +635,14 @@ impl AppManager {
                             });
                         } else {
                             // Check extension
-                            let ext = path.extension()
-                                .and_then(|e| e.to_str())
-                                .unwrap_or("");
+                            let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
                             if ext.to_lowercase() != "zip" {
                                 errors.push(ValidationError {
                                     field: "source_path".into(),
-                                    message: format!("File must have .zip extension, got: .{}", ext),
+                                    message: format!(
+                                        "File must have .zip extension, got: .{}",
+                                        ext
+                                    ),
                                 });
                             }
                         }
@@ -634,7 +665,8 @@ impl AppManager {
                             });
                         }
                         // Must look like a git repo URL
-                        let known_hosts = ["github.com", "gitlab.com", "bitbucket.org", "codeberg.org"];
+                        let known_hosts =
+                            ["github.com", "gitlab.com", "bitbucket.org", "codeberg.org"];
                         let is_known_host = known_hosts.iter().any(|h| url_lower.contains(h));
                         let has_git_ext = url_lower.ends_with(".git");
                         if !is_known_host && !has_git_ext {
@@ -681,7 +713,8 @@ impl AppManager {
         let status = if cfg!(windows) {
             Command::new("powershell")
                 .args([
-                    "-NoProfile", "-Command",
+                    "-NoProfile",
+                    "-Command",
                     &format!(
                         "Expand-Archive -Path '{}' -DestinationPath '{}' -Force",
                         zip_str, dest_str
@@ -728,9 +761,7 @@ impl AppManager {
     /// If a directory contains exactly one subdirectory and nothing else,
     /// move its contents up (common with ZIP archives)
     fn flatten_single_subdir(dir: &Path) -> Result<()> {
-        let entries: Vec<_> = fs::read_dir(dir)?
-            .filter_map(|e| e.ok())
-            .collect();
+        let entries: Vec<_> = fs::read_dir(dir)?.filter_map(|e| e.ok()).collect();
 
         if entries.len() == 1 && entries[0].file_type().map(|f| f.is_dir()).unwrap_or(false) {
             let sub = entries[0].path();
@@ -746,4 +777,3 @@ impl AppManager {
         Ok(())
     }
 }
-

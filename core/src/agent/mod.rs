@@ -41,7 +41,13 @@ impl AgentRuntime {
         if !config.system_prompt.is_empty() {
             messages.push(Message::system(&config.system_prompt));
         }
-        Self { config, provider, tools, sandbox, messages }
+        Self {
+            config,
+            provider,
+            tools,
+            sandbox,
+            messages,
+        }
     }
 
     /// Build a runtime from config, auto-selecting provider and tools.
@@ -99,14 +105,18 @@ impl AgentRuntime {
             }
         }
 
-        Err(anyhow!("Max iterations ({}) reached", self.config.max_iterations))
+        Err(anyhow!(
+            "Max iterations ({}) reached",
+            self.config.max_iterations
+        ))
     }
 
     /// Reset conversation history (keep system prompt).
     pub fn reset(&mut self) {
         self.messages.clear();
         if !self.config.system_prompt.is_empty() {
-            self.messages.push(Message::system(&self.config.system_prompt));
+            self.messages
+                .push(Message::system(&self.config.system_prompt));
         }
     }
 
@@ -116,7 +126,8 @@ impl AgentRuntime {
                 resp.content.as_deref().unwrap_or(""),
             ));
         } else {
-            self.messages.push(Message::assistant_tool_calls(resp.tool_calls.clone()));
+            self.messages
+                .push(Message::assistant_tool_calls(resp.tool_calls.clone()));
         }
     }
 }

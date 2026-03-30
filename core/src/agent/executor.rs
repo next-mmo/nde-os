@@ -76,11 +76,7 @@ pub async fn execute_task(
     initial_messages: Option<Vec<Message>>,
 ) -> Result<String> {
     // Set up guardian
-    let mut guardian = Guardian::new(
-        &task.id,
-        &exec_config.guardian,
-        &exec_config.audit_dir,
-    )?;
+    let mut guardian = Guardian::new(&task.id, &exec_config.guardian, &exec_config.audit_dir)?;
     guardian.start_metering();
 
     // Emit task started
@@ -146,7 +142,7 @@ pub async fn execute_task(
         tracing::debug!(iteration, task_id = %task.id, "Agent loop iteration");
 
         // Call LLM with retry
-        let response = call_llm_with_retry(
+        let response = match call_llm_with_retry(
             &provider,
             &messages,
             &tool_defs,
@@ -156,7 +152,21 @@ pub async fn execute_task(
             exec_config.max_retries,
             exec_config.backoff_base_ms,
         )
-        .await?;
+        .await
+        {
+            Ok(r) => r,
+            Err(e) => {
+                let err_msg = e.to_string();
+                task.mark_failed(&err_msg);
+                let _ = event_tx
+                    .send(AgentEvent::failed(&task.id, &err_msg, 0, false))
+                    .await;
+                if let Some(store) = store {
+                    let _ = store.save_task(task);
+                }
+                return Err(e);
+            }
+        };
 
         // Track tokens
         if let Some(ref usage) = response.usage {
@@ -223,7 +233,17 @@ pub async fn execute_task(
             }
 
             // Authorize via guardian
-            guardian.authorize_tool(&call.name, &call.arguments)?;
+            if let Err(e) = guardian.authorize_tool(&call.name, &call.arguments) {
+                let err_msg = e.to_string();
+                task.mark_failed(&err_msg);
+                let _ = event_tx
+                    .send(AgentEvent::failed(&task.id, &err_msg, 0, false))
+                    .await;
+                if let Some(store) = store {
+                    let _ = store.save_task(task);
+                }
+                return Err(e);
+            }
 
             let _ = event_tx
                 .send(AgentEvent::tool_start(
@@ -385,11 +405,7 @@ mod tests {
 
     #[async_trait::async_trait]
     impl LlmProvider for MockProvider {
-        async fn chat(
-            &self,
-            _messages: &[Message],
-            _tools: &[ToolDef],
-        ) -> Result<LlmResponse> {
+        async fn chat(&self, _messages: &[Message], _tools: &[ToolDef]) -> Result<LlmResponse> {
             Ok(LlmResponse {
                 content: Some(self.response.clone()),
                 tool_calls: vec![],

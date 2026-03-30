@@ -30,7 +30,10 @@ impl Tool for AppListTool {
     async fn execute(&self, args: serde_json::Value, sandbox: &Sandbox) -> Result<String> {
         // Read registry.json from the apps base directory
         // The apps base dir is typically at sandbox root's parent, but we read from sandbox data
-        let _registry_path = sandbox.root().join("data").join("app_registry_snapshot.json");
+        let _registry_path = sandbox
+            .root()
+            .join("data")
+            .join("app_registry_snapshot.json");
 
         // Fallback: read from the well-known registry location
         let alt_paths = [
@@ -50,17 +53,21 @@ impl Tool for AppListTool {
                         if let Some(obj) = registry.as_object() {
                             output.push_str(&format!("Installed apps: {}\n\n", obj.len()));
                             for (id, app) in obj {
-                                let name = app.get("manifest")
+                                let name = app
+                                    .get("manifest")
                                     .and_then(|m| m.get("name"))
                                     .and_then(|n| n.as_str())
                                     .unwrap_or(id);
-                                let status = app.get("status")
+                                let status = app
+                                    .get("status")
                                     .map(|s| format!("{}", s))
                                     .unwrap_or_else(|| "unknown".into());
-                                let workspace = app.get("workspace")
-                                    .and_then(|w| w.as_str())
-                                    .unwrap_or("?");
-                                output.push_str(&format!("  [{}] {} — status: {}\n    workspace: {}\n\n", id, name, status, workspace));
+                                let workspace =
+                                    app.get("workspace").and_then(|w| w.as_str()).unwrap_or("?");
+                                output.push_str(&format!(
+                                    "  [{}] {} — status: {}\n    workspace: {}\n\n",
+                                    id, name, status, workspace
+                                ));
                             }
                         }
                         break;
@@ -73,7 +80,8 @@ impl Tool for AppListTool {
             output.push_str("No apps installed yet.\n");
         }
 
-        let include_catalog = args.get("include_catalog")
+        let include_catalog = args
+            .get("include_catalog")
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
 
@@ -113,7 +121,8 @@ impl Tool for AppInstallTool {
     }
 
     async fn execute(&self, args: serde_json::Value, sandbox: &Sandbox) -> Result<String> {
-        let app_id = args.get("app_id")
+        let app_id = args
+            .get("app_id")
             .and_then(|v| v.as_str())
             .ok_or_else(|| anyhow::anyhow!("Missing 'app_id' argument"))?;
 
@@ -167,7 +176,8 @@ impl Tool for AppLaunchTool {
     }
 
     async fn execute(&self, args: serde_json::Value, sandbox: &Sandbox) -> Result<String> {
-        let app_id = args.get("app_id")
+        let app_id = args
+            .get("app_id")
             .and_then(|v| v.as_str())
             .ok_or_else(|| anyhow::anyhow!("Missing 'app_id' argument"))?;
 
@@ -215,7 +225,8 @@ impl Tool for AppStopTool {
     }
 
     async fn execute(&self, args: serde_json::Value, sandbox: &Sandbox) -> Result<String> {
-        let app_id = args.get("app_id")
+        let app_id = args
+            .get("app_id")
             .and_then(|v| v.as_str())
             .ok_or_else(|| anyhow::anyhow!("Missing 'app_id' argument"))?;
 

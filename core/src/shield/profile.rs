@@ -154,17 +154,17 @@ impl ProfileManager {
 
         // Check for duplicate name (case-insensitive)
         let existing = self.list_profiles()?;
-        if existing.iter().any(|p| p.name.to_lowercase() == profile.name.to_lowercase()) {
+        if existing
+            .iter()
+            .any(|p| p.name.to_lowercase() == profile.name.to_lowercase())
+        {
             anyhow::bail!("Profile with name '{}' already exists", profile.name);
         }
 
-        fs::create_dir_all(&data_dir)
-            .context("Failed to create profile data directory")?;
+        fs::create_dir_all(&data_dir).context("Failed to create profile data directory")?;
 
-        let json = serde_json::to_string_pretty(profile)
-            .context("Failed to serialize profile")?;
-        fs::write(&metadata_path, json)
-            .context("Failed to write profile metadata")?;
+        let json = serde_json::to_string_pretty(profile).context("Failed to serialize profile")?;
+        fs::write(&metadata_path, json).context("Failed to write profile metadata")?;
 
         Ok(())
     }
@@ -176,8 +176,8 @@ impl ProfileManager {
         }
 
         let mut profiles = Vec::new();
-        for entry in fs::read_dir(&self.profiles_dir)
-            .context("Failed to read profiles directory")?
+        for entry in
+            fs::read_dir(&self.profiles_dir).context("Failed to read profiles directory")?
         {
             let entry = entry?;
             let path = entry.path();
@@ -202,8 +202,8 @@ impl ProfileManager {
         let metadata_path = self.profiles_dir.join(id).join("metadata.json");
         let content = fs::read_to_string(&metadata_path)
             .with_context(|| format!("Profile '{id}' not found"))?;
-        let profile: ShieldProfile = serde_json::from_str(&content)
-            .context("Failed to parse profile metadata")?;
+        let profile: ShieldProfile =
+            serde_json::from_str(&content).context("Failed to parse profile metadata")?;
         Ok(profile)
     }
 
@@ -214,10 +214,8 @@ impl ProfileManager {
             anyhow::bail!("Profile '{}' not found", profile.id);
         }
 
-        let json = serde_json::to_string_pretty(profile)
-            .context("Failed to serialize profile")?;
-        fs::write(&metadata_path, json)
-            .context("Failed to write profile metadata")?;
+        let json = serde_json::to_string_pretty(profile).context("Failed to serialize profile")?;
+        fs::write(&metadata_path, json).context("Failed to write profile metadata")?;
         Ok(())
     }
 
@@ -234,8 +232,12 @@ impl ProfileManager {
             anyhow::bail!("Cannot delete profile while browser is running. Stop it first.");
         }
 
-        fs::remove_dir_all(&profile_dir)
-            .with_context(|| format!("Failed to delete profile directory: {}", profile_dir.display()))?;
+        fs::remove_dir_all(&profile_dir).with_context(|| {
+            format!(
+                "Failed to delete profile directory: {}",
+                profile_dir.display()
+            )
+        })?;
         Ok(())
     }
 
@@ -243,7 +245,10 @@ impl ProfileManager {
     pub fn rename_profile(&self, id: &str, new_name: &str) -> Result<ShieldProfile> {
         // Check duplicate
         let existing = self.list_profiles()?;
-        if existing.iter().any(|p| p.name.to_lowercase() == new_name.to_lowercase()) {
+        if existing
+            .iter()
+            .any(|p| p.name.to_lowercase() == new_name.to_lowercase())
+        {
             anyhow::bail!("Profile with name '{new_name}' already exists");
         }
 

@@ -168,7 +168,11 @@ impl EngineManager {
 
         // Stream chunks and report progress
         let mut stream = response;
-        while let Some(chunk) = stream.chunk().await.context("Failed to read download chunk")? {
+        while let Some(chunk) = stream
+            .chunk()
+            .await
+            .context("Failed to read download chunk")?
+        {
             downloaded += chunk.len() as u64;
             bytes_buf.extend_from_slice(&chunk);
             on_progress(downloaded, total_size);
@@ -176,8 +180,7 @@ impl EngineManager {
 
         // Determine archive type from URL and extract
         let archive_path = install_dir.join("_download_archive");
-        std::fs::write(&archive_path, &bytes_buf)
-            .context("Failed to write downloaded archive")?;
+        std::fs::write(&archive_path, &bytes_buf).context("Failed to write downloaded archive")?;
 
         // Extract based on file extension in URL
         if download_url.ends_with(".zip") {
@@ -237,10 +240,8 @@ impl EngineManager {
 // ─── Archive Extraction ────────────────────────────────────────────
 
 fn extract_zip(archive_path: &Path, dest_dir: &Path) -> Result<()> {
-    let file = std::fs::File::open(archive_path)
-        .context("Failed to open zip archive")?;
-    let mut archive = zip::ZipArchive::new(file)
-        .context("Failed to read zip archive")?;
+    let file = std::fs::File::open(archive_path).context("Failed to open zip archive")?;
+    let mut archive = zip::ZipArchive::new(file).context("Failed to read zip archive")?;
 
     for i in 0..archive.len() {
         let mut file = archive.by_index(i)?;
@@ -262,25 +263,25 @@ fn extract_zip(archive_path: &Path, dest_dir: &Path) -> Result<()> {
 
 fn extract_tar_gz(archive_path: &Path, dest_dir: &Path) -> Result<()> {
     use std::io::Read;
-    let file = std::fs::File::open(archive_path)
-        .context("Failed to open tar.gz archive")?;
+    let file = std::fs::File::open(archive_path).context("Failed to open tar.gz archive")?;
     let buf_reader = std::io::BufReader::new(file);
     let gz = flate2::read::GzDecoder::new(buf_reader);
     let mut archive = tar::Archive::new(gz);
 
-    archive.unpack(dest_dir)
+    archive
+        .unpack(dest_dir)
         .context("Failed to extract tar.gz archive")?;
     Ok(())
 }
 
 fn extract_tar_bz2(archive_path: &Path, dest_dir: &Path) -> Result<()> {
-    let file = std::fs::File::open(archive_path)
-        .context("Failed to open tar.bz2 archive")?;
+    let file = std::fs::File::open(archive_path).context("Failed to open tar.bz2 archive")?;
     let buf_reader = std::io::BufReader::new(file);
     let bz2 = bzip2::read::BzDecoder::new(buf_reader);
     let mut archive = tar::Archive::new(bz2);
 
-    archive.unpack(dest_dir)
+    archive
+        .unpack(dest_dir)
         .context("Failed to extract tar.bz2 archive")?;
     Ok(())
 }

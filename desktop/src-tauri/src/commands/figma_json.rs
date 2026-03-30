@@ -6,10 +6,7 @@
 
 use std::collections::{BTreeMap, HashMap};
 
-use ai_launcher_core::figma_json::{
-    converter, llm_prompt, style_resolver,
-    types::FDocument,
-};
+use ai_launcher_core::figma_json::{converter, llm_prompt, style_resolver, types::FDocument};
 
 /// Convert raw JSON (FDocument or Figma API response) into an FDocument.
 ///
@@ -27,8 +24,7 @@ pub async fn convert_figma_json(json_str: String) -> Result<FDocument, String> {
         }
 
         // Try parsing as raw Figma API response
-        converter::convert_figma_file(&json_str, &HashMap::new(), 0)
-            .map_err(|e| e.to_string())
+        converter::convert_figma_file(&json_str, &HashMap::new(), 0).map_err(|e| e.to_string())
     })
     .await
     .map_err(|e| e.to_string())?
@@ -39,9 +35,7 @@ pub async fn convert_figma_json(json_str: String) -> Result<FDocument, String> {
 /// Returns a map of `node_id → css_inline_string` for every node in the tree.
 /// The frontend applies these directly without any JS computation.
 #[tauri::command]
-pub async fn resolve_document_styles(
-    json_str: String,
-) -> Result<BTreeMap<String, String>, String> {
+pub async fn resolve_document_styles(json_str: String) -> Result<BTreeMap<String, String>, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let doc: FDocument = serde_json::from_str(&json_str).map_err(|e| e.to_string())?;
         Ok(style_resolver::resolve_document_styles(&doc))

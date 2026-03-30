@@ -17,27 +17,51 @@ use self::streaming::ChunkStream;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "role", rename_all = "lowercase")]
 pub enum Message {
-    System { content: String },
-    User { content: String },
-    Assistant { content: Option<String>, #[serde(default)] tool_calls: Vec<ToolCall> },
-    Tool { tool_call_id: String, content: String },
+    System {
+        content: String,
+    },
+    User {
+        content: String,
+    },
+    Assistant {
+        content: Option<String>,
+        #[serde(default)]
+        tool_calls: Vec<ToolCall>,
+    },
+    Tool {
+        tool_call_id: String,
+        content: String,
+    },
 }
 
 impl Message {
     pub fn system(content: &str) -> Self {
-        Self::System { content: content.to_string() }
+        Self::System {
+            content: content.to_string(),
+        }
     }
     pub fn user(content: &str) -> Self {
-        Self::User { content: content.to_string() }
+        Self::User {
+            content: content.to_string(),
+        }
     }
     pub fn assistant_text(content: &str) -> Self {
-        Self::Assistant { content: Some(content.to_string()), tool_calls: vec![] }
+        Self::Assistant {
+            content: Some(content.to_string()),
+            tool_calls: vec![],
+        }
     }
     pub fn assistant_tool_calls(tool_calls: Vec<ToolCall>) -> Self {
-        Self::Assistant { content: None, tool_calls }
+        Self::Assistant {
+            content: None,
+            tool_calls,
+        }
     }
     pub fn tool_result(id: &str, content: &str) -> Self {
-        Self::Tool { tool_call_id: id.to_string(), content: content.to_string() }
+        Self::Tool {
+            tool_call_id: id.to_string(),
+            content: content.to_string(),
+        }
     }
 }
 
@@ -85,19 +109,11 @@ pub struct Usage {
 #[async_trait]
 pub trait LlmProvider: Send + Sync {
     /// Non-streaming chat completion.
-    async fn chat(
-        &self,
-        messages: &[Message],
-        tools: &[ToolDef],
-    ) -> Result<LlmResponse>;
+    async fn chat(&self, messages: &[Message], tools: &[ToolDef]) -> Result<LlmResponse>;
 
     /// Streaming chat completion — returns a stream of chunks.
     /// Default implementation falls back to non-streaming.
-    async fn chat_stream(
-        &self,
-        messages: &[Message],
-        tools: &[ToolDef],
-    ) -> Result<ChunkStream> {
+    async fn chat_stream(&self, messages: &[Message], tools: &[ToolDef]) -> Result<ChunkStream> {
         let resp = self.chat(messages, tools).await?;
         let stream = async_stream::stream! {
             if let Some(content) = &resp.content {
@@ -167,11 +183,14 @@ pub fn create_provider(
             Ok(Box::new(anthropic::AnthropicProvider::new(url, model, &key)))
         }
         "codex" => {
+            // Codex uses OAuth tokens from ~/.codex/auth.json (Codex CLI store).
+            // Falls back to explicit api_key or CODEX_API_KEY env var.
             let url = base_url.unwrap_or("https://api.openai.com/v1");
             let key = api_key
                 .map(|k| k.to_string())
+                .or_else(|| codex_oauth::get_codex_access_token().ok())
                 .or_else(|| std::env::var("CODEX_API_KEY").ok())
-                .ok_or_else(|| anyhow::anyhow!("API key required for Codex (set CODEX_API_KEY or api_key)"))?;
+                .ok_or_else(|| anyhow::anyhow!("Codex not authenticated — sign in via LLM Providers settings or run `codex login`"))?;
             Ok(Box::new(openai_compat::OpenAiCompatProvider::new(url, model, &key)))
         }
         "groq" => {
@@ -239,42 +258,63 @@ pub async fn verify_provider_config(config: &manager::ProviderConfig) -> anyhow:
                             .join(".ai-launcher")
                     }
                 });
-            let provider = gguf::GgufProvider::new(
-                &data_dir,
-                &config.model,
-                config.base_url.as_deref(),
-                None,
-            );
+            let provider =
+                gguf::GgufProvider::new(&data_dir, &config.model, config.base_url.as_deref(), None);
             let result = provider.verify().await;
             if result.ok {
-                tracing::info!("GGUF verify OK: model_exists={}, server={}", result.model_exists, result.server_available);
+                tracing::info!(
+                    "GGUF verify OK: model_exists={}, server={}",
+                    result.model_exists,
+                    result.server_available
+                );
                 Ok(())
             } else {
-                Err(anyhow::anyhow!("{}", result.error.unwrap_or_else(|| "GGUF verification failed".into())))
+                Err(anyhow::anyhow!(
+                    "{}",
+                    result
+                        .error
+                        .unwrap_or_else(|| "GGUF verification failed".into())
+                ))
             }
         }
 
         // Ollama: verify server reachable + model available
         "ollama" => {
-            let url = config.base_url.clone().unwrap_or_else(|| "http://localhost:11434".to_string());
+            let url = config
+                .base_url
+                .clone()
+                .unwrap_or_else(|| "http://localhost:11434".to_string());
             let client = reqwest::Client::new();
             match tokio::time::timeout(
                 std::time::Duration::from_secs(3),
-                client.get(format!("{}/api/tags", url)).send()
-            ).await {
+                client.get(format!("{}/api/tags", url)).send(),
+            )
+            .await
+            {
                 Ok(Ok(resp)) if resp.status().is_success() => {
                     if let Ok(body) = resp.text().await {
                         let model_name = &config.model;
                         if let Ok(json) = serde_json::from_str::<serde_json::Value>(&body) {
                             let models = json["models"].as_array();
-                            let found = models.map(|arr| arr.iter().any(|m| {
-                                let n = m["name"].as_str().unwrap_or_default();
-                                n == model_name || n.starts_with(&format!("{}:", model_name))
-                            })).unwrap_or(false);
+                            let found = models
+                                .map(|arr| {
+                                    arr.iter().any(|m| {
+                                        let n = m["name"].as_str().unwrap_or_default();
+                                        n == model_name
+                                            || n.starts_with(&format!("{}:", model_name))
+                                    })
+                                })
+                                .unwrap_or(false);
                             if !found {
-                                let available: Vec<String> = models.map(|arr| {
-                                    arr.iter().filter_map(|m| m["name"].as_str().map(|s| s.to_string())).collect()
-                                }).unwrap_or_default();
+                                let available: Vec<String> = models
+                                    .map(|arr| {
+                                        arr.iter()
+                                            .filter_map(|m| {
+                                                m["name"].as_str().map(|s| s.to_string())
+                                            })
+                                            .collect()
+                                    })
+                                    .unwrap_or_default();
                                 return Err(anyhow::anyhow!(
                                     "Ollama is running but model '{}' is not pulled. Available: {}. Run: ollama pull {}",
                                     model_name,
@@ -286,16 +326,29 @@ pub async fn verify_provider_config(config: &manager::ProviderConfig) -> anyhow:
                     }
                     Ok(())
                 }
-                Ok(Ok(resp)) => Err(anyhow::anyhow!("Ollama server returned HTTP {}", resp.status())),
-                Ok(Err(e)) => Err(anyhow::anyhow!("Cannot connect to Ollama at {}: {}", url, e)),
-                Err(_) => Err(anyhow::anyhow!("Ollama connection timed out at {} — is Ollama running?", url)),
+                Ok(Ok(resp)) => Err(anyhow::anyhow!(
+                    "Ollama server returned HTTP {}",
+                    resp.status()
+                )),
+                Ok(Err(e)) => Err(anyhow::anyhow!(
+                    "Cannot connect to Ollama at {}: {}",
+                    url,
+                    e
+                )),
+                Err(_) => Err(anyhow::anyhow!(
+                    "Ollama connection timed out at {} — is Ollama running?",
+                    url
+                )),
             }
         }
 
         // All other API providers: test with a ping
         _ => {
             let api_key = config.api_key.clone().or_else(|| {
-                config.api_key_env.as_ref().and_then(|env| std::env::var(env).ok())
+                config
+                    .api_key_env
+                    .as_ref()
+                    .and_then(|env| std::env::var(env).ok())
             });
 
             let provider = create_provider(
@@ -303,16 +356,25 @@ pub async fn verify_provider_config(config: &manager::ProviderConfig) -> anyhow:
                 &config.model,
                 config.base_url.as_deref(),
                 api_key.as_deref(),
-            ).map_err(|e| anyhow::anyhow!("Configuration error: {}", e))?;
+            )
+            .map_err(|e| anyhow::anyhow!("Configuration error: {}", e))?;
 
             let msg = vec![Message::user("ping")];
             let tools = vec![];
-            match tokio::time::timeout(std::time::Duration::from_secs(5), provider.chat(&msg, &tools)).await {
+            match tokio::time::timeout(
+                std::time::Duration::from_secs(5),
+                provider.chat(&msg, &tools),
+            )
+            .await
+            {
                 Ok(Ok(_)) => Ok(()),
                 Ok(Err(e)) => {
                     let err_str = e.to_string().to_lowercase();
                     if err_str.contains("404") || err_str.contains("not found") {
-                        tracing::warn!("Provider ping: potential model issue (letting through): {}", e);
+                        tracing::warn!(
+                            "Provider ping: potential model issue (letting through): {}",
+                            e
+                        );
                         Ok(())
                     } else {
                         Err(anyhow::anyhow!("API Error: {}", e))

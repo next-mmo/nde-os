@@ -6,17 +6,17 @@ pub mod uv_env;
 
 // Agent runtime
 pub mod agent;
-pub mod llm;
-pub mod tools;
 pub mod channels;
-pub mod skills;
 pub mod knowledge;
+pub mod llm;
 pub mod memory;
 pub mod security;
+pub mod skills;
+pub mod tools;
 
 // Phase 2
-pub mod plugins;
 pub mod mcp;
+pub mod plugins;
 
 // OpenViking context database integration
 pub mod openviking;

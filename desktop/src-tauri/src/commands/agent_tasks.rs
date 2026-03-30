@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
-use tauri::{AppHandle, Manager, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct AgentTask {
@@ -60,12 +60,19 @@ fn parse_status(content: &str) -> &'static str {
 }
 
 fn classify_status(val: &str) -> &'static str {
-    if val.contains('🟢') || val.to_lowercase().contains("done by ai") { "Done by AI" }
-    else if val.contains('🟡') || val.to_lowercase().contains("yolo") { "YOLO mode" }
-    else if val.to_lowercase().contains("waiting") { "Waiting Approval" }
-    else if val.contains('✅') || val.to_lowercase().contains("verified") { "Verified by Human" }
-    else if val.to_lowercase().contains("re-open") { "Re-open" }
-    else { "Plan" }
+    if val.contains('🟢') || val.to_lowercase().contains("done by ai") {
+        "Done by AI"
+    } else if val.contains('🟡') || val.to_lowercase().contains("yolo") {
+        "YOLO mode"
+    } else if val.to_lowercase().contains("waiting") {
+        "Waiting Approval"
+    } else if val.contains('✅') || val.to_lowercase().contains("verified") {
+        "Verified by Human"
+    } else if val.to_lowercase().contains("re-open") {
+        "Re-open"
+    } else {
+        "Plan"
+    }
 }
 
 #[tauri::command]
@@ -82,9 +89,14 @@ pub async fn get_agent_tasks() -> Result<Vec<AgentTask>, String> {
         let path = entry.path();
         if path.is_file() && path.extension().is_some_and(|ext| ext == "md") {
             if let Ok(content) = fs::read_to_string(&path) {
-                let filename = path.file_name().unwrap_or_default().to_string_lossy().to_string();
+                let filename = path
+                    .file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .to_string();
 
-                let title = content.lines()
+                let title = content
+                    .lines()
                     .find(|line| line.starts_with("# "))
                     .map(|line| line.trim_start_matches("# ").trim().to_string())
                     .unwrap_or_else(|| filename.clone());
@@ -106,7 +118,11 @@ pub async fn get_agent_tasks() -> Result<Vec<AgentTask>, String> {
 }
 
 #[tauri::command]
-pub async fn update_agent_task_status(app: AppHandle, filename: String, new_status: String) -> Result<(), String> {
+pub async fn update_agent_task_status(
+    app: AppHandle,
+    filename: String,
+    new_status: String,
+) -> Result<(), String> {
     let tasks_dir = tasks_dir()?;
     let file_path = tasks_dir.join(&filename);
 
@@ -120,11 +136,11 @@ pub async fn update_agent_task_status(app: AppHandle, filename: String, new_stat
     // Map UI column name → frontmatter status string
     let fm_status = match new_status.as_str() {
         "Waiting Approval" => "🔴 waiting approval",
-        "YOLO mode"        => "🟡 yolo mode",
-        "Done by AI"       => "🟢 done by AI",
-        "Verified by Human"=> "✅ verified by human",
-        "Re-open"          => "🔴 re-open",
-        _                  => "🔴 plan",
+        "YOLO mode" => "🟡 yolo mode",
+        "Done by AI" => "🟢 done by AI",
+        "Verified by Human" => "✅ verified by human",
+        "Re-open" => "🔴 re-open",
+        _ => "🔴 plan",
     };
 
     let new_content = if content.starts_with("---") {
@@ -134,13 +150,17 @@ pub async fn update_agent_task_status(app: AppHandle, filename: String, new_stat
             let frontmatter = &after[..end_offset];
             let rest = &after[end_offset..]; // starts with \n---
 
-            let updated_fm: String = frontmatter.lines().map(|line| {
-                if line.trim_start().starts_with("status:") {
-                    format!("status: {fm_status}")
-                } else {
-                    line.to_string()
-                }
-            }).collect::<Vec<_>>().join("\n");
+            let updated_fm: String = frontmatter
+                .lines()
+                .map(|line| {
+                    if line.trim_start().starts_with("status:") {
+                        format!("status: {fm_status}")
+                    } else {
+                        line.to_string()
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
 
             // Preserve trailing newline
             let mut out = format!("---\n{updated_fm}{rest}");
@@ -166,9 +186,17 @@ pub async fn update_agent_task_status(app: AppHandle, filename: String, new_stat
 /// Fallback: rewrite a `- **Status:**` markdown line.
 fn update_legacy_status_line(content: &str, fm_status: &str) -> String {
     let replacement = format!("- **Status:** {fm_status}");
-    let mut updated: String = content.lines().map(|line| {
-        if line.starts_with("- **Status:**") { replacement.clone() } else { line.to_string() }
-    }).collect::<Vec<_>>().join("\n");
+    let mut updated: String = content
+        .lines()
+        .map(|line| {
+            if line.starts_with("- **Status:**") {
+                replacement.clone()
+            } else {
+                line.to_string()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
     if content.ends_with('\n') && !updated.ends_with('\n') {
         updated.push('\n');
     }
@@ -236,7 +264,11 @@ pub async fn create_agent_task(
 /// Minimal fallback ticket template — used ONLY when no LLM-generated content is provided
 /// (e.g. quick-add from the UI + button). The LLM owns the real template format.
 fn build_minimal_ticket(title: &str, description: &str, checklist: &[String]) -> String {
-    let desc = if description.is_empty() { title } else { description };
+    let desc = if description.is_empty() {
+        title
+    } else {
+        description
+    };
     let checklist_str = if checklist.is_empty() {
         "- [ ] Implement the feature\n- [ ] Test the implementation\n".to_string()
     } else {
@@ -288,7 +320,11 @@ pub async fn get_agent_task_content(filename: String) -> Result<String, String> 
 }
 
 #[tauri::command]
-pub async fn update_agent_task_content(app: AppHandle, filename: String, content: String) -> Result<(), String> {
+pub async fn update_agent_task_content(
+    app: AppHandle,
+    filename: String,
+    content: String,
+) -> Result<(), String> {
     let tasks_dir = tasks_dir()?;
     let file_path = tasks_dir.join(&filename);
 
@@ -310,18 +346,22 @@ static WATCHER_STARTED: std::sync::atomic::AtomicBool = std::sync::atomic::Atomi
 
 #[tauri::command]
 pub async fn watch_tasks_dir(app: AppHandle) -> Result<(), String> {
+    use notify::{EventKind, RecursiveMode, Watcher};
     use std::sync::atomic::Ordering;
-    use notify::{Watcher, RecursiveMode, EventKind};
 
-    if WATCHER_STARTED.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst).is_err() {
+    if WATCHER_STARTED
+        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+        .is_err()
+    {
         return Ok(()); // Already started
     }
 
     let tasks_dir = tasks_dir()?;
-    fs::create_dir_all(&tasks_dir).map_err(|e| format!("Failed to create tasks dir for watcher: {e}"))?;
+    fs::create_dir_all(&tasks_dir)
+        .map_err(|e| format!("Failed to create tasks dir for watcher: {e}"))?;
 
     let app_clone = app.clone();
-    
+
     // Spawn a thread to keep the watcher alive and receive events
     std::thread::spawn(move || {
         let (tx, rx) = std::sync::mpsc::channel();
@@ -342,14 +382,12 @@ pub async fn watch_tasks_dir(app: AppHandle) -> Result<(), String> {
 
         while let Ok(res) = rx.recv() {
             match res {
-                Ok(event) => {
-                    match event.kind {
-                        EventKind::Create(_) | EventKind::Modify(_) | EventKind::Remove(_) => {
-                            let _ = app_clone.emit("tasks://updated", ());
-                        }
-                        _ => {}
+                Ok(event) => match event.kind {
+                    EventKind::Create(_) | EventKind::Modify(_) | EventKind::Remove(_) => {
+                        let _ = app_clone.emit("tasks://updated", ());
                     }
-                }
+                    _ => {}
+                },
                 Err(e) => log::error!("Watch error: {:?}", e),
             }
         }

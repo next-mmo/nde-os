@@ -1,6 +1,6 @@
+use super::{temp_base, test_manifest};
 use crate::app_manager::AppManager;
 use crate::manifest::{SourceType, StoreUploadRequest};
-use super::{temp_base, test_manifest};
 use std::fs;
 use std::path::Path;
 
@@ -27,7 +27,8 @@ fn create_test_app_folder(base: &Path, app_id: &str) -> std::path::PathBuf {
     fs::write(
         folder.join("manifest.json"),
         serde_json::to_string_pretty(&manifest).unwrap(),
-    ).unwrap();
+    )
+    .unwrap();
 
     // Write a dummy app file
     fs::write(folder.join("app.py"), "print('hello from upload test')").unwrap();

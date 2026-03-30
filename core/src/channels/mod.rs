@@ -1,7 +1,6 @@
 /// Channel system — pluggable messaging gateways for the agent.
 /// Channels normalize messages from different platforms (REST, Telegram, Discord, etc.)
 /// into a unified format for the agent to process.
-
 pub mod gateway;
 pub mod manager;
 pub mod telegram;
@@ -113,10 +112,7 @@ pub trait Channel: Send + Sync {
 
     /// Start receiving messages. The channel should send normalized messages
     /// through the provided sender.
-    async fn start(
-        &mut self,
-        tx: tokio::sync::mpsc::Sender<ChannelMessage>,
-    ) -> Result<()>;
+    async fn start(&mut self, tx: tokio::sync::mpsc::Sender<ChannelMessage>) -> Result<()>;
 
     /// Send a response back through this channel.
     async fn send(&self, response: &ChannelResponse) -> Result<()>;

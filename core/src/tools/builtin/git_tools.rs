@@ -37,19 +37,17 @@ impl Tool for GitTool {
     }
 
     async fn execute(&self, args: serde_json::Value, sandbox: &Sandbox) -> Result<String> {
-        let command = args.get("command")
+        let command = args
+            .get("command")
             .and_then(|v| v.as_str())
             .ok_or_else(|| anyhow::anyhow!("Missing 'command' argument"))?;
 
-        let extra_args = args.get("args")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
+        let extra_args = args.get("args").and_then(|v| v.as_str()).unwrap_or("");
 
         // Validate command is allowed
         let allowed = [
-            "status", "diff", "log", "branch", "add", "commit", "checkout",
-            "stash", "remote", "tag", "init", "pull", "push", "merge",
-            "rebase", "reset", "show",
+            "status", "diff", "log", "branch", "add", "commit", "checkout", "stash", "remote",
+            "tag", "init", "pull", "push", "merge", "rebase", "reset", "show",
         ];
         if !allowed.contains(&command) {
             return Err(anyhow::anyhow!("Disallowed git command: {}", command));
@@ -93,7 +91,10 @@ impl Tool for GitTool {
                     if !extra_args.contains("-n") && !extra_args.contains("--max-count") {
                         cmd.arg("-n").arg("20");
                     }
-                    if !extra_args.contains("--format") && !extra_args.contains("--oneline") && !extra_args.contains("--pretty") {
+                    if !extra_args.contains("--format")
+                        && !extra_args.contains("--oneline")
+                        && !extra_args.contains("--pretty")
+                    {
                         cmd.arg("--oneline");
                     }
                 }
@@ -108,7 +109,8 @@ impl Tool for GitTool {
         }
 
         // Execute with timeout
-        let output = cmd.output()
+        let output = cmd
+            .output()
             .map_err(|e| anyhow::anyhow!("Failed to run git {}: {}", command, e))?;
 
         let stdout = String::from_utf8_lossy(&output.stdout);
@@ -128,11 +130,17 @@ impl Tool for GitTool {
         }
 
         if output.status.success() {
-            if result.trim().ends_with(&format!("git {} {}", command, extra_args).trim()) {
+            if result
+                .trim()
+                .ends_with(&format!("git {} {}", command, extra_args).trim())
+            {
                 result.push_str("(no output)");
             }
         } else {
-            result.push_str(&format!("\nExit code: {}", output.status.code().unwrap_or(-1)));
+            result.push_str(&format!(
+                "\nExit code: {}",
+                output.status.code().unwrap_or(-1)
+            ));
         }
 
         // Truncate large output

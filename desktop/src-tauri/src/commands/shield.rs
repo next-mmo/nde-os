@@ -1,8 +1,8 @@
+use crate::state::AppState;
 use ai_launcher_core::shield::browser::BrowserEngine;
-use ai_launcher_core::shield::profile::{ProfileManager, ShieldProfile};
 use ai_launcher_core::shield::engine::EngineManager;
 use ai_launcher_core::shield::launcher::{self, BrowserLauncher};
-use crate::state::AppState;
+use ai_launcher_core::shield::profile::{ProfileManager, ShieldProfile};
 use serde::Serialize;
 use std::sync::Arc;
 use tauri::Emitter;
@@ -71,7 +71,10 @@ pub async fn list_shield_profiles(
 }
 
 #[tauri::command]
-pub fn get_shield_profile(state: tauri::State<'_, AppState>, id: String) -> Result<ShieldProfileResponse, String> {
+pub fn get_shield_profile(
+    state: tauri::State<'_, AppState>,
+    id: String,
+) -> Result<ShieldProfileResponse, String> {
     let mgr = ProfileManager::new(&state.base_dir);
     let profile = mgr.get_profile(&id).map_err(|e| e.to_string())?;
     Ok(ShieldProfileResponse::from(profile))
@@ -104,7 +107,9 @@ pub fn rename_shield_profile(
     new_name: String,
 ) -> Result<ShieldProfileResponse, String> {
     let mgr = ProfileManager::new(&state.base_dir);
-    let profile = mgr.rename_profile(&id, &new_name).map_err(|e| e.to_string())?;
+    let profile = mgr
+        .rename_profile(&id, &new_name)
+        .map_err(|e| e.to_string())?;
     Ok(ShieldProfileResponse::from(profile))
 }
 
@@ -211,22 +216,30 @@ pub async fn download_shield_engine(
     let app_handle = app.clone();
     let last_percent = std::sync::Arc::new(std::sync::atomic::AtomicU8::new(255));
     let install_dir = engine_mgr
-        .download_engine(&engine_type, &version, &download_url, move |downloaded, total| {
-            let percent = if total > 0 {
-                ((downloaded as f64 / total as f64) * 100.0).min(100.0) as u8
-            } else {
-                0
-            };
-            // Only emit when percent actually changes to avoid excessive re-renders
-            let prev = last_percent.swap(percent, std::sync::atomic::Ordering::Relaxed);
-            if prev != percent {
-                let _ = app_handle.emit("shield-download-progress", DownloadProgress {
-                    downloaded,
-                    total,
-                    percent,
-                });
-            }
-        })
+        .download_engine(
+            &engine_type,
+            &version,
+            &download_url,
+            move |downloaded, total| {
+                let percent = if total > 0 {
+                    ((downloaded as f64 / total as f64) * 100.0).min(100.0) as u8
+                } else {
+                    0
+                };
+                // Only emit when percent actually changes to avoid excessive re-renders
+                let prev = last_percent.swap(percent, std::sync::atomic::Ordering::Relaxed);
+                if prev != percent {
+                    let _ = app_handle.emit(
+                        "shield-download-progress",
+                        DownloadProgress {
+                            downloaded,
+                            total,
+                            percent,
+                        },
+                    );
+                }
+            },
+        )
         .await
         .map_err(|e: anyhow::Error| e.to_string())?;
 
@@ -252,7 +265,9 @@ pub fn remove_shield_engine(
 ) -> Result<(), String> {
     let engine_type = BrowserEngine::from_str(&engine).map_err(|e: anyhow::Error| e.to_string())?;
     let engine_mgr = EngineManager::new(&state.base_dir);
-    engine_mgr.remove_engine(&engine_type, &version).map_err(|e| e.to_string())
+    engine_mgr
+        .remove_engine(&engine_type, &version)
+        .map_err(|e| e.to_string())
 }
 
 // ─── Onboarding Commands ───────────────────────────────────────────

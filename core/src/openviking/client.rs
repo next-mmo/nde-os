@@ -28,7 +28,9 @@ impl VikingClient {
 
     /// Check if the OpenViking server is reachable.
     pub async fn health(&self) -> Result<bool> {
-        match self.http.get(format!("{}/health", self.base_url))
+        match self
+            .http
+            .get(format!("{}/health", self.base_url))
             .send()
             .await
         {
@@ -46,7 +48,11 @@ impl VikingClient {
 
     /// List directory contents at a `viking://` URI.
     pub async fn ls(&self, uri: &str, recursive: bool) -> Result<Value> {
-        let mut url = format!("{}/api/v1/fs/ls?uri={}", self.base_url, urlencoding::encode(uri));
+        let mut url = format!(
+            "{}/api/v1/fs/ls?uri={}",
+            self.base_url,
+            urlencoding::encode(uri)
+        );
         if recursive {
             url.push_str("&recursive=true");
         }
@@ -55,7 +61,11 @@ impl VikingClient {
 
     /// Get directory tree.
     pub async fn tree(&self, uri: &str, depth: Option<u32>) -> Result<Value> {
-        let mut url = format!("{}/api/v1/fs/tree?uri={}", self.base_url, urlencoding::encode(uri));
+        let mut url = format!(
+            "{}/api/v1/fs/tree?uri={}",
+            self.base_url,
+            urlencoding::encode(uri)
+        );
         if let Some(d) = depth {
             url.push_str(&format!("&depth={}", d));
         }
@@ -64,7 +74,11 @@ impl VikingClient {
 
     /// Get metadata/status of a resource.
     pub async fn stat(&self, uri: &str) -> Result<Value> {
-        let url = format!("{}/api/v1/fs/stat?uri={}", self.base_url, urlencoding::encode(uri));
+        let url = format!(
+            "{}/api/v1/fs/stat?uri={}",
+            self.base_url,
+            urlencoding::encode(uri)
+        );
         self.get_raw(&url).await
     }
 
@@ -75,34 +89,58 @@ impl VikingClient {
 
     /// Delete a resource.
     pub async fn rm(&self, uri: &str) -> Result<Value> {
-        let url = format!("{}/api/v1/fs?uri={}", self.base_url, urlencoding::encode(uri));
-        let resp = self.http.delete(&url).send().await
+        let url = format!(
+            "{}/api/v1/fs?uri={}",
+            self.base_url,
+            urlencoding::encode(uri)
+        );
+        let resp = self
+            .http
+            .delete(&url)
+            .send()
+            .await
             .context("DELETE request failed")?;
         Self::parse_response(resp).await
     }
 
     /// Move/rename a resource.
     pub async fn mv(&self, src: &str, dst: &str) -> Result<Value> {
-        self.post("/api/v1/fs/mv", json!({ "source": src, "destination": dst })).await
+        self.post(
+            "/api/v1/fs/mv",
+            json!({ "source": src, "destination": dst }),
+        )
+        .await
     }
 
     // ── Content ─────────────────────────────────────────────────────────
 
     /// Read L0 abstract (~100 tokens summary).
     pub async fn abstract_(&self, uri: &str) -> Result<Value> {
-        let url = format!("{}/api/v1/content/abstract?uri={}", self.base_url, urlencoding::encode(uri));
+        let url = format!(
+            "{}/api/v1/content/abstract?uri={}",
+            self.base_url,
+            urlencoding::encode(uri)
+        );
         self.get_raw(&url).await
     }
 
     /// Read L1 overview (~2k tokens).
     pub async fn overview(&self, uri: &str) -> Result<Value> {
-        let url = format!("{}/api/v1/content/overview?uri={}", self.base_url, urlencoding::encode(uri));
+        let url = format!(
+            "{}/api/v1/content/overview?uri={}",
+            self.base_url,
+            urlencoding::encode(uri)
+        );
         self.get_raw(&url).await
     }
 
     /// Read L2 full content.
     pub async fn read(&self, uri: &str) -> Result<Value> {
-        let url = format!("{}/api/v1/content/read?uri={}", self.base_url, urlencoding::encode(uri));
+        let url = format!(
+            "{}/api/v1/content/read?uri={}",
+            self.base_url,
+            urlencoding::encode(uri)
+        );
         self.get_raw(&url).await
     }
 
@@ -110,7 +148,8 @@ impl VikingClient {
 
     /// Semantic search (directory-recursive retrieval).
     pub async fn find(&self, query: &str) -> Result<Value> {
-        self.post("/api/v1/search/find", json!({ "query": query })).await
+        self.post("/api/v1/search/find", json!({ "query": query }))
+            .await
     }
 
     /// Context-aware search.
@@ -153,14 +192,22 @@ impl VikingClient {
 
     /// Add a skill.
     pub async fn add_skill(&self, name: &str, content: &str) -> Result<Value> {
-        self.post("/api/v1/skills", json!({ "name": name, "content": content })).await
+        self.post(
+            "/api/v1/skills",
+            json!({ "name": name, "content": content }),
+        )
+        .await
     }
 
     // ── Relations ───────────────────────────────────────────────────────
 
     /// Get relations for a URI.
     pub async fn relations(&self, uri: &str) -> Result<Value> {
-        let url = format!("{}/api/v1/relations?uri={}", self.base_url, urlencoding::encode(uri));
+        let url = format!(
+            "{}/api/v1/relations?uri={}",
+            self.base_url,
+            urlencoding::encode(uri)
+        );
         self.get_raw(&url).await
     }
 
@@ -195,18 +242,24 @@ impl VikingClient {
         self.post(
             &format!("/api/v1/sessions/{}/messages", id),
             json!({ "role": role, "content": content }),
-        ).await
+        )
+        .await
     }
 
     /// Commit a session (triggers memory extraction).
     pub async fn session_commit(&self, id: &str) -> Result<Value> {
-        self.post(&format!("/api/v1/sessions/{}/commit", id), json!({})).await
+        self.post(&format!("/api/v1/sessions/{}/commit", id), json!({}))
+            .await
     }
 
     /// Delete a session.
     pub async fn session_delete(&self, id: &str) -> Result<Value> {
         let url = format!("{}/api/v1/sessions/{}", self.base_url, id);
-        let resp = self.http.delete(&url).send().await
+        let resp = self
+            .http
+            .delete(&url)
+            .send()
+            .await
             .context("DELETE request failed")?;
         Self::parse_response(resp).await
     }
@@ -219,14 +272,20 @@ impl VikingClient {
     }
 
     async fn get_raw(&self, url: &str) -> Result<Value> {
-        let resp = self.http.get(url).send().await
+        let resp = self
+            .http
+            .get(url)
+            .send()
+            .await
             .with_context(|| format!("GET {} failed", url))?;
         Self::parse_response(resp).await
     }
 
     async fn post(&self, path: &str, body: Value) -> Result<Value> {
         let url = format!("{}{}", self.base_url, path);
-        let resp = self.http.post(&url)
+        let resp = self
+            .http
+            .post(&url)
             .json(&body)
             .send()
             .await
@@ -246,8 +305,12 @@ impl VikingClient {
             ));
         }
 
-        serde_json::from_str(&body)
-            .with_context(|| format!("Failed to parse OpenViking response: {}", body.chars().take(200).collect::<String>()))
+        serde_json::from_str(&body).with_context(|| {
+            format!(
+                "Failed to parse OpenViking response: {}",
+                body.chars().take(200).collect::<String>()
+            )
+        })
     }
 }
 

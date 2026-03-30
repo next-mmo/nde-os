@@ -39,7 +39,9 @@ pub async fn git_show_head(state: State<'_, AppState>, path: String) -> Result<S
     tauri::async_runtime::spawn_blocking(move || {
         // Ensure path stays within jail (canonicalization check)
         let sandbox = Sandbox::new(&base_dir).map_err(|e| e.to_string())?;
-        let _ = sandbox.resolve(Path::new(&path)).map_err(|e| e.to_string())?;
+        let _ = sandbox
+            .resolve(Path::new(&path))
+            .map_err(|e| e.to_string())?;
 
         let head_path = format!("HEAD:{}", path.replace("\\", "/"));
         let output = Command::new("git")

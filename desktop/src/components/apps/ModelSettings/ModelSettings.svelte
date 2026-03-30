@@ -12,6 +12,9 @@
   let showAddForm = $state(false);
   let addError = $state("");
   let addLoading = $state(false);
+  let testLoading = $state(false);
+  let testResult = $state<{ ok: boolean; message: string } | null>(null);
+  let connectionVerified = $state(false);
   let codexOAuthLoading = $state(false);
   let codexOAuthStatus = $state<api.CodexOAuthStatus | null>(null);
 
@@ -40,6 +43,7 @@
     { value: "groq", label: "Groq", icon: "⚡" },
     { value: "together", label: "Together AI", icon: "🤝" },
     { value: "codex", label: "Codex", icon: "💻" },
+    { value: "codex_oauth", label: "Codex (ChatGPT)", icon: "💻" },
   ];
 
   const PROVIDER_DEFAULTS: Record<string, { model: string; baseUrl: string }> = {
@@ -95,7 +99,6 @@
       formModel = defs.model;
       formBaseUrl = defs.baseUrl;
     }
-    // Auto-check Codex CLI auth status when switching to Codex
     if (formType === "codex") {
       try {
         codexOAuthStatus = await api.codexOAuthStatus();
@@ -124,14 +127,52 @@
   }
 
   function useLocalModel(model: LocalGgufModel) {
-    // Derive a clean name from the filename
     const stem = model.filename.replace(/\.gguf$/i, "");
     formName = `local-${stem}`;
     formModel = stem;
-    // Set the base_url to the full path so the backend uses this file directly
     formBaseUrl = model.path;
     formMaxTokens = 4096;
     verifyResult = null;
+  }
+
+  function buildConfig(): ProviderConfig {
+    return {
+      name: formName.trim(),
+      provider_type: formType,
+      model: formModel.trim(),
+      base_url: formBaseUrl.trim() || undefined,
+      api_key: formApiKey.trim() || undefined,
+      api_key_env: formApiKeyEnv.trim() || undefined,
+      max_tokens: formMaxTokens,
+    };
+  }
+
+  async function handleTestConnection() {
+    if (!formModel.trim()) {
+      addError = "Model is required to test connection";
+      return;
+    }
+    testLoading = true;
+    addError = "";
+    testResult = null;
+    connectionVerified = false;
+    try {
+      const config = buildConfig();
+      const result = await api.verifyProvider(config);
+      if (result.ok) {
+        testResult = { ok: true, message: "Connection successful — provider is reachable and model is available" };
+        connectionVerified = true;
+      } else {
+        testResult = { ok: false, message: result.error || "Verification failed" };
+        connectionVerified = false;
+      }
+    } catch (e: any) {
+      const msg = e.message || "Connection test failed";
+      testResult = { ok: false, message: msg };
+      connectionVerified = false;
+    } finally {
+      testLoading = false;
+    }
   }
 
   async function handleAdd() {
@@ -139,19 +180,16 @@
       addError = "Name and model are required";
       return;
     }
+    if (!connectionVerified) {
+      addError = "Please test the connection first";
+      return;
+    }
     addLoading = true;
     addError = "";
+    testResult = null;
     verifyResult = null;
     try {
-      const config: ProviderConfig = {
-        name: formName.trim(),
-        provider_type: formType,
-        model: formModel.trim(),
-        base_url: formBaseUrl.trim() || undefined,
-        api_key: formApiKey.trim() || undefined,
-        api_key_env: formApiKeyEnv.trim() || undefined,
-        max_tokens: formMaxTokens,
-      };
+      const config = buildConfig();
       await api.addProvider(config);
       resetForm();
       showAddForm = false;
@@ -183,6 +221,9 @@
     addError = "";
     verifyResult = null;
     verifying = false;
+    testResult = null;
+    testLoading = false;
+    connectionVerified = false;
   }
 
   function getProviderIcon(type: string): string {
@@ -195,7 +236,6 @@
     try {
       const result = await api.codexOAuthStart(formModel);
 
-      // If already authenticated via Codex CLI, just refresh
       if (result.already_authenticated) {
         codexOAuthLoading = false;
         codexOAuthStatus = await api.codexOAuthStatus();
@@ -204,11 +244,8 @@
         return;
       }
 
-      // Not authenticated — show message
-      // Note: The backend Rust server will automatically open the auth_url in the system's default browser
       addError = result.message || "Complete the login flow in your browser to authenticate.";
 
-      // Poll for completion (user may run `codex login` in terminal)
       let attempts = 0;
       const poll = setInterval(async () => {
         attempts++;
@@ -237,31 +274,44 @@
   }
 </script>
 
-<section class="model-settings">
-  <div class="header">
+<section class="h-full overflow-auto p-4 flex flex-col gap-4">
+  <!-- Header -->
+  <div class="flex justify-between items-center gap-4 flex-wrap">
     <div>
-      <p class="eyebrow">AI Configuration</p>
-      <h2>LLM Providers</h2>
+      <p class="m-0 text-[0.72rem] uppercase tracking-[0.14em] text-gray-500 dark:text-gray-400">AI Configuration</p>
+      <h2 class="m-0 mt-1 text-lg font-bold text-black dark:text-white">LLM Providers</h2>
     </div>
-    <div class="header-actions">
-      <button class="action-btn refresh-btn" onclick={refresh} disabled={loading}>
+    <div class="flex gap-2">
+      <button
+        class="rounded-full px-4 py-2 text-[0.82rem] cursor-pointer border border-black/10 dark:border-white/10 bg-white/50 dark:bg-black/50 text-black dark:text-white transition-all duration-150 hover:bg-blue-500/10 disabled:opacity-50 disabled:cursor-not-allowed"
+        onclick={refresh}
+        disabled={loading}
+      >
         {loading ? "Loading..." : "↻ Refresh"}
       </button>
-      <button class="action-btn add-btn" onclick={() => { showAddForm = !showAddForm; resetForm(); }}>
+      <button
+        class="rounded-full px-4 py-2 text-[0.82rem] cursor-pointer border border-blue-500/25 bg-blue-500/12 text-blue-500 font-medium transition-all duration-150 hover:bg-blue-500/20"
+        onclick={() => { showAddForm = !showAddForm; resetForm(); }}
+      >
         {showAddForm ? "✕ Cancel" : "+ Add Provider"}
       </button>
     </div>
   </div>
 
+  <!-- Add Provider Form -->
   {#if showAddForm}
-    <div class="add-form">
-      <h3>Add New Provider</h3>
+    <div class="p-5 rounded-2xl border border-blue-500/20 bg-blue-500/4">
+      <h3 class="m-0 mb-3 text-sm font-semibold text-black dark:text-white">Add New Provider</h3>
 
-      <!-- Provider type selector — always shown -->
-      <div class="form-grid" style="margin-bottom: 0.75rem">
-        <label class="field">
-          <span>Provider Type</span>
-          <select bind:value={formType} onchange={handleTypeChange}>
+      <!-- Provider type selector -->
+      <div class="grid grid-cols-1 gap-3 mb-3">
+        <label class="flex flex-col gap-1">
+          <span class="text-[0.75rem] uppercase tracking-widest text-gray-500 dark:text-gray-400">Provider Type</span>
+          <select
+            bind:value={formType}
+            onchange={handleTypeChange}
+            class="px-3 py-2.5 rounded-lg border border-black/10 dark:border-white/10 bg-white/50 dark:bg-black/50 text-black dark:text-white text-[0.88rem] font-inherit focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/15"
+          >
             {#each PROVIDER_TYPES as pt}
               <option value={pt.value}>{pt.icon} {pt.label}</option>
             {/each}
@@ -270,223 +320,337 @@
       </div>
 
       {#if formType === "codex"}
-        <!-- ── Codex-specific panel ── -->
-        <div class="codex-panel">
-          <div class="codex-info">
-            <div class="codex-icon">💻</div>
+        <!-- Codex panel -->
+        <div class="flex flex-col gap-3">
+          <div class="flex gap-3 items-start p-3.5 rounded-xl bg-blue-500/6 border border-blue-500/15">
+            <div class="text-3xl shrink-0">💻</div>
             <div>
-              <strong>Codex (ChatGPT Plus/Pro)</strong>
-              <p>Use your ChatGPT Plus or Pro subscription — no API key needed.</p>
+              <strong class="block text-[0.92rem] mb-0.5 text-black dark:text-white">Codex (ChatGPT Plus/Pro)</strong>
+              <p class="m-0 text-[0.8rem] text-gray-500 dark:text-gray-400">Use your ChatGPT Plus or Pro subscription — no API key needed.</p>
             </div>
           </div>
 
-          <div class="form-grid" style="margin: 1rem 0;">
-            <label class="field">
-              <span>Model Name</span>
-              <input type="text" bind:value={formModel} placeholder="e.g. gpt-4o-mini" />
-            </label>
-          </div>
-
+          <!-- OAuth status -->
           {#if codexOAuthStatus?.authenticated}
-            <div class="codex-auth-status">
-              <span class="codex-check">✓</span>
+            <div class="flex gap-2.5 items-center px-3.5 py-2.5 rounded-xl bg-emerald-500/8 border border-emerald-500/20">
+              <span class="text-xl text-emerald-500">✓</span>
               <div>
-                <strong>{codexOAuthStatus.email || "Authenticated"}</strong>
+                <strong class="block text-[0.85rem] text-black dark:text-white">{codexOAuthStatus.email || "Authenticated"}</strong>
                 {#if codexOAuthStatus.plan_type}
-                  <span class="codex-plan">{codexOAuthStatus.plan_type}</span>
+                  <span class="text-[0.72rem] text-emerald-500 font-semibold uppercase tracking-[0.05em]">{codexOAuthStatus.plan_type}</span>
                 {/if}
               </div>
             </div>
-            <button
-              class="submit-btn oauth-btn"
-              onclick={handleCodexLogin}
-              disabled={codexOAuthLoading}
-            >
-              {codexOAuthLoading ? "⏳ Adding..." : "✨ Add Codex Provider"}
-            </button>
           {:else}
-            <div class="codex-auth-status codex-unauth">
-              <span class="codex-lock">🔒</span>
+            <div class="flex gap-2.5 items-center px-3.5 py-2.5 rounded-xl bg-amber-500/8 border border-amber-500/20">
+              <span class="text-xl">🔒</span>
               <div>
-                <strong>Not authenticated</strong>
-                <span class="codex-hint">Click below to sign in with your ChatGPT account</span>
+                <strong class="block text-[0.85rem] text-black dark:text-white">Not authenticated</strong>
+                <span class="block text-[0.78rem] text-gray-500 dark:text-gray-400 mt-0.5">Sign in with your ChatGPT account first</span>
               </div>
+              <button
+                class="ml-auto px-4 py-1.5 rounded-full border border-blue-500/30 bg-blue-500/12 text-blue-500 text-[0.78rem] font-semibold cursor-pointer transition-colors duration-150 hover:bg-blue-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
+                onclick={handleCodexLogin}
+                disabled={codexOAuthLoading}
+              >
+                {codexOAuthLoading ? "⏳ Waiting..." : "🔑 Sign in"}
+              </button>
             </div>
-            <button
-              class="submit-btn oauth-btn"
-              onclick={handleCodexLogin}
-              disabled={codexOAuthLoading}
-            >
-              {codexOAuthLoading ? "⏳ Waiting for login..." : "🔑 Sign in with ChatGPT"}
-            </button>
           {/if}
 
+          <!-- Form fields (same pattern as others) -->
+          <div class="grid grid-cols-[repeat(auto-fit,minmax(14rem,1fr))] gap-3">
+            <label class="flex flex-col gap-1">
+              <span class="text-[0.75rem] uppercase tracking-widest text-gray-500 dark:text-gray-400">Name</span>
+              <input type="text" bind:value={formName} placeholder="e.g. my-codex"
+                class="px-3 py-2.5 rounded-lg border border-black/10 dark:border-white/10 bg-white/50 dark:bg-black/50 text-black dark:text-white text-[0.88rem] focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/15" />
+            </label>
+            <label class="flex flex-col gap-1">
+              <span class="text-[0.75rem] uppercase tracking-widest text-gray-500 dark:text-gray-400">Model</span>
+              <input type="text" bind:value={formModel} placeholder="e.g. gpt-4o-mini"
+                class="px-3 py-2.5 rounded-lg border border-black/10 dark:border-white/10 bg-white/50 dark:bg-black/50 text-black dark:text-white text-[0.88rem] focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/15" />
+            </label>
+            <label class="flex flex-col gap-1">
+              <span class="text-[0.75rem] uppercase tracking-widest text-gray-500 dark:text-gray-400">Max Tokens</span>
+              <input type="number" bind:value={formMaxTokens} min="256" max="128000"
+                class="px-3 py-2.5 rounded-lg border border-black/10 dark:border-white/10 bg-white/50 dark:bg-black/50 text-black dark:text-white text-[0.88rem] focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/15" />
+            </label>
+          </div>
+
           {#if addError}
-            <p class="form-error">{addError}</p>
+            <div class="flex gap-2 items-start px-3 py-2.5 rounded-xl mt-2 bg-red-500/10 border border-red-500/25">
+              <span class="text-base shrink-0 leading-snug">⚠</span>
+              <p class="m-0 text-red-400 text-[0.82rem] leading-snug">{addError}</p>
+            </div>
           {/if}
+          {#if testResult}
+            <div class="flex gap-2.5 items-start px-3 py-2.5 rounded-xl mt-2 {testResult.ok ? 'bg-emerald-500/8 border border-emerald-500/20' : 'bg-red-500/8 border border-red-500/20'}">
+              <span class="text-lg shrink-0 leading-none {testResult.ok ? 'text-emerald-500' : 'text-red-500'}">{testResult.ok ? '✓' : '✕'}</span>
+              <div>
+                <strong class="block text-[0.85rem] mb-0.5 text-black dark:text-white">{testResult.ok ? 'Connected' : 'Connection Failed'}</strong>
+                <span class="text-[0.78rem] text-gray-500 dark:text-gray-400">{testResult.message}</span>
+              </div>
+            </div>
+          {/if}
+
+          <!-- Same buttons as all other providers -->
+          <div class="flex items-center gap-3 flex-wrap mt-3">
+            <button
+              class="px-5 py-2.5 rounded-full border border-blue-500/30 bg-blue-500/12 text-blue-500 text-[0.88rem] font-semibold cursor-pointer transition-colors duration-150 hover:bg-blue-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
+              onclick={handleTestConnection}
+              disabled={testLoading || addLoading}
+            >
+              {testLoading ? "⏳ Testing..." : connectionVerified ? "✓ Re-test Connection" : "🔌 Test Connection"}
+            </button>
+            <button
+              class="px-5 py-2.5 rounded-full border-none bg-blue-500 text-white text-[0.88rem] font-semibold cursor-pointer transition-colors duration-150 hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed"
+              onclick={handleCodexLogin}
+              disabled={addLoading || codexOAuthLoading || !connectionVerified}
+            >
+              {codexOAuthLoading ? "⏳ Adding..." : "Add Provider"}
+            </button>
+          </div>
         </div>
       {:else if formType === "gguf"}
-        <!-- ── GGUF panel ── -->
-        <div class="gguf-panel">
-          <div class="gguf-info">
-            <div class="gguf-icon">📦</div>
+        <!-- GGUF panel -->
+        <div class="flex flex-col gap-3">
+          <div class="flex gap-3 items-start p-3.5 rounded-xl bg-indigo-500/6 border border-indigo-500/15">
+            <div class="text-3xl shrink-0">📦</div>
             <div>
-              <strong>GGUF (Local Inference)</strong>
-              <p>Runs directly on your machine. We recommend these models based on your {recommendations.length > 0 ? `${recommendations[0]?.recommended_ram_gb}GB+ RAM` : 'system RAM'}.</p>
+              <strong class="block text-[0.92rem] mb-0.5 text-black dark:text-white">GGUF (Local Inference)</strong>
+              <p class="m-0 text-[0.8rem] text-gray-500 dark:text-gray-400">Runs directly on your machine. We recommend these models based on your {recommendations.length > 0 ? `${recommendations[0]?.recommended_ram_gb}GB+ RAM` : 'system RAM'}.</p>
             </div>
           </div>
 
           {#if recLoading}
-            <div class="rec-loading">Analyzing system and finding models...</div>
+            <div class="text-[0.85rem] text-gray-500 dark:text-gray-400 py-4 text-center">Analyzing system and finding models...</div>
           {:else if recommendations.length > 0}
-            <div class="recommendations-grid">
+            <div class="grid grid-cols-[repeat(auto-fill,minmax(13rem,1fr))] gap-3 mt-2">
               {#each recommendations as rec}
-                <button type="button" class="rec-card" class:selected={formModel === rec.id} onclick={() => useRecommendation(rec)}>
-                  <div class="rec-card-header">
-                    <strong>{rec.name}</strong>
-                    <span class="rec-card-size">{rec.size_gb.toFixed(1)} GB</span>
+                <button
+                  type="button"
+                  class="text-left bg-white/50 dark:bg-black/50 border border-black/10 dark:border-white/10 p-3 rounded-xl cursor-pointer transition-all duration-150 font-inherit text-inherit hover:border-blue-500/40 hover:bg-blue-500/3 {formModel === rec.id ? 'border-blue-500! bg-blue-500/10! shadow-[inset_0_0_0_1px_rgb(59,130,246)]' : ''}"
+                  onclick={() => useRecommendation(rec)}
+                >
+                  <div class="flex justify-between items-start mb-1.5">
+                    <strong class="text-[0.85rem] block max-w-[70%] whitespace-nowrap overflow-hidden text-ellipsis text-black dark:text-white">{rec.name}</strong>
+                    <span class="text-[0.7rem] px-1.5 py-0.5 bg-black/10 dark:bg-white/10 rounded-full">{rec.size_gb.toFixed(1)} GB</span>
                   </div>
-                  <p class="rec-card-desc">{rec.description}</p>
-                  <div class="rec-card-footer">
+                  <p class="text-[0.75rem] text-gray-500 dark:text-gray-400 m-0 mb-2 leading-snug line-clamp-2">{rec.description}</p>
+                  <div class="text-[0.7rem] font-medium text-gray-400 dark:text-gray-500">
                     <span>RAM: {rec.recommended_ram_gb} GB+</span>
                   </div>
                 </button>
               {/each}
             </div>
           {:else}
-            <div class="rec-empty">No recommendations found or failed to load.</div>
+            <div class="text-[0.85rem] text-gray-500 dark:text-gray-400 py-4 text-center">No recommendations found or failed to load.</div>
           {/if}
 
           {#if localModels.length > 0}
-            <div class="local-models-section">
-              <h4>📁 Already Downloaded ({localModels.length})</h4>
-              <div class="local-models-grid">
+            <div class="mt-4">
+              <h4 class="m-0 mb-2 text-[0.88rem] font-semibold text-black dark:text-white">📁 Already Downloaded ({localModels.length})</h4>
+              <div class="grid grid-cols-1 gap-1.5">
                 {#each localModels as model}
-                  <button type="button" class="local-model-card" class:selected={formBaseUrl === model.path} onclick={() => useLocalModel(model)}>
-                    <div class="local-model-header">
-                      <span class="local-model-check">{formBaseUrl === model.path ? '✓' : '○'}</span>
-                      <strong class="local-model-name">{model.filename}</strong>
+                  <button
+                    type="button"
+                    class="flex items-center justify-between text-left bg-white/50 dark:bg-black/50 border border-black/10 dark:border-white/10 px-3 py-2 rounded-lg cursor-pointer transition-all duration-150 font-inherit text-inherit hover:border-emerald-500/40 hover:bg-emerald-500/4 {formBaseUrl === model.path ? 'border-emerald-500! bg-emerald-500/10! shadow-[inset_0_0_0_1px_hsl(160,60%,45%)]' : ''}"
+                    onclick={() => useLocalModel(model)}
+                  >
+                    <div class="flex items-center gap-2 min-w-0">
+                      <span class="text-[0.9rem] shrink-0 text-emerald-500">{formBaseUrl === model.path ? '✓' : '○'}</span>
+                      <strong class="text-[0.82rem] whitespace-nowrap overflow-hidden text-ellipsis text-black dark:text-white">{model.filename}</strong>
                     </div>
-                    <span class="local-model-size">{model.size_display}</span>
+                    <span class="text-[0.72rem] px-2 py-0.5 bg-black/8 dark:bg-white/8 rounded-full shrink-0">{model.size_display}</span>
                   </button>
                 {/each}
               </div>
             </div>
           {/if}
 
-          <div class="form-grid" style="margin-top: 1rem;">
-            <label class="field">
-              <span>Name</span>
-              <input type="text" bind:value={formName} placeholder="e.g. local-llama3" />
+          <div class="grid grid-cols-[repeat(auto-fit,minmax(14rem,1fr))] gap-3 mt-4">
+            <label class="flex flex-col gap-1">
+              <span class="text-[0.75rem] uppercase tracking-widest text-gray-500 dark:text-gray-400">Name</span>
+              <input type="text" bind:value={formName} placeholder="e.g. local-llama3"
+                class="px-3 py-2.5 rounded-lg border border-black/10 dark:border-white/10 bg-white/50 dark:bg-black/50 text-black dark:text-white text-[0.88rem] focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/15" />
             </label>
-            <label class="field">
-              <span>Model ID</span>
-              <input type="text" bind:value={formModel} placeholder="e.g. TheBloke/Llama-2-7b-Chat-GGUF" />
+            <label class="flex flex-col gap-1">
+              <span class="text-[0.75rem] uppercase tracking-widest text-gray-500 dark:text-gray-400">Model ID</span>
+              <input type="text" bind:value={formModel} placeholder="e.g. TheBloke/Llama-2-7b-Chat-GGUF"
+                class="px-3 py-2.5 rounded-lg border border-black/10 dark:border-white/10 bg-white/50 dark:bg-black/50 text-black dark:text-white text-[0.88rem] focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/15" />
             </label>
-            <label class="field">
-              <span>Max Tokens</span>
-              <input type="number" bind:value={formMaxTokens} min="256" max="128000" />
+            <label class="flex flex-col gap-1">
+              <span class="text-[0.75rem] uppercase tracking-widest text-gray-500 dark:text-gray-400">Max Tokens</span>
+              <input type="number" bind:value={formMaxTokens} min="256" max="128000"
+                class="px-3 py-2.5 rounded-lg border border-black/10 dark:border-white/10 bg-white/50 dark:bg-black/50 text-black dark:text-white text-[0.88rem] focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/15" />
             </label>
           </div>
+
           {#if addError}
-            <p class="form-error">{addError}</p>
+            <div class="flex gap-2 items-start px-3 py-2.5 rounded-xl mt-2 bg-red-500/10 border border-red-500/25">
+              <span class="text-base shrink-0 leading-snug">⚠</span>
+              <p class="m-0 text-red-400 text-[0.82rem] leading-snug">{addError}</p>
+            </div>
           {/if}
-          {#if verifyResult}
-            <div class="verify-result" class:verify-ok={verifyResult.ok} class:verify-fail={!verifyResult.ok}>
-              <span>{verifyResult.ok ? '✓' : '✕'}</span>
+          {#if testResult}
+            <div class="flex gap-2.5 items-start px-3 py-2.5 rounded-xl mt-2 {testResult.ok ? 'bg-emerald-500/8 border border-emerald-500/20' : 'bg-red-500/8 border border-red-500/20'}">
+              <span class="text-lg shrink-0 leading-none {testResult.ok ? 'text-emerald-500' : 'text-red-500'}">{testResult.ok ? '✓' : '✕'}</span>
+              <div>
+                <strong class="block text-[0.85rem] mb-0.5 text-black dark:text-white">{testResult.ok ? 'Connected' : 'Connection Failed'}</strong>
+                <span class="text-[0.78rem] text-gray-500 dark:text-gray-400">{testResult.message}</span>
+              </div>
+            </div>
+          {:else if verifyResult}
+            <div class="flex gap-2.5 items-start px-3 py-2.5 rounded-xl mt-2 {verifyResult.ok ? 'bg-emerald-500/8 border border-emerald-500/20' : 'bg-red-500/8 border border-red-500/20'}">
+              <span class="text-lg shrink-0 leading-none {verifyResult.ok ? 'text-emerald-500' : 'text-red-500'}">{verifyResult.ok ? '✓' : '✕'}</span>
               <div>
                 {#if verifyResult.ok}
-                  <strong>Ready</strong>
+                  <strong class="block text-[0.85rem] mb-0.5 text-black dark:text-white">Ready</strong>
                   {#if verifyResult.model_exists}
-                    <span class="verify-detail">Model file found locally</span>
+                    <span class="text-[0.78rem] text-gray-500 dark:text-gray-400">Model file found locally</span>
                   {:else}
-                    <span class="verify-detail">Model will be auto-downloaded on first use</span>
+                    <span class="text-[0.78rem] text-gray-500 dark:text-gray-400">Model will be auto-downloaded on first use</span>
                   {/if}
                 {:else}
-                  <strong>Not Ready</strong>
-                  <span class="verify-detail">{verifyResult.error}</span>
+                  <strong class="block text-[0.85rem] mb-0.5 text-black dark:text-white">Not Ready</strong>
+                  <span class="text-[0.78rem] text-gray-500 dark:text-gray-400">{verifyResult.error}</span>
                 {/if}
               </div>
             </div>
           {/if}
-          <div class="form-actions">
-            <button class="submit-btn" onclick={handleAdd} disabled={addLoading}>
-              {addLoading ? "Verifying & Adding..." : "Add Provider"}
+
+          <div class="flex items-center gap-3 flex-wrap mt-3">
+            <button
+              class="px-5 py-2.5 rounded-full border border-blue-500/30 bg-blue-500/12 text-blue-500 text-[0.88rem] font-semibold cursor-pointer transition-colors duration-150 hover:bg-blue-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
+              onclick={handleTestConnection}
+              disabled={testLoading || addLoading}
+            >
+              {testLoading ? "⏳ Testing..." : connectionVerified ? "✓ Re-test Connection" : "🔌 Test Connection"}
+            </button>
+            <button
+              class="px-5 py-2.5 rounded-full border-none bg-blue-500 text-white text-[0.88rem] font-semibold cursor-pointer transition-colors duration-150 hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed"
+              onclick={handleAdd}
+              disabled={addLoading || !connectionVerified}
+            >
+              {addLoading ? "Adding..." : "Add Provider"}
             </button>
           </div>
         </div>
       {:else}
-        <!-- ── Standard provider form ── -->
-        <div class="form-grid">
-          <label class="field">
-            <span>Name</span>
-            <input type="text" bind:value={formName} placeholder="e.g. my-openai" />
+        <!-- Standard provider form (Ollama, OpenAI, Anthropic, etc.) -->
+        <div class="grid grid-cols-[repeat(auto-fit,minmax(14rem,1fr))] gap-3">
+          <label class="flex flex-col gap-1">
+            <span class="text-[0.75rem] uppercase tracking-widest text-gray-500 dark:text-gray-400">Name</span>
+            <input type="text" bind:value={formName} placeholder="e.g. my-openai"
+              class="px-3 py-2.5 rounded-lg border border-black/10 dark:border-white/10 bg-white/50 dark:bg-black/50 text-black dark:text-white text-[0.88rem] focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/15" />
           </label>
-          <label class="field">
-            <span>Model</span>
-            <input type="text" bind:value={formModel} placeholder="e.g. gpt-4o" />
+          <label class="flex flex-col gap-1">
+            <span class="text-[0.75rem] uppercase tracking-widest text-gray-500 dark:text-gray-400">Model</span>
+            <input type="text" bind:value={formModel} placeholder="e.g. gpt-4o"
+              class="px-3 py-2.5 rounded-lg border border-black/10 dark:border-white/10 bg-white/50 dark:bg-black/50 text-black dark:text-white text-[0.88rem] focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/15" />
           </label>
-          <label class="field">
-            <span>Base URL</span>
-            <input type="text" bind:value={formBaseUrl} placeholder="Optional" />
+          <label class="flex flex-col gap-1">
+            <span class="text-[0.75rem] uppercase tracking-widest text-gray-500 dark:text-gray-400">Base URL</span>
+            <input type="text" bind:value={formBaseUrl} placeholder="Optional"
+              class="px-3 py-2.5 rounded-lg border border-black/10 dark:border-white/10 bg-white/50 dark:bg-black/50 text-black dark:text-white text-[0.88rem] focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/15" />
           </label>
-          <label class="field">
-            <span>API Key</span>
-            <input type="password" bind:value={formApiKey} placeholder="Direct key (optional)" />
+          <label class="flex flex-col gap-1">
+            <span class="text-[0.75rem] uppercase tracking-widest text-gray-500 dark:text-gray-400">API Key</span>
+            <input type="password" bind:value={formApiKey} placeholder="Direct key (optional)"
+              class="px-3 py-2.5 rounded-lg border border-black/10 dark:border-white/10 bg-white/50 dark:bg-black/50 text-black dark:text-white text-[0.88rem] focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/15" />
           </label>
-          <label class="field">
-            <span>API Key Env Var</span>
-            <input type="text" bind:value={formApiKeyEnv} placeholder="e.g. OPENAI_API_KEY" />
+          <label class="flex flex-col gap-1">
+            <span class="text-[0.75rem] uppercase tracking-widest text-gray-500 dark:text-gray-400">API Key Env Var</span>
+            <input type="text" bind:value={formApiKeyEnv} placeholder="e.g. OPENAI_API_KEY"
+              class="px-3 py-2.5 rounded-lg border border-black/10 dark:border-white/10 bg-white/50 dark:bg-black/50 text-black dark:text-white text-[0.88rem] focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/15" />
           </label>
-          <label class="field">
-            <span>Max Tokens</span>
-            <input type="number" bind:value={formMaxTokens} min="256" max="128000" />
+          <label class="flex flex-col gap-1">
+            <span class="text-[0.75rem] uppercase tracking-widest text-gray-500 dark:text-gray-400">Max Tokens</span>
+            <input type="number" bind:value={formMaxTokens} min="256" max="128000"
+              class="px-3 py-2.5 rounded-lg border border-black/10 dark:border-white/10 bg-white/50 dark:bg-black/50 text-black dark:text-white text-[0.88rem] focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/15" />
           </label>
         </div>
-         {#if addError}
-           <p class="form-error">{addError}</p>
-         {/if}
-         <div class="form-actions">
-           <button class="submit-btn" onclick={handleAdd} disabled={addLoading}>
-             {addLoading ? "Verifying Connection..." : "Add Provider"}
-           </button>
-         </div>
+
+        {#if addError}
+          <div class="flex gap-2 items-start px-3 py-2.5 rounded-xl mt-2 bg-red-500/10 border border-red-500/25">
+            <span class="text-base shrink-0 leading-snug">⚠</span>
+            <p class="m-0 text-red-400 text-[0.82rem] leading-snug">{addError}</p>
+          </div>
+        {/if}
+        {#if testResult}
+          <div class="flex gap-2.5 items-start px-3 py-2.5 rounded-xl mt-2 {testResult.ok ? 'bg-emerald-500/8 border border-emerald-500/20' : 'bg-red-500/8 border border-red-500/20'}">
+            <span class="text-lg shrink-0 leading-none {testResult.ok ? 'text-emerald-500' : 'text-red-500'}">{testResult.ok ? '✓' : '✕'}</span>
+            <div>
+              <strong class="block text-[0.85rem] mb-0.5 text-black dark:text-white">{testResult.ok ? 'Connected' : 'Connection Failed'}</strong>
+              <span class="text-[0.78rem] text-gray-500 dark:text-gray-400">{testResult.message}</span>
+            </div>
+          </div>
+        {/if}
+
+        <div class="flex items-center gap-3 flex-wrap mt-3">
+          <button
+            class="px-5 py-2.5 rounded-full border border-blue-500/30 bg-blue-500/12 text-blue-500 text-[0.88rem] font-semibold cursor-pointer transition-colors duration-150 hover:bg-blue-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
+            onclick={handleTestConnection}
+            disabled={testLoading || addLoading}
+          >
+            {testLoading ? "⏳ Testing..." : connectionVerified ? "✓ Re-test Connection" : "🔌 Test Connection"}
+          </button>
+          <button
+            class="px-5 py-2.5 rounded-full border-none bg-blue-500 text-white text-[0.88rem] font-semibold cursor-pointer transition-colors duration-150 hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed"
+            onclick={handleAdd}
+            disabled={addLoading || !connectionVerified}
+          >
+            {addLoading ? "Adding..." : "Add Provider"}
+          </button>
+        </div>
       {/if}
     </div>
   {/if}
 
+  <!-- Provider List -->
   {#if loading}
-    <div class="loading">Loading providers...</div>
+    <div class="text-center py-8 text-gray-500 dark:text-gray-400">Loading providers...</div>
   {:else if providers.length === 0}
-    <div class="empty-state">
-      <div class="empty-icon">🤖</div>
-      <h3>No Providers Configured</h3>
-      <p>Add an LLM provider to power the agent. Ollama is added by default on server start.</p>
-      <button class="action-btn add-btn" onclick={() => showAddForm = true}>+ Add Provider</button>
+    <div class="flex flex-col items-center gap-2 text-center py-8 text-gray-500 dark:text-gray-400">
+      <div class="text-5xl">🤖</div>
+      <h3 class="m-0 text-black dark:text-white">No Providers Configured</h3>
+      <p class="m-0 max-w-xs text-[0.85rem]">Add an LLM provider to power the agent. Choose from Ollama, OpenAI, Anthropic, and more.</p>
+      <button
+        class="mt-2 rounded-full px-4 py-2 text-[0.82rem] cursor-pointer border border-blue-500/25 bg-blue-500/12 text-blue-500 font-medium transition-all duration-150 hover:bg-blue-500/20"
+        onclick={() => showAddForm = true}
+      >+ Add Provider</button>
     </div>
   {:else}
-    <div class="providers-grid">
+    <div class="grid grid-cols-[repeat(auto-fill,minmax(16rem,1fr))] gap-3">
       {#each providers as provider (provider.name)}
-        <article class="provider-card" class:active={provider.is_active} class:switching={switching && provider.name !== activeProvider}>
-          <div class="provider-header">
-            <span class="provider-icon">{getProviderIcon(provider.provider_type)}</span>
-            <div class="provider-info">
-              <strong>{provider.name}</strong>
-              <span class="provider-type">{provider.provider_type}</span>
+        <article class="rounded-2xl p-4 border border-black/10 dark:border-white/10 bg-white/50 dark:bg-black/50 transition-all duration-200 flex flex-col gap-3 hover:border-blue-500/30 {provider.is_active ? 'border-blue-500! bg-blue-500/6!' : ''} {switching && provider.name !== activeProvider ? 'opacity-50' : ''}">
+          <div class="flex items-center gap-2.5">
+            <span class="text-2xl">{getProviderIcon(provider.provider_type)}</span>
+            <div class="flex flex-col flex-1">
+              <strong class="text-[0.92rem] text-black dark:text-white">{provider.name}</strong>
+              <span class="text-[0.72rem] text-gray-500 dark:text-gray-400 uppercase tracking-[0.08em]">{provider.provider_type}</span>
             </div>
             {#if provider.is_active}
-              <span class="active-badge">Active</span>
+              <span class="px-2.5 py-1 rounded-full text-[0.7rem] font-semibold bg-emerald-500/15 text-emerald-500">Active</span>
             {/if}
           </div>
-          <div class="provider-actions">
+          <div class="flex items-center gap-2">
             {#if !provider.is_active}
-              <button class="switch-btn" onclick={() => handleSwitch(provider.name)} disabled={switching}>
+              <button
+                class="px-3 py-1.5 rounded-full border border-blue-500/30 bg-blue-500/10 text-blue-500 text-[0.78rem] cursor-pointer transition-all duration-150 hover:bg-blue-500/20 disabled:opacity-40 disabled:cursor-not-allowed"
+                onclick={() => handleSwitch(provider.name)}
+                disabled={switching}
+              >
                 {switching ? "..." : "Switch to"}
               </button>
             {:else}
-              <span class="current-label">Current</span>
+              <span class="text-[0.78rem] text-emerald-500 font-semibold">Current</span>
             {/if}
-            <button class="remove-btn" onclick={() => handleRemove(provider.name)} title="Remove provider">
+            <button
+              class="ml-auto w-7 h-7 rounded-full border-none bg-red-500/10 text-red-500 cursor-pointer text-[0.8rem] flex items-center justify-center transition-all duration-150 hover:bg-red-500/25"
+              onclick={() => handleRemove(provider.name)}
+              title="Remove provider"
+            >
               ✕
             </button>
           </div>
@@ -495,185 +659,3 @@
     </div>
   {/if}
 </section>
-
-<style>
-  .model-settings {
-    height: 100%;
-    overflow: auto;
-    padding: 1.1rem;
-    display: grid;
-    gap: 1rem;
-    align-content: start;
-  }
-  .header { display: flex; justify-content: space-between; align-items: center; gap: 1rem; flex-wrap: wrap; }
-  .eyebrow { margin: 0; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.14em; color: var(--system-color-text-muted); }
-  h2 { margin: 0.3rem 0 0; }
-  h3 { margin: 0 0 0.75rem; font-size: 1rem; }
-  .header-actions { display: flex; gap: 0.5rem; }
-  .action-btn {
-    border-radius: 999px; padding: 0.55rem 1rem; font-size: 0.82rem; cursor: pointer;
-    border: 1px solid var(--system-color-border); background: var(--system-color-panel);
-    color: var(--system-color-text); transition: all 0.15s;
-  }
-  .action-btn:hover { background: hsla(var(--system-color-primary-hsl) / 0.1); }
-  .add-btn { background: hsla(var(--system-color-primary-hsl) / 0.12); border-color: hsla(var(--system-color-primary-hsl) / 0.25); color: var(--system-color-primary); }
-  .add-form {
-    padding: 1.2rem; border-radius: 1rem; border: 1px solid hsla(var(--system-color-primary-hsl) / 0.2);
-    background: hsla(var(--system-color-primary-hsl) / 0.04);
-  }
-  .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); gap: 0.75rem; }
-  .field { display: flex; flex-direction: column; gap: 0.3rem; }
-  .field span { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--system-color-text-muted); }
-  .field input, .field select {
-    padding: 0.6rem 0.8rem; border-radius: 0.6rem; border: 1px solid var(--system-color-border);
-    background: var(--system-color-panel); color: var(--system-color-text); font-size: 0.88rem; font-family: inherit;
-  }
-  .field input:focus, .field select:focus { border-color: var(--system-color-primary); outline: none; box-shadow: 0 0 0 2px hsla(var(--system-color-primary-hsl) / 0.15); }
-  .form-error { margin: 0.5rem 0 0; color: var(--system-color-danger); font-size: 0.82rem; }
-  .submit-btn {
-    margin-top: 0.85rem; padding: 0.65rem 1.5rem; border-radius: 999px; border: none;
-    background: var(--system-color-primary); color: white; font-size: 0.88rem; font-weight: 600; cursor: pointer;
-  }
-  .submit-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-  .providers-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr)); gap: 0.85rem; }
-  .provider-card {
-    border-radius: 1.1rem; padding: 1rem; border: 1px solid var(--system-color-border);
-    background: var(--system-color-panel); transition: all 0.2s; display: flex; flex-direction: column; gap: 0.75rem;
-  }
-  .provider-card:hover { border-color: hsla(var(--system-color-primary-hsl) / 0.3); }
-  .provider-card.active { border-color: var(--system-color-primary); background: hsla(var(--system-color-primary-hsl) / 0.06); }
-  .provider-header { display: flex; align-items: center; gap: 0.6rem; }
-  .provider-icon { font-size: 1.5rem; }
-  .provider-info { display: flex; flex-direction: column; flex: 1; }
-  .provider-info strong { font-size: 0.92rem; }
-  .provider-type { font-size: 0.72rem; color: var(--system-color-text-muted); text-transform: uppercase; letter-spacing: 0.08em; }
-  .active-badge {
-    padding: 0.2rem 0.6rem; border-radius: 999px; font-size: 0.7rem; font-weight: 600;
-    background: hsla(160 60% 50% / 0.15); color: hsl(160 60% 50%);
-  }
-  .provider-actions { display: flex; align-items: center; gap: 0.5rem; }
-  .switch-btn {
-    padding: 0.4rem 0.8rem; border-radius: 999px; border: 1px solid hsla(var(--system-color-primary-hsl) / 0.3);
-    background: hsla(var(--system-color-primary-hsl) / 0.1); color: var(--system-color-primary);
-    font-size: 0.78rem; cursor: pointer; transition: all 0.15s;
-  }
-  .switch-btn:hover { background: hsla(var(--system-color-primary-hsl) / 0.2); }
-  .switch-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-  .current-label { font-size: 0.78rem; color: hsl(160 60% 50%); font-weight: 600; }
-  .remove-btn {
-    margin-left: auto; width: 1.8rem; height: 1.8rem; border-radius: 50%; border: none;
-    background: hsla(0 70% 55% / 0.1); color: hsl(0 70% 60%); cursor: pointer; font-size: 0.8rem;
-    display: flex; align-items: center; justify-content: center; transition: all 0.15s;
-  }
-  .remove-btn:hover { background: hsla(0 70% 55% / 0.25); }
-  .loading, .empty-state { text-align: center; padding: 2rem 1rem; color: var(--system-color-text-muted); }
-  .empty-state { display: flex; flex-direction: column; align-items: center; gap: 0.5rem; }
-  .empty-icon { font-size: 3rem; }
-  .empty-state h3 { margin: 0; color: var(--system-color-text); }
-  .empty-state p { margin: 0; max-width: 320px; font-size: 0.85rem; }
-
-  .form-actions { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; margin-top: 0.85rem; }
-  .form-actions .submit-btn { margin-top: 0; }
-  .oauth-btn {
-    background: hsl(160 60% 42%); color: white;
-  }
-  .oauth-btn:hover:not(:disabled) { background: hsl(160 60% 36%); }
-
-  /* ── Codex panel ── */
-  .codex-panel {
-    display: flex; flex-direction: column; gap: 0.85rem;
-  }
-  .codex-info {
-    display: flex; gap: 0.85rem; align-items: flex-start;
-    padding: 0.9rem; border-radius: 0.8rem;
-    background: hsla(var(--system-color-primary-hsl) / 0.06);
-    border: 1px solid hsla(var(--system-color-primary-hsl) / 0.15);
-  }
-  .codex-icon { font-size: 1.8rem; flex-shrink: 0; }
-  .codex-info strong { display: block; font-size: 0.92rem; margin-bottom: 0.15rem; }
-  .codex-info p { margin: 0; font-size: 0.8rem; color: var(--system-color-text-muted); }
-  .codex-auth-status {
-    display: flex; gap: 0.65rem; align-items: center;
-    padding: 0.7rem 0.9rem; border-radius: 0.7rem;
-    background: hsla(160 60% 50% / 0.08); border: 1px solid hsla(160 60% 50% / 0.2);
-  }
-  .codex-auth-status.codex-unauth {
-    background: hsla(40 80% 50% / 0.08); border-color: hsla(40 80% 50% / 0.2);
-  }
-  .codex-check { font-size: 1.2rem; color: hsl(160 60% 45%); }
-  .codex-lock { font-size: 1.2rem; }
-  .codex-auth-status strong { display: block; font-size: 0.85rem; }
-  .codex-plan {
-    font-size: 0.72rem; color: hsl(160 60% 45%); font-weight: 600;
-    text-transform: uppercase; letter-spacing: 0.05em;
-  }
-  .codex-hint {
-    display: block; font-size: 0.78rem; color: var(--system-color-text-muted); margin-top: 0.1rem;
-  }
-
-  /* ── GGUF panel ── */
-  .gguf-panel {
-    display: flex; flex-direction: column; gap: 0.85rem;
-  }
-  .gguf-info {
-    display: flex; gap: 0.85rem; align-items: flex-start;
-    padding: 0.9rem; border-radius: 0.8rem;
-    background: hsla(220 80% 50% / 0.06);
-    border: 1px solid hsla(220 80% 50% / 0.15);
-  }
-  .gguf-icon { font-size: 1.8rem; flex-shrink: 0; }
-  .gguf-info strong { display: block; font-size: 0.92rem; margin-bottom: 0.15rem; }
-  .gguf-info p { margin: 0; font-size: 0.8rem; color: var(--system-color-text-muted); }
-  .rec-loading, .rec-empty { font-size: 0.85rem; color: var(--system-color-text-muted); padding: 1rem; text-align: center; }
-  .recommendations-grid {
-    display: grid; grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr)); gap: 0.75rem; margin-top: 0.5rem;
-  }
-  .rec-card {
-    text-align: left; background: var(--system-color-panel); border: 1px solid var(--system-color-border);
-    padding: 0.8rem; border-radius: 0.75rem; cursor: pointer; transition: all 0.15s; font-family: inherit; color: inherit;
-  }
-  .rec-card:hover { border-color: hsla(var(--system-color-primary-hsl) / 0.4); background: hsla(var(--system-color-primary-hsl) / 0.03); }
-  .rec-card.selected { border-color: var(--system-color-primary); background: hsla(var(--system-color-primary-hsl) / 0.1); box-shadow: inset 0 0 0 1px var(--system-color-primary); }
-  .rec-card-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.4rem; }
-  .rec-card-header strong { font-size: 0.85rem; display: block; max-width: 70%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .rec-card-size { font-size: 0.7rem; padding: 0.1rem 0.4rem; background: hsla(var(--system-color-text-hsl) / 0.1); border-radius: 999px; }
-  .rec-card-desc { font-size: 0.75rem; color: var(--system-color-text-muted); margin: 0 0 0.5rem; line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-  .rec-card-footer { font-size: 0.7rem; font-weight: 500; color: hsla(var(--system-color-text-hsl) / 0.6); }
-
-  /* ── Local models ── */
-  .local-models-section { margin-top: 1rem; }
-  .local-models-section h4 { margin: 0 0 0.5rem; font-size: 0.88rem; font-weight: 600; }
-  .local-models-grid {
-    display: grid; grid-template-columns: 1fr; gap: 0.4rem;
-  }
-  .local-model-card {
-    display: flex; align-items: center; justify-content: space-between;
-    text-align: left; background: var(--system-color-panel); border: 1px solid var(--system-color-border);
-    padding: 0.55rem 0.8rem; border-radius: 0.6rem; cursor: pointer; transition: all 0.15s;
-    font-family: inherit; color: inherit;
-  }
-  .local-model-card:hover { border-color: hsla(160 60% 50% / 0.4); background: hsla(160 60% 50% / 0.04); }
-  .local-model-card.selected { border-color: hsl(160 60% 45%); background: hsla(160 60% 50% / 0.1); box-shadow: inset 0 0 0 1px hsl(160 60% 45%); }
-  .local-model-header { display: flex; align-items: center; gap: 0.5rem; min-width: 0; }
-  .local-model-check { font-size: 0.9rem; flex-shrink: 0; color: hsl(160 60% 45%); }
-  .local-model-name { font-size: 0.82rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .local-model-size { font-size: 0.72rem; padding: 0.1rem 0.45rem; background: hsla(var(--system-color-text-hsl) / 0.08); border-radius: 999px; flex-shrink: 0; }
-
-  /* ── Verify result ── */
-  .verify-result {
-    display: flex; gap: 0.6rem; align-items: flex-start;
-    padding: 0.65rem 0.85rem; border-radius: 0.7rem; margin-top: 0.5rem;
-    font-size: 0.82rem;
-  }
-  .verify-result > span { font-size: 1.1rem; flex-shrink: 0; line-height: 1; }
-  .verify-result strong { display: block; font-size: 0.85rem; margin-bottom: 0.1rem; }
-  .verify-detail { font-size: 0.78rem; color: var(--system-color-text-muted); }
-  .verify-ok {
-    background: hsla(160 60% 50% / 0.08); border: 1px solid hsla(160 60% 50% / 0.2);
-  }
-  .verify-ok > span { color: hsl(160 60% 45%); }
-  .verify-fail {
-    background: hsla(0 70% 55% / 0.08); border: 1px solid hsla(0 70% 55% / 0.2);
-  }
-  .verify-fail > span { color: hsl(0 70% 55%); }
-</style>

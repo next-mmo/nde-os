@@ -34,24 +34,32 @@ fn uv_home(base_dir: &Path) -> PathBuf {
 
 /// Name of the uv binary
 fn uv_binary_name() -> &'static str {
-    if cfg!(windows) { "uv.exe" } else { "uv" }
+    if cfg!(windows) {
+        "uv.exe"
+    } else {
+        "uv"
+    }
 }
 
 /// Check if uv is available on system PATH
 fn find_system_uv() -> Option<PathBuf> {
     let cmd = if cfg!(windows) { "where" } else { "which" };
-    Command::new(cmd)
-        .arg("uv")
-        .output()
-        .ok()
-        .and_then(|o| {
-            if o.status.success() {
-                let path = String::from_utf8_lossy(&o.stdout).trim().lines().next()?.to_string();
-                if !path.is_empty() { Some(PathBuf::from(path)) } else { None }
+    Command::new(cmd).arg("uv").output().ok().and_then(|o| {
+        if o.status.success() {
+            let path = String::from_utf8_lossy(&o.stdout)
+                .trim()
+                .lines()
+                .next()?
+                .to_string();
+            if !path.is_empty() {
+                Some(PathBuf::from(path))
             } else {
                 None
             }
-        })
+        } else {
+            None
+        }
+    })
 }
 
 /// Bootstrap: ensure uv is available. Returns path to uv binary.
@@ -108,16 +116,21 @@ fn download_uv(dest_dir: &Path) -> Result<()> {
                 .output()
                 .context("Failed to download uv")?;
             if !dl.status.success() {
-                return Err(anyhow!("Could not download uv. Install manually: https://docs.astral.sh/uv/"));
+                return Err(anyhow!(
+                    "Could not download uv. Install manually: https://docs.astral.sh/uv/"
+                ));
             }
         }
     } else {
         // Linux/macOS: use curl + sh
         let output = Command::new("sh")
-            .args(["-c", &format!(
-                "curl -LsSf https://astral.sh/uv/install.sh | UV_INSTALL_DIR='{}' sh",
-                dest_dir.to_string_lossy()
-            )])
+            .args([
+                "-c",
+                &format!(
+                    "curl -LsSf https://astral.sh/uv/install.sh | UV_INSTALL_DIR='{}' sh",
+                    dest_dir.to_string_lossy()
+                ),
+            ])
             .output()
             .context("Failed to run uv installer")?;
         if !output.status.success() {
@@ -180,11 +193,15 @@ impl UvEnv {
             return Ok(());
         }
 
-        println!("  [uv] Creating venv with Python {}...", self.python_version);
+        println!(
+            "  [uv] Creating venv with Python {}...",
+            self.python_version
+        );
         let output = self.uv_cmd(&[
             "venv",
             &self.venv_path.to_string_lossy(),
-            "--python", &self.python_version,
+            "--python",
+            &self.python_version,
         ])?;
 
         if !output.status.success() {
@@ -236,9 +253,12 @@ impl UvEnv {
         }
         println!("  [uv] Installing from {}...", req_file.display());
         let output = self.uv_cmd(&[
-            "pip", "install",
-            "--python", &self.venv_path.to_string_lossy(),
-            "-r", &req_file.to_string_lossy(),
+            "pip",
+            "install",
+            "--python",
+            &self.venv_path.to_string_lossy(),
+            "-r",
+            &req_file.to_string_lossy(),
         ])?;
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
@@ -286,9 +306,10 @@ impl UvEnv {
 
     /// Environment variables for the venv
     pub fn env_vars(&self) -> Vec<(String, String)> {
-        let mut vars = vec![
-            ("VIRTUAL_ENV".into(), self.venv_path.to_string_lossy().into()),
-        ];
+        let mut vars = vec![(
+            "VIRTUAL_ENV".into(),
+            self.venv_path.to_string_lossy().into(),
+        )];
 
         // Prepend venv bin to PATH
         let bin_dir = if cfg!(windows) {
@@ -298,7 +319,10 @@ impl UvEnv {
         };
         if let Ok(existing_path) = std::env::var("PATH") {
             let sep = if cfg!(windows) { ";" } else { ":" };
-            vars.push(("PATH".into(), format!("{}{}{}", bin_dir.to_string_lossy(), sep, existing_path)));
+            vars.push((
+                "PATH".into(),
+                format!("{}{}{}", bin_dir.to_string_lossy(), sep, existing_path),
+            ));
         } else {
             vars.push(("PATH".into(), bin_dir.to_string_lossy().into()));
         }
@@ -308,10 +332,7 @@ impl UvEnv {
 
     /// Get uv version string
     pub fn uv_version(&self) -> Option<String> {
-        let output = Command::new(&self.uv_bin)
-            .arg("--version")
-            .output()
-            .ok()?;
+        let output = Command::new(&self.uv_bin).arg("--version").output().ok()?;
 
         if !output.status.success() {
             return None;
@@ -339,17 +360,30 @@ impl UvEnv {
             return "0".to_string();
         }
         fn dir_size(p: &Path) -> u64 {
-            fs::read_dir(p).ok().map(|entries| {
-                entries.filter_map(|e| e.ok()).map(|e| {
-                    let m = e.metadata().ok();
-                    if e.path().is_dir() { dir_size(&e.path()) }
-                    else { m.map(|m| m.len()).unwrap_or(0) }
-                }).sum()
-            }).unwrap_or(0)
+            fs::read_dir(p)
+                .ok()
+                .map(|entries| {
+                    entries
+                        .filter_map(|e| e.ok())
+                        .map(|e| {
+                            let m = e.metadata().ok();
+                            if e.path().is_dir() {
+                                dir_size(&e.path())
+                            } else {
+                                m.map(|m| m.len()).unwrap_or(0)
+                            }
+                        })
+                        .sum()
+                })
+                .unwrap_or(0)
         }
         let bytes = dir_size(&self.venv_path);
-        if bytes > 1_073_741_824 { format!("{:.1} GB", bytes as f64 / 1_073_741_824.0) }
-        else if bytes > 1_048_576 { format!("{:.1} MB", bytes as f64 / 1_048_576.0) }
-        else { format!("{:.0} KB", bytes as f64 / 1024.0) }
+        if bytes > 1_073_741_824 {
+            format!("{:.1} GB", bytes as f64 / 1_073_741_824.0)
+        } else if bytes > 1_048_576 {
+            format!("{:.1} MB", bytes as f64 / 1_048_576.0)
+        } else {
+            format!("{:.0} KB", bytes as f64 / 1024.0)
+        }
     }
 }

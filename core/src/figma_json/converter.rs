@@ -62,7 +62,11 @@ fn bounding_box_dim(node: &Value, key: &str) -> Option<f64> {
     node.get("absoluteBoundingBox")
         .and_then(|bb| bb.get(key))
         .and_then(|v| v.as_f64())
-        .or_else(|| node.get("size").and_then(|s| s.get(if key == "width" { "x" } else { "y" })).and_then(|v| v.as_f64()))
+        .or_else(|| {
+            node.get("size")
+                .and_then(|s| s.get(if key == "width" { "x" } else { "y" }))
+                .and_then(|v| v.as_f64())
+        })
 }
 
 // ─── Fill converter ──────────────────────────────────────────────────
@@ -114,7 +118,10 @@ fn convert_strokes(node: &Value) -> Vec<FStroke> {
         Some(a) => a,
         None => return vec![],
     };
-    let weight = node.get("strokeWeight").and_then(|w| w.as_f64()).unwrap_or(1.0);
+    let weight = node
+        .get("strokeWeight")
+        .and_then(|w| w.as_f64())
+        .unwrap_or(1.0);
     let align = node.get("strokeAlign").and_then(|a| a.as_str());
 
     arr.iter()
@@ -124,7 +131,8 @@ fn convert_strokes(node: &Value) -> Vec<FStroke> {
             weight,
             align: align.map(|a| a.to_string()),
             dash_pattern: s.get("dashPattern").and_then(|d| {
-                d.as_array().map(|a| a.iter().filter_map(|v| v.as_f64()).collect())
+                d.as_array()
+                    .map(|a| a.iter().filter_map(|v| v.as_f64()).collect())
             }),
         })
         .collect()
@@ -160,8 +168,12 @@ fn convert_effects(effects: &Value) -> Vec<FEffect> {
                     radius: val_f64(e, "radius"),
                     spread: e.get("spread").and_then(|s| s.as_f64()),
                 }),
-                "LAYER_BLUR" => Some(FEffect::LAYER { radius: val_f64(e, "radius") }),
-                "BACKGROUND_BLUR" => Some(FEffect::BACKGROUND { radius: val_f64(e, "radius") }),
+                "LAYER_BLUR" => Some(FEffect::LAYER {
+                    radius: val_f64(e, "radius"),
+                }),
+                "BACKGROUND_BLUR" => Some(FEffect::BACKGROUND {
+                    radius: val_f64(e, "radius"),
+                }),
                 _ => None,
             }
         })
@@ -176,7 +188,11 @@ fn convert_border_radius(node: &Value) -> Option<FBorderRadius> {
             let r: Vec<f64> = corners.iter().filter_map(|v| v.as_f64()).collect();
             if r.len() == 4 {
                 if r.iter().all(|v| *v == r[0]) {
-                    return if r[0] > 0.0 { Some(FBorderRadius::Uniform(r[0])) } else { None };
+                    return if r[0] > 0.0 {
+                        Some(FBorderRadius::Uniform(r[0]))
+                    } else {
+                        None
+                    };
                 }
                 return Some(FBorderRadius::PerCorner([r[0], r[1], r[2], r[3]]));
             }
@@ -184,7 +200,13 @@ fn convert_border_radius(node: &Value) -> Option<FBorderRadius> {
     }
     node.get("cornerRadius")
         .and_then(|r| r.as_f64())
-        .and_then(|r| if r > 0.0 { Some(FBorderRadius::Uniform(r)) } else { None })
+        .and_then(|r| {
+            if r > 0.0 {
+                Some(FBorderRadius::Uniform(r))
+            } else {
+                None
+            }
+        })
 }
 
 // ─── Base props ──────────────────────────────────────────────────────
@@ -215,7 +237,14 @@ fn convert_node(node: &Value, image_map: &HashMap<String, String>) -> Option<FNo
     let typ = val_str(node, "type")?;
     let base = convert_base(node, image_map);
 
-    let frame_types = ["FRAME", "GROUP", "COMPONENT", "COMPONENT_SET", "INSTANCE", "SECTION"];
+    let frame_types = [
+        "FRAME",
+        "GROUP",
+        "COMPONENT",
+        "COMPONENT_SET",
+        "INSTANCE",
+        "SECTION",
+    ];
     if frame_types.contains(&typ) {
         let children = convert_children(node, image_map);
         let data = FFrameData {
@@ -231,13 +260,21 @@ fn convert_node(node: &Value, image_map: &HashMap<String, String>) -> Option<FNo
             layout_grow: node.get("layoutGrow").and_then(|v| v.as_f64()),
             item_spacing: node.get("itemSpacing").and_then(|v| v.as_f64()),
             counter_axis_spacing: node.get("counterAxisSpacing").and_then(|v| v.as_f64()),
-            padding_left: node.get("paddingLeft").and_then(|v| v.as_f64())
+            padding_left: node
+                .get("paddingLeft")
+                .and_then(|v| v.as_f64())
                 .or_else(|| node.get("horizontalPadding").and_then(|v| v.as_f64())),
-            padding_right: node.get("paddingRight").and_then(|v| v.as_f64())
+            padding_right: node
+                .get("paddingRight")
+                .and_then(|v| v.as_f64())
                 .or_else(|| node.get("horizontalPadding").and_then(|v| v.as_f64())),
-            padding_top: node.get("paddingTop").and_then(|v| v.as_f64())
+            padding_top: node
+                .get("paddingTop")
+                .and_then(|v| v.as_f64())
                 .or_else(|| node.get("verticalPadding").and_then(|v| v.as_f64())),
-            padding_bottom: node.get("paddingBottom").and_then(|v| v.as_f64())
+            padding_bottom: node
+                .get("paddingBottom")
+                .and_then(|v| v.as_f64())
                 .or_else(|| node.get("verticalPadding").and_then(|v| v.as_f64())),
             children,
         };
@@ -260,7 +297,10 @@ fn convert_node(node: &Value, image_map: &HashMap<String, String>) -> Option<FNo
             line_height: if val_str(style, "lineHeightUnit") == Some("AUTO") {
                 Some(FLineHeight::Auto("AUTO".into()))
             } else {
-                style.get("lineHeightPx").and_then(|v| v.as_f64()).map(FLineHeight::Px)
+                style
+                    .get("lineHeightPx")
+                    .and_then(|v| v.as_f64())
+                    .map(FLineHeight::Px)
             },
             letter_spacing: style.get("letterSpacing").and_then(|v| v.as_f64()),
             text_decoration: val_str(style, "textDecoration").map(|s| s.to_string()),
@@ -277,9 +317,9 @@ fn convert_node(node: &Value, image_map: &HashMap<String, String>) -> Option<FNo
 
         // Check for image fills → promote to IMAGE node
         if let Some(fills_arr) = node.get("fills").and_then(|f| f.as_array()) {
-            let img_fill = fills_arr.iter().find(|f| {
-                val_str(f, "type") == Some("IMAGE") && val_bool(f, "visible", true)
-            });
+            let img_fill = fills_arr
+                .iter()
+                .find(|f| val_str(f, "type") == Some("IMAGE") && val_bool(f, "visible", true));
             if let Some(img) = img_fill {
                 let image_ref = val_str(img, "imageRef").unwrap_or("");
                 let src = image_map
@@ -293,15 +333,22 @@ fn convert_node(node: &Value, image_map: &HashMap<String, String>) -> Option<FNo
                     height: h,
                     src,
                     alt: None,
-                    object_fit: Some(match scale_mode {
-                        "FIT" => "contain",
-                        _ => "cover",
-                    }.to_string()),
+                    object_fit: Some(
+                        match scale_mode {
+                            "FIT" => "contain",
+                            _ => "cover",
+                        }
+                        .to_string(),
+                    ),
                 }));
             }
         }
 
-        return Some(FNode::RECTANGLE(FShapeData { base, width: w, height: h }));
+        return Some(FNode::RECTANGLE(FShapeData {
+            base,
+            width: w,
+            height: h,
+        }));
     }
 
     if typ == "ELLIPSE" {
@@ -312,9 +359,16 @@ fn convert_node(node: &Value, image_map: &HashMap<String, String>) -> Option<FNo
         }));
     }
 
-    let vector_types = ["VECTOR", "LINE", "STAR", "REGULAR_POLYGON", "BOOLEAN_OPERATION"];
+    let vector_types = [
+        "VECTOR",
+        "LINE",
+        "STAR",
+        "REGULAR_POLYGON",
+        "BOOLEAN_OPERATION",
+    ];
     if vector_types.contains(&typ) {
-        let svg_path = node.get("fillGeometry")
+        let svg_path = node
+            .get("fillGeometry")
             .and_then(|g| g.as_array())
             .and_then(|a| a.first())
             .and_then(|g| val_str(g, "path"))
@@ -365,7 +419,11 @@ fn convert_children(parent: &Value, image_map: &HashMap<String, String>) -> Vec<
     parent
         .get("children")
         .and_then(|c| c.as_array())
-        .map(|arr| arr.iter().filter_map(|c| convert_node(c, image_map)).collect())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|c| convert_node(c, image_map))
+                .collect()
+        })
         .unwrap_or_default()
 }
 
@@ -413,13 +471,18 @@ pub fn convert_figma_node(
     image_map: &HashMap<String, String>,
 ) -> anyhow::Result<FDocument> {
     let root: Value = serde_json::from_str(node_json)?;
-    let nodes_map = root.get("nodes").and_then(|n| n.as_object())
+    let nodes_map = root
+        .get("nodes")
+        .and_then(|n| n.as_object())
         .ok_or_else(|| anyhow::anyhow!("No 'nodes' field in response"))?;
 
-    let (node_id, node_val) = nodes_map.iter().next()
+    let (node_id, node_val) = nodes_map
+        .iter()
+        .next()
         .ok_or_else(|| anyhow::anyhow!("Empty nodes map"))?;
 
-    let node_doc = node_val.get("document")
+    let node_doc = node_val
+        .get("document")
         .ok_or_else(|| anyhow::anyhow!("No document in node"))?;
 
     let converted = convert_node(node_doc, image_map);
@@ -458,7 +521,11 @@ pub async fn fetch_and_convert(
         .await?;
 
     if !file_res.status().is_success() {
-        anyhow::bail!("Figma API error: {} {}", file_res.status(), file_res.text().await?);
+        anyhow::bail!(
+            "Figma API error: {} {}",
+            file_res.status(),
+            file_res.text().await?
+        );
     }
     let file_json = file_res.text().await?;
 

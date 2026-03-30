@@ -30,7 +30,11 @@ fn shield_profile_full_lifecycle() {
 
     // Create two profiles with different engines
     let p1 = ShieldProfile::new("US Chrome".into(), BrowserEngine::Wayfern, "133.0.0".into());
-    let p2 = ShieldProfile::new("EU Firefox".into(), BrowserEngine::Camoufox, "132.0.2".into());
+    let p2 = ShieldProfile::new(
+        "EU Firefox".into(),
+        BrowserEngine::Camoufox,
+        "132.0.2".into(),
+    );
     let id1 = p1.id.clone();
     let id2 = p2.id.clone();
 
@@ -94,7 +98,11 @@ fn shield_profile_duplicate_name_case_insensitive() {
     assert!(mgr.create_profile(&p2).is_err());
 
     // Different name should succeed
-    let p3 = ShieldProfile::new("Other Profile".into(), BrowserEngine::Camoufox, "2.0".into());
+    let p3 = ShieldProfile::new(
+        "Other Profile".into(),
+        BrowserEngine::Camoufox,
+        "2.0".into(),
+    );
     assert!(mgr.create_profile(&p3).is_ok());
 
     std::fs::remove_dir_all(dir).ok();
@@ -177,7 +185,9 @@ fn shield_engine_not_downloaded_by_default() {
     assert!(!mgr.is_downloaded(&BrowserEngine::Camoufox, "132.0"));
 
     // get_executable should fail for missing engine
-    assert!(mgr.get_executable(&BrowserEngine::Wayfern, "133.0").is_err());
+    assert!(mgr
+        .get_executable(&BrowserEngine::Wayfern, "133.0")
+        .is_err());
 
     std::fs::remove_dir_all(dir).ok();
 }
@@ -236,7 +246,10 @@ fn shield_download_url_camoufox() {
 #[test]
 fn shield_download_url_wayfern_not_available() {
     let result = launcher::get_download_url(&BrowserEngine::Wayfern, "133.0");
-    assert!(result.is_err(), "Wayfern should not be available for download");
+    assert!(
+        result.is_err(),
+        "Wayfern should not be available for download"
+    );
     assert!(result.unwrap_err().to_string().contains("Coming soon"));
 }
 

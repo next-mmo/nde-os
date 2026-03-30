@@ -40,21 +40,22 @@ impl Tool for FilePatchTool {
     }
 
     async fn execute(&self, args: serde_json::Value, sandbox: &Sandbox) -> Result<String> {
-        let path_str = args.get("path")
+        let path_str = args
+            .get("path")
             .and_then(|v| v.as_str())
             .ok_or_else(|| anyhow::anyhow!("Missing 'path' argument"))?;
 
-        let search = args.get("search")
+        let search = args
+            .get("search")
             .and_then(|v| v.as_str())
             .ok_or_else(|| anyhow::anyhow!("Missing 'search' argument"))?;
 
-        let replace = args.get("replace")
+        let replace = args
+            .get("replace")
             .and_then(|v| v.as_str())
             .ok_or_else(|| anyhow::anyhow!("Missing 'replace' argument"))?;
 
-        let replace_all = args.get("all")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
+        let replace_all = args.get("all").and_then(|v| v.as_bool()).unwrap_or(false);
 
         let full_path = sandbox.resolve(Path::new(path_str))?;
 
@@ -77,6 +78,9 @@ impl Tool for FilePatchTool {
 
         std::fs::write(&full_path, &new_content)?;
 
-        Ok(format!("Patched {}: {} replacement(s) applied", path_str, count))
+        Ok(format!(
+            "Patched {}: {} replacement(s) applied",
+            path_str, count
+        ))
     }
 }

@@ -99,10 +99,7 @@ impl Channel for TelegramChannel {
         ChannelType::Telegram
     }
 
-    async fn start(
-        &mut self,
-        tx: mpsc::Sender<ChannelMessage>,
-    ) -> Result<()> {
+    async fn start(&mut self, tx: mpsc::Sender<ChannelMessage>) -> Result<()> {
         self.running.store(true, Ordering::SeqCst);
         let (shutdown_tx, mut shutdown_rx) = tokio::sync::oneshot::channel();
         self.shutdown_tx = Some(shutdown_tx);
@@ -132,17 +129,14 @@ impl Channel for TelegramChannel {
 
                 match client.get(&url).send().await {
                     Ok(resp) => {
-                        if let Ok(data) = resp
-                            .json::<TelegramResponse<Vec<TelegramUpdate>>>()
-                            .await
+                        if let Ok(data) = resp.json::<TelegramResponse<Vec<TelegramUpdate>>>().await
                         {
                             if let Some(updates) = data.result {
                                 for update in updates {
                                     offset = update.update_id + 1;
 
                                     if let Some(msg) = update.message {
-                                        let text =
-                                            msg.text.unwrap_or_default();
+                                        let text = msg.text.unwrap_or_default();
                                         if text.is_empty() {
                                             continue;
                                         }
@@ -152,26 +146,18 @@ impl Channel for TelegramChannel {
                                             .as_ref()
                                             .map(|u| u.id.to_string())
                                             .unwrap_or_default();
-                                        let sender_name = msg.from.as_ref().map(
-                                            |u| {
-                                                let mut n =
-                                                    u.first_name.clone();
-                                                if let Some(last) =
-                                                    &u.last_name
-                                                {
-                                                    n.push(' ');
-                                                    n.push_str(last);
-                                                }
-                                                n
-                                            },
-                                        );
+                                        let sender_name = msg.from.as_ref().map(|u| {
+                                            let mut n = u.first_name.clone();
+                                            if let Some(last) = &u.last_name {
+                                                n.push(' ');
+                                                n.push_str(last);
+                                            }
+                                            n
+                                        });
 
                                         let channel_msg = ChannelMessage {
-                                            id: msg
-                                                .message_id
-                                                .to_string(),
-                                            channel_type:
-                                                ChannelType::Telegram,
+                                            id: msg.message_id.to_string(),
+                                            channel_type: ChannelType::Telegram,
                                             channel_name: name.clone(),
                                             sender_id,
                                             sender_name,
@@ -182,20 +168,12 @@ impl Channel for TelegramChannel {
                                                 "chat_type": msg.chat.chat_type,
                                             }),
                                             timestamp: chrono::Utc::now(),
-                                            conversation_ref: Some(
-                                                msg.chat.id.to_string(),
-                                            ),
+                                            conversation_ref: Some(msg.chat.id.to_string()),
                                         };
 
-                                        if tx.send(channel_msg).await.is_err()
-                                        {
-                                            tracing::error!(
-                                                "Channel message receiver dropped"
-                                            );
-                                            running.store(
-                                                false,
-                                                Ordering::SeqCst,
-                                            );
+                                        if tx.send(channel_msg).await.is_err() {
+                                            tracing::error!("Channel message receiver dropped");
+                                            running.store(false, Ordering::SeqCst);
                                             break;
                                         }
                                     }
@@ -208,10 +186,7 @@ impl Channel for TelegramChannel {
                             error = %e,
                             "Telegram long-poll error, retrying in 5s"
                         );
-                        tokio::time::sleep(
-                            std::time::Duration::from_secs(5),
-                        )
-                        .await;
+                        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
                     }
                 }
             }
@@ -223,10 +198,9 @@ impl Channel for TelegramChannel {
     }
 
     async fn send(&self, response: &ChannelResponse) -> Result<()> {
-        let chat_id = response
-            .conversation_ref
-            .as_ref()
-            .ok_or_else(|| anyhow::anyhow!("No chat_id in conversation_ref for Telegram response"))?;
+        let chat_id = response.conversation_ref.as_ref().ok_or_else(|| {
+            anyhow::anyhow!("No chat_id in conversation_ref for Telegram response")
+        })?;
 
         let body = serde_json::json!({
             "chat_id": chat_id,

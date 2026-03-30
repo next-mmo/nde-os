@@ -22,17 +22,12 @@ pub fn normalize_rest_message(
 }
 
 /// Format an agent response for a specific channel's conventions.
-pub fn format_response(
-    content: &str,
-    channel_type: ChannelType,
-) -> String {
+pub fn format_response(content: &str, channel_type: ChannelType) -> String {
     match channel_type {
         ChannelType::Telegram => {
             // Telegram uses HTML or Markdown formatting
             // Convert code blocks for Telegram markdown
-            content
-                .replace("```", "```")
-                .to_string()
+            content.replace("```", "```").to_string()
         }
         ChannelType::Discord => {
             // Discord supports standard Markdown
@@ -40,10 +35,7 @@ pub fn format_response(
         }
         ChannelType::Slack => {
             // Slack uses mrkdwn (their own markdown variant)
-            content
-                .replace("**", "*")
-                .replace("```", "```")
-                .to_string()
+            content.replace("**", "*").replace("```", "```").to_string()
         }
         _ => content.to_string(),
     }

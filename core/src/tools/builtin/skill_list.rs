@@ -28,8 +28,7 @@ impl Tool for SkillListTool {
     }
 
     async fn execute(&self, args: serde_json::Value, sandbox: &Sandbox) -> Result<String> {
-        let query = args.get("query")
-            .and_then(|v| v.as_str());
+        let query = args.get("query").and_then(|v| v.as_str());
 
         // Search for skills in standard locations
         let search_paths = vec![
@@ -39,11 +38,7 @@ impl Tool for SkillListTool {
             dirs_skill_path(),
         ];
 
-        let loader = SkillLoader::new(
-            search_paths.into_iter()
-                .filter(|p| p.exists())
-                .collect()
-        );
+        let loader = SkillLoader::new(search_paths.into_iter().filter(|p| p.exists()).collect());
 
         let all_skills = loader.discover()?;
 
@@ -78,9 +73,13 @@ impl Tool for SkillListTool {
 fn dirs_skill_path() -> std::path::PathBuf {
     if cfg!(windows) {
         let userprofile = std::env::var("USERPROFILE").unwrap_or_default();
-        std::path::PathBuf::from(userprofile).join(".agents").join("skills")
+        std::path::PathBuf::from(userprofile)
+            .join(".agents")
+            .join("skills")
     } else {
         let home = std::env::var("HOME").unwrap_or_default();
-        std::path::PathBuf::from(home).join(".agents").join("skills")
+        std::path::PathBuf::from(home)
+            .join(".agents")
+            .join("skills")
     }
 }

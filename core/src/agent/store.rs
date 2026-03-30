@@ -25,7 +25,7 @@ impl TaskStore {
         conn.execute_batch(
             "PRAGMA journal_mode = WAL;
              PRAGMA synchronous = NORMAL;
-             PRAGMA foreign_keys = ON;"
+             PRAGMA foreign_keys = ON;",
         )?;
 
         conn.execute_batch(
@@ -57,17 +57,21 @@ impl TaskStore {
 
             CREATE INDEX IF NOT EXISTS idx_tasks_state ON tasks(state);
             CREATE INDEX IF NOT EXISTS idx_tasks_conversation ON tasks(conversation_id);
-            CREATE INDEX IF NOT EXISTS idx_tasks_created ON tasks(created_at);"
+            CREATE INDEX IF NOT EXISTS idx_tasks_created ON tasks(created_at);",
         )?;
 
-        Ok(Self { conn: Mutex::new(conn) })
+        Ok(Self {
+            conn: Mutex::new(conn),
+        })
     }
 
     /// In-memory store for testing.
     #[cfg(test)]
     pub fn in_memory() -> Result<Self> {
         let conn = Connection::open_in_memory()?;
-        let store = Self { conn: Mutex::new(conn) };
+        let store = Self {
+            conn: Mutex::new(conn),
+        };
         // Re-run schema creation
         store.conn.lock().unwrap().execute_batch(
             "CREATE TABLE IF NOT EXISTS tasks (
@@ -93,7 +97,7 @@ impl TaskStore {
                 messages_json TEXT NOT NULL,
                 updated_at TEXT NOT NULL,
                 FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
-            );"
+            );",
         )?;
         Ok(store)
     }
@@ -136,12 +140,12 @@ impl TaskStore {
             "SELECT id, state, input, output, error, conversation_id, parent_task_id,
                     retry_count, max_retries, timeout_secs, iterations, tokens_used,
                     tool_calls_made, created_at, started_at, completed_at
-             FROM tasks WHERE id = ?1"
+             FROM tasks WHERE id = ?1",
         )?;
 
-        let result = stmt.query_row(params![id], |row| {
-            Ok(Self::row_to_task(row))
-        }).optional()?;
+        let result = stmt
+            .query_row(params![id], |row| Ok(Self::row_to_task(row)))
+            .optional()?;
 
         match result {
             Some(task) => Ok(Some(task?)),
@@ -156,7 +160,7 @@ impl TaskStore {
             "SELECT id, state, input, output, error, conversation_id, parent_task_id,
                     retry_count, max_retries, timeout_secs, iterations, tokens_used,
                     tool_calls_made, created_at, started_at, completed_at
-             FROM tasks WHERE 1=1"
+             FROM tasks WHERE 1=1",
         );
         let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
 
@@ -165,7 +169,10 @@ impl TaskStore {
             param_values.push(Box::new(state.to_string()));
         }
         if let Some(conv_id) = &filter.conversation_id {
-            sql.push_str(&format!(" AND conversation_id = ?{}", param_values.len() + 1));
+            sql.push_str(&format!(
+                " AND conversation_id = ?{}",
+                param_values.len() + 1
+            ));
             param_values.push(Box::new(conv_id.clone()));
         }
 
@@ -176,13 +183,13 @@ impl TaskStore {
         }
 
         let mut stmt = conn.prepare(&sql)?;
-        let params_refs: Vec<&dyn rusqlite::types::ToSql> = param_values.iter().map(|p| p.as_ref()).collect();
-        let tasks = stmt.query_map(params_refs.as_slice(), |row| {
-            Ok(Self::row_to_task(row))
-        })?
-        .filter_map(|r| r.ok())
-        .filter_map(|r| r.ok())
-        .collect();
+        let params_refs: Vec<&dyn rusqlite::types::ToSql> =
+            param_values.iter().map(|p| p.as_ref()).collect();
+        let tasks = stmt
+            .query_map(params_refs.as_slice(), |row| Ok(Self::row_to_task(row)))?
+            .filter_map(|r| r.ok())
+            .filter_map(|r| r.ok())
+            .collect();
 
         Ok(tasks)
     }
@@ -191,7 +198,11 @@ impl TaskStore {
     pub fn update_state(&self, id: &str, state: TaskState) -> Result<()> {
         let conn = self.conn.lock().unwrap();
         let now = chrono::Utc::now().to_rfc3339();
-        let completed_at = if state.is_terminal() { Some(now.clone()) } else { None };
+        let completed_at = if state.is_terminal() {
+            Some(now.clone())
+        } else {
+            None
+        };
 
         conn.execute(
             "UPDATE tasks SET state = ?1, completed_at = COALESCE(?2, completed_at) WHERE id = ?3",
@@ -216,13 +227,12 @@ impl TaskStore {
     /// Load a checkpoint for task resumption.
     pub fn load_checkpoint(&self, task_id: &str) -> Result<Option<Vec<Message>>> {
         let conn = self.conn.lock().unwrap();
-        let mut stmt = conn.prepare(
-            "SELECT messages_json FROM task_checkpoints WHERE task_id = ?1"
-        )?;
+        let mut stmt =
+            conn.prepare("SELECT messages_json FROM task_checkpoints WHERE task_id = ?1")?;
 
-        let result: Option<String> = stmt.query_row(params![task_id], |row| {
-            row.get(0)
-        }).optional()?;
+        let result: Option<String> = stmt
+            .query_row(params![task_id], |row| row.get(0))
+            .optional()?;
 
         match result {
             Some(json) => {
@@ -364,10 +374,12 @@ mod tests {
         t2.mark_completed("done");
         store.save_task(&t2).unwrap();
 
-        let running = store.list_tasks(&TaskFilter {
-            state: Some(TaskState::Running),
-            ..Default::default()
-        }).unwrap();
+        let running = store
+            .list_tasks(&TaskFilter {
+                state: Some(TaskState::Running),
+                ..Default::default()
+            })
+            .unwrap();
         assert_eq!(running.len(), 1);
         assert_eq!(running[0].id, t1.id);
     }

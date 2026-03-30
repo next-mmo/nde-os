@@ -2,8 +2,9 @@
 ///
 /// Downloads pre-built llama-server binary + default model on first use.
 /// Lifecycle: bootstrap binary -> download model -> launch server -> OpenAI-compat API.
-
-use super::{LlmProvider, LlmResponse, Message, StopReason, ToolCall, ToolDef, Usage, streaming, ChunkStream};
+use super::{
+    streaming, ChunkStream, LlmProvider, LlmResponse, Message, StopReason, ToolCall, ToolDef, Usage,
+};
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -56,32 +57,45 @@ pub struct GgufProvider {
 }
 
 impl GgufProvider {
-    pub fn new(data_dir: &Path, model_id: &str, model_path: Option<&str>, port: Option<u16>) -> Self {
+    pub fn new(
+        data_dir: &Path,
+        model_id: &str,
+        model_path: Option<&str>,
+        port: Option<u16>,
+    ) -> Self {
         let port = port.unwrap_or(DEFAULT_PORT);
-        
+
         let mut download_url = DEFAULT_MODEL_URL.to_string();
         let mut default_filename = DEFAULT_MODEL_FILENAME.to_string();
 
         let recs = GgufModelRecommendation::recommend_models(u64::MAX, None);
         // Try exact ID match, then try matching by URL filename containing the model_id
-        let rec_match = recs.iter().find(|r| r.id == model_id)
-            .or_else(|| {
-                let id_lower = model_id.to_lowercase();
-                recs.iter().find(|r| {
-                    let url_filename = r.url.split('/').last().unwrap_or_default().to_lowercase();
-                    // Match "Qwen3.5-9B-Q4_K_M" against URL filename "Qwen3.5-9B-Q4_K_M.gguf"
-                    url_filename.starts_with(&id_lower)
-                        || url_filename.trim_end_matches(".gguf") == id_lower
-                })
-            });
+        let rec_match = recs.iter().find(|r| r.id == model_id).or_else(|| {
+            let id_lower = model_id.to_lowercase();
+            recs.iter().find(|r| {
+                let url_filename = r.url.split('/').last().unwrap_or_default().to_lowercase();
+                // Match "Qwen3.5-9B-Q4_K_M" against URL filename "Qwen3.5-9B-Q4_K_M.gguf"
+                url_filename.starts_with(&id_lower)
+                    || url_filename.trim_end_matches(".gguf") == id_lower
+            })
+        });
 
         if let Some(rec) = rec_match {
             download_url = rec.url.clone();
-            default_filename = download_url.split('/').last().unwrap_or(DEFAULT_MODEL_FILENAME).to_string();
+            default_filename = download_url
+                .split('/')
+                .last()
+                .unwrap_or(DEFAULT_MODEL_FILENAME)
+                .to_string();
         } else if model_id.starts_with("http") {
             download_url = model_id.to_string();
-            default_filename = download_url.split('/').last().unwrap_or(DEFAULT_MODEL_FILENAME).to_string();
-        } else if model_id.ends_with(".gguf") || model_id.contains("-Q") || model_id.contains("-q") {
+            default_filename = download_url
+                .split('/')
+                .last()
+                .unwrap_or(DEFAULT_MODEL_FILENAME)
+                .to_string();
+        } else if model_id.ends_with(".gguf") || model_id.contains("-Q") || model_id.contains("-q")
+        {
             // Looks like a GGUF filename or model name pattern — use it directly
             let fname = if model_id.ends_with(".gguf") {
                 model_id.to_string()
@@ -104,7 +118,7 @@ impl GgufProvider {
                 }
             }
         };
-        
+
         let model_name = model_path
             .file_stem()
             .map(|s| s.to_string_lossy().to_string())
@@ -193,7 +207,11 @@ impl GgufProvider {
                 for entry in entries.flatten() {
                     let path = entry.path();
                     if path.extension().and_then(|e| e.to_str()) == Some("gguf") {
-                        let fname = path.file_name().unwrap_or_default().to_string_lossy().to_string();
+                        let fname = path
+                            .file_name()
+                            .unwrap_or_default()
+                            .to_string_lossy()
+                            .to_string();
                         if seen_filenames.contains(&fname) {
                             continue; // deduplicate by filename
                         }
@@ -246,18 +264,27 @@ impl GgufProvider {
             if self.download_url.starts_with("http") {
                 // Model will be auto-downloaded — not a blocking error but note it
                 // Let's do a HEAD request to verify the URL is reachable
-                match self.client.head(&self.download_url)
+                match self
+                    .client
+                    .head(&self.download_url)
                     .timeout(std::time::Duration::from_secs(10))
-                    .send().await
+                    .send()
+                    .await
                 {
                     Ok(resp) if resp.status().is_success() || resp.status().is_redirection() => {
                         // URL is valid, model will be downloaded on first use
                     }
                     Ok(resp) => {
-                        errors.push(format!("Model not found locally and download URL returned HTTP {}", resp.status()));
+                        errors.push(format!(
+                            "Model not found locally and download URL returned HTTP {}",
+                            resp.status()
+                        ));
                     }
                     Err(e) => {
-                        errors.push(format!("Model not found locally and download URL unreachable: {}", e));
+                        errors.push(format!(
+                            "Model not found locally and download URL unreachable: {}",
+                            e
+                        ));
                     }
                 }
             } else {
@@ -265,10 +292,16 @@ impl GgufProvider {
             }
         }
         if !server_available {
-            errors.push("llama-server binary not found (will auto-download on first use)".to_string());
+            errors.push(
+                "llama-server binary not found (will auto-download on first use)".to_string(),
+            );
         }
 
-        let error = if errors.is_empty() { None } else { Some(errors.join("; ")) };
+        let error = if errors.is_empty() {
+            None
+        } else {
+            Some(errors.join("; "))
+        };
         let ok = model_exists || (self.download_url.starts_with("http") && error.is_none());
 
         GgufVerifyResult {
@@ -329,7 +362,11 @@ impl GgufProvider {
         let (url, archive_name) = Self::release_url();
         tracing::info!(url = %url, "Downloading llama-server (first run)...");
 
-        let resp = self.client.get(&url).send().await
+        let resp = self
+            .client
+            .get(&url)
+            .send()
+            .await
             .context("Failed to download llama-server")?;
 
         if !resp.status().is_success() {
@@ -527,8 +564,7 @@ impl GgufProvider {
         // We MUST extract all files (DLLs, .so, .dylib) — not just the server binary,
         // because llama-server.exe depends on ggml-base.dll and other shared libraries.
         let cursor = std::io::Cursor::new(bytes);
-        let mut archive = zip::ZipArchive::new(cursor)
-            .context("Failed to open zip archive")?;
+        let mut archive = zip::ZipArchive::new(cursor).context("Failed to open zip archive")?;
 
         let mut extracted_count = 0u32;
         for i in 0..archive.len() {
@@ -572,10 +608,17 @@ impl GgufProvider {
             "Downloading GGUF model (first run)..."
         );
 
-        let resp = self.client.get(&self.download_url).send().await
+        let resp = self
+            .client
+            .get(&self.download_url)
+            .send()
+            .await
             .context("Failed to download GGUF model")?;
         if !resp.status().is_success() {
-            return Err(anyhow::anyhow!("Model download failed: HTTP {}", resp.status()));
+            return Err(anyhow::anyhow!(
+                "Model download failed: HTTP {}",
+                resp.status()
+            ));
         }
 
         let bytes = resp.bytes().await.context("Failed to read model data")?;
@@ -612,16 +655,22 @@ impl GgufProvider {
             "Starting llama-server..."
         );
 
-        let bin_dir = server_bin.parent()
+        let bin_dir = server_bin
+            .parent()
             .unwrap_or_else(|| Path::new("."))
             .to_path_buf();
 
         let mut cmd = tokio::process::Command::new(&server_bin);
-        cmd.arg("--model").arg(&self.model_path)
-            .arg("--port").arg(self.port.to_string())
-            .arg("--ctx-size").arg(ctx_size)
-            .arg("--n-gpu-layers").arg("99")
-            .arg("--host").arg("127.0.0.1")
+        cmd.arg("--model")
+            .arg(&self.model_path)
+            .arg("--port")
+            .arg(self.port.to_string())
+            .arg("--ctx-size")
+            .arg(ctx_size)
+            .arg("--n-gpu-layers")
+            .arg("99")
+            .arg("--host")
+            .arg("127.0.0.1")
             // Set working directory to bin/ so Windows can find companion DLLs
             // (ggml-cuda.dll, cudart64_*.dll, etc.)
             .current_dir(&bin_dir)
@@ -633,8 +682,7 @@ impl GgufProvider {
             cmd.arg("--flash-attn");
         }
 
-        let child = cmd.spawn()
-            .context("Failed to spawn llama-server")?;
+        let child = cmd.spawn().context("Failed to spawn llama-server")?;
 
         *proc = Some(child);
 
@@ -647,14 +695,17 @@ impl GgufProvider {
             }
         }
 
-        Err(anyhow::anyhow!("llama-server did not become ready within 90 seconds"))
+        Err(anyhow::anyhow!(
+            "llama-server did not become ready within 90 seconds"
+        ))
     }
 
     async fn health_check(&self) -> bool {
         self.client
             .get(format!("{}/health", self.base_url))
             .timeout(std::time::Duration::from_secs(2))
-            .send().await
+            .send()
+            .await
             .map(|r| r.status().is_success())
             .unwrap_or(false)
     }
@@ -743,47 +794,74 @@ struct OaiUsage {
 // -- Conversions --------------------------------------------------------------
 
 fn to_oai_messages(messages: &[Message]) -> Vec<OaiMessage> {
-    messages.iter().map(|m| match m {
-        Message::System { content } => OaiMessage {
-            role: "system".into(), content: Some(content.clone()),
-            tool_calls: None, tool_call_id: None,
-        },
-        Message::User { content } => OaiMessage {
-            role: "user".into(), content: Some(content.clone()),
-            tool_calls: None, tool_call_id: None,
-        },
-        Message::Assistant { content, tool_calls } => {
-            let tc = if tool_calls.is_empty() { None } else {
-                Some(tool_calls.iter().map(|tc| OaiToolCall {
-                    id: tc.id.clone(),
-                    call_type: "function".into(),
-                    function: OaiFunctionCall {
-                        name: tc.name.clone(),
-                        arguments: tc.arguments.to_string(),
-                    },
-                }).collect())
-            };
-            OaiMessage {
-                role: "assistant".into(), content: content.clone(),
-                tool_calls: tc, tool_call_id: None,
+    messages
+        .iter()
+        .map(|m| match m {
+            Message::System { content } => OaiMessage {
+                role: "system".into(),
+                content: Some(content.clone()),
+                tool_calls: None,
+                tool_call_id: None,
+            },
+            Message::User { content } => OaiMessage {
+                role: "user".into(),
+                content: Some(content.clone()),
+                tool_calls: None,
+                tool_call_id: None,
+            },
+            Message::Assistant {
+                content,
+                tool_calls,
+            } => {
+                let tc = if tool_calls.is_empty() {
+                    None
+                } else {
+                    Some(
+                        tool_calls
+                            .iter()
+                            .map(|tc| OaiToolCall {
+                                id: tc.id.clone(),
+                                call_type: "function".into(),
+                                function: OaiFunctionCall {
+                                    name: tc.name.clone(),
+                                    arguments: tc.arguments.to_string(),
+                                },
+                            })
+                            .collect(),
+                    )
+                };
+                OaiMessage {
+                    role: "assistant".into(),
+                    content: content.clone(),
+                    tool_calls: tc,
+                    tool_call_id: None,
+                }
             }
-        }
-        Message::Tool { tool_call_id, content } => OaiMessage {
-            role: "tool".into(), content: Some(content.clone()),
-            tool_calls: None, tool_call_id: Some(tool_call_id.clone()),
-        },
-    }).collect()
+            Message::Tool {
+                tool_call_id,
+                content,
+            } => OaiMessage {
+                role: "tool".into(),
+                content: Some(content.clone()),
+                tool_calls: None,
+                tool_call_id: Some(tool_call_id.clone()),
+            },
+        })
+        .collect()
 }
 
 fn to_oai_tools(tools: &[ToolDef]) -> Vec<OaiTool> {
-    tools.iter().map(|t| OaiTool {
-        tool_type: "function".into(),
-        function: OaiFunction {
-            name: t.name.clone(),
-            description: t.description.clone(),
-            parameters: t.parameters.clone(),
-        },
-    }).collect()
+    tools
+        .iter()
+        .map(|t| OaiTool {
+            tool_type: "function".into(),
+            function: OaiFunction {
+                name: t.name.clone(),
+                description: t.description.clone(),
+                parameters: t.parameters.clone(),
+            },
+        })
+        .collect()
 }
 
 // -- LlmProvider impl ---------------------------------------------------------
@@ -803,32 +881,49 @@ impl LlmProvider for GgufProvider {
             max_tokens: Some(2048),
         };
 
-        let resp = self.client
+        let resp = self
+            .client
             .post(format!("{}/v1/chat/completions", self.base_url))
             .header("Content-Type", "application/json")
             .json(&body)
-            .send().await
+            .send()
+            .await
             .context("Failed to connect to llama-server")?;
 
         if !resp.status().is_success() {
             let status = resp.status();
             let text = resp.text().await.unwrap_or_default();
-            return Err(anyhow::anyhow!("llama-server API error {}: {}", status, text));
+            return Err(anyhow::anyhow!(
+                "llama-server API error {}: {}",
+                status,
+                text
+            ));
         }
 
-        let data: ChatResponse = resp.json().await
+        let data: ChatResponse = resp
+            .json()
+            .await
             .context("Failed to parse llama-server response")?;
 
-        let choice = data.choices.into_iter().next()
+        let choice = data
+            .choices
+            .into_iter()
+            .next()
             .ok_or_else(|| anyhow::anyhow!("No choices in response"))?;
 
-        let tool_calls: Vec<ToolCall> = choice.message.tool_calls
+        let tool_calls: Vec<ToolCall> = choice
+            .message
+            .tool_calls
             .unwrap_or_default()
             .into_iter()
             .map(|tc| {
                 let args = serde_json::from_str(&tc.function.arguments)
                     .unwrap_or(serde_json::Value::Object(Default::default()));
-                ToolCall { id: tc.id, name: tc.function.name, arguments: args }
+                ToolCall {
+                    id: tc.id,
+                    name: tc.function.name,
+                    arguments: args,
+                }
             })
             .collect();
 
@@ -850,19 +945,17 @@ impl LlmProvider for GgufProvider {
         })
     }
 
-    fn name(&self) -> &str { "gguf" }
+    fn name(&self) -> &str {
+        "gguf"
+    }
 
-    async fn chat_stream(
-        &self,
-        messages: &[Message],
-        tools: &[ToolDef],
-    ) -> Result<ChunkStream> {
+    async fn chat_stream(&self, messages: &[Message], tools: &[ToolDef]) -> Result<ChunkStream> {
         let messages = messages.to_vec();
         let tools = tools.to_vec();
         let provider = self.clone();
-        
+
         let needs_download = !self.model_path.exists();
-        
+
         let stream = async_stream::stream! {
             if needs_download {
                 yield Ok(streaming::StreamChunk::TextDelta {
@@ -873,12 +966,12 @@ impl LlmProvider for GgufProvider {
                     content: "\n*(Starting local GGUF inference server...)*\n\n".to_string()
                 });
             }
-            
+
             if let Err(e) = provider.ensure_server().await {
                 yield Ok(streaming::StreamChunk::Error { message: format!("\n**Error starting GGUF server:** {}", e) });
                 return;
             }
-            
+
             match provider.chat(&messages, &tools).await {
                 Ok(resp) => {
                     if let Some(content) = &resp.content {
@@ -928,7 +1021,11 @@ pub struct GgufModelRecommendation {
 
 impl GgufModelRecommendation {
     pub fn recommend_models(ram_bytes: u64, _gpu_vram_bytes: Option<u64>) -> Vec<Self> {
-        let ram_gb = ram_bytes.saturating_mul(10).checked_div(1024 * 1024 * 1024).unwrap_or(0) as f64 / 10.0;
+        let ram_gb = ram_bytes
+            .saturating_mul(10)
+            .checked_div(1024 * 1024 * 1024)
+            .unwrap_or(0) as f64
+            / 10.0;
         let mut models = vec![];
 
         // 1. Qwen 2.5 0.5B — bundled, instant use, no download needed

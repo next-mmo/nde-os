@@ -12,7 +12,9 @@ use crate::response::*;
 pub fn cors_preflight() -> Response<Cursor<Vec<u8>>> {
     Response::from_data(Vec::new())
         .with_header(Header::from_bytes("Access-Control-Allow-Origin", "*").unwrap())
-        .with_header(Header::from_bytes("Access-Control-Allow-Methods", "GET,POST,DELETE,OPTIONS").unwrap())
+        .with_header(
+            Header::from_bytes("Access-Control-Allow-Methods", "GET,POST,DELETE,OPTIONS").unwrap(),
+        )
         .with_header(Header::from_bytes("Access-Control-Allow-Headers", "Content-Type").unwrap())
 }
 
@@ -24,21 +26,29 @@ pub fn health() -> Response<Cursor<Vec<u8>>> {
 /// GET /api/system
 pub fn system_info(mgr: &AppManager) -> Response<Cursor<Vec<u8>>> {
     let py_cmd = AppManifest::python_cmd();
-    let py = Command::new(py_cmd).arg("--version").output().ok()
+    let py = Command::new(py_cmd)
+        .arg("--version")
+        .output()
+        .ok()
         .and_then(|o| String::from_utf8(o.stdout).ok())
         .map(|s| s.trim().to_string());
-    let gpu = Command::new("nvidia-smi").output()
-        .map(|o| o.status.success()).unwrap_or(false);
-    ok("System info", json!({
-        "os": std::env::consts::OS,
-        "arch": std::env::consts::ARCH,
-        "python_version": py,
-        "gpu_detected": gpu,
-        "uv": mgr.uv_info(),
-        "base_dir": mgr.base_dir().to_string_lossy(),
-        "total_apps": mgr.total_count(),
-        "running_apps": mgr.running_count(),
-    }))
+    let gpu = Command::new("nvidia-smi")
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false);
+    ok(
+        "System info",
+        json!({
+            "os": std::env::consts::OS,
+            "arch": std::env::consts::ARCH,
+            "python_version": py,
+            "gpu_detected": gpu,
+            "uv": mgr.uv_info(),
+            "base_dir": mgr.base_dir().to_string_lossy(),
+            "total_apps": mgr.total_count(),
+            "running_apps": mgr.running_count(),
+        }),
+    )
 }
 
 /// GET /api/system/resources
@@ -75,8 +85,11 @@ pub fn install_app(req: &mut Request, mgr: &AppManager) -> Response<Cursor<Vec<u
             ),
             Err(e) => {
                 let msg = e.to_string();
-                if msg.contains("already installed") { err(409, &msg) }
-                else { err(400, &msg) }
+                if msg.contains("already installed") {
+                    err(409, &msg)
+                } else {
+                    err(400, &msg)
+                }
             }
         },
         Err(e) => err(400, &format!("Invalid JSON: {}", e)),
@@ -108,9 +121,13 @@ pub fn launch_app(id: &str, mgr: &AppManager) -> Response<Cursor<Vec<u8>>> {
         ),
         Err(e) => {
             let msg = e.to_string();
-            if msg.contains("not installed") { err(404, &msg) }
-            else if msg.contains("already running") { err(409, &msg) }
-            else { err(500, &msg) }
+            if msg.contains("not installed") {
+                err(404, &msg)
+            } else if msg.contains("already running") {
+                err(409, &msg)
+            } else {
+                err(500, &msg)
+            }
         }
     }
 }
@@ -218,10 +235,17 @@ pub fn verify_sandbox(id: &str, mgr: &AppManager) -> Response<Cursor<Vec<u8>>> {
 pub fn disk_usage(id: &str, mgr: &AppManager) -> Response<Cursor<Vec<u8>>> {
     match mgr.disk_usage(id) {
         Ok(bytes) => {
-            let human = if bytes > 1_073_741_824 { format!("{:.2} GB", bytes as f64/1_073_741_824.0) }
-            else if bytes > 1_048_576 { format!("{:.2} MB", bytes as f64/1_048_576.0) }
-            else { format!("{:.2} KB", bytes as f64/1024.0) };
-            ok("Disk usage", json!({"app_id":id,"bytes":bytes,"human_readable":human}))
+            let human = if bytes > 1_073_741_824 {
+                format!("{:.2} GB", bytes as f64 / 1_073_741_824.0)
+            } else if bytes > 1_048_576 {
+                format!("{:.2} MB", bytes as f64 / 1_048_576.0)
+            } else {
+                format!("{:.2} KB", bytes as f64 / 1024.0)
+            };
+            ok(
+                "Disk usage",
+                json!({"app_id":id,"bytes":bytes,"human_readable":human}),
+            )
         }
         Err(e) => err(404, &e.to_string()),
     }
@@ -244,16 +268,21 @@ pub fn store_upload(req: &mut Request, mgr: &AppManager) -> Response<Cursor<Vec<
         Ok(result) => {
             if result.accepted {
                 created(
-                    &format!("App '{}' uploaded and installed successfully",
-                        result.app_name.as_deref().unwrap_or("unknown")),
+                    &format!(
+                        "App '{}' uploaded and installed successfully",
+                        result.app_name.as_deref().unwrap_or("unknown")
+                    ),
                     &result,
                 )
             } else {
-                json_resp(400, &json!({
-                    "success": false,
-                    "message": "Upload validation or install failed",
-                    "data": result,
-                }))
+                json_resp(
+                    400,
+                    &json!({
+                        "success": false,
+                        "message": "Upload validation or install failed",
+                        "data": result,
+                    }),
+                )
             }
         }
         Err(e) => err(500, &format!("Upload error: {}", e)),

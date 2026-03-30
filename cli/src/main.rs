@@ -148,7 +148,15 @@ async fn main() -> Result<()> {
             provider,
         } => {
             if let Some(msg) = message {
-                chat::send_message(&client, api, &msg, stream, conversation.as_deref(), provider.as_deref()).await?;
+                chat::send_message(
+                    &client,
+                    api,
+                    &msg,
+                    stream,
+                    conversation.as_deref(),
+                    provider.as_deref(),
+                )
+                .await?;
             } else {
                 chat::interactive_repl(&client, api, stream, provider.as_deref()).await?;
             }
@@ -325,7 +333,10 @@ async fn main() -> Result<()> {
                     .await?
                     .json()
                     .await?;
-                println!("Active: {}", resp["data"].as_str().unwrap_or("none").green());
+                println!(
+                    "Active: {}",
+                    resp["data"].as_str().unwrap_or("none").green()
+                );
             }
             ModelAction::Switch { name } => {
                 let resp: serde_json::Value = client
@@ -344,8 +355,8 @@ async fn main() -> Result<()> {
         }
 
         Commands::Mcp => {
-            let workspace = std::env::current_dir()
-                .unwrap_or_else(|_| std::path::PathBuf::from("."));
+            let workspace =
+                std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
             println!("{}", format!(
                 "Starting NDE-OS MCP server on stdio...\n  Workspace: {}\n  Tools:     22+ built-in sandboxed tools\n  Transport: stdio (JSON-RPC)\n  Connect:   Add to your IDE's MCP config",
                 workspace.display()

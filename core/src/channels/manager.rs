@@ -111,12 +111,7 @@ impl ChannelManager {
         let entry = self
             .channels
             .get(&response.channel_name)
-            .ok_or_else(|| {
-                anyhow!(
-                    "Channel '{}' not found for response",
-                    response.channel_name
-                )
-            })?;
+            .ok_or_else(|| anyhow!("Channel '{}' not found for response", response.channel_name))?;
 
         entry.channel.send(response).await?;
         entry.stats.sent.fetch_add(1, Ordering::Relaxed);

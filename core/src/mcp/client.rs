@@ -75,8 +75,7 @@ impl McpClient {
 
     /// Load server configs from a TOML file.
     pub fn from_config_file(path: &std::path::Path) -> Result<Self> {
-        let content = std::fs::read_to_string(path)
-            .context("Failed to read MCP config file")?;
+        let content = std::fs::read_to_string(path).context("Failed to read MCP config file")?;
 
         #[derive(Deserialize)]
         struct McpConfig {
@@ -84,8 +83,7 @@ impl McpClient {
             servers: Vec<McpServerConfig>,
         }
 
-        let config: McpConfig =
-            toml::from_str(&content).context("Failed to parse MCP config")?;
+        let config: McpConfig = toml::from_str(&content).context("Failed to parse MCP config")?;
 
         let mut client = Self::new();
         for server_config in config.servers {

@@ -64,7 +64,7 @@ pub struct AgentManager {
     provider: Arc<dyn LlmProvider>,
     tools: Arc<ToolRegistry>,
     sandbox: Arc<Sandbox>,
-    running: Mutex<HashMap<String, RunningTask>>,
+    running: Arc<Mutex<HashMap<String, RunningTask>>>,
     event_tx: broadcast::Sender<AgentEvent>,
     tracker: Arc<HeartbeatTracker>,
     heartbeat: Mutex<Option<HeartbeatHandle>>,
@@ -73,16 +73,21 @@ pub struct AgentManager {
 
 impl AgentManager {
     /// Create a new agent manager.
-    pub fn new(
+    pub fn new(config: ManagerConfig, agent_config: AgentConfig, data_dir: &Path) -> Result<Self> {
+        let provider = Self::create_provider(&agent_config)?;
+        let tools = Arc::new(crate::tools::builtin::default_registry());
+        Self::new_with_runtime_parts(config, agent_config, data_dir, provider, tools)
+    }
+
+    fn new_with_runtime_parts(
         config: ManagerConfig,
         agent_config: AgentConfig,
         data_dir: &Path,
+        provider: Arc<dyn LlmProvider>,
+        tools: Arc<ToolRegistry>,
     ) -> Result<Self> {
         let db_path = data_dir.join("agent_tasks.db");
         let store = Arc::new(TaskStore::new(&db_path)?);
-
-        let provider = Self::create_provider(&agent_config)?;
-        let tools = Arc::new(crate::tools::builtin::default_registry());
 
         let workspace_path = if PathBuf::from(&agent_config.workspace).is_absolute() {
             PathBuf::from(&agent_config.workspace)
@@ -102,7 +107,7 @@ impl AgentManager {
             provider,
             tools,
             sandbox,
-            running: Mutex::new(HashMap::new()),
+            running: Arc::new(Mutex::new(HashMap::new())),
             event_tx,
             tracker,
             heartbeat: Mutex::new(None),
@@ -127,6 +132,17 @@ impl AgentManager {
         Ok(Arc::from(provider))
     }
 
+    #[cfg(test)]
+    fn new_for_test(
+        config: ManagerConfig,
+        agent_config: AgentConfig,
+        data_dir: &Path,
+        provider: Arc<dyn LlmProvider>,
+    ) -> Result<Self> {
+        let tools = Arc::new(crate::tools::builtin::default_registry());
+        Self::new_with_runtime_parts(config, agent_config, data_dir, provider, tools)
+    }
+
     // ── Boot & lifecycle ─────────────────────────────────────────────────
 
     /// Called at server startup. Restores incomplete tasks and starts heartbeat.
@@ -139,18 +155,14 @@ impl AgentManager {
                 // Re-queue
                 self.store.update_state(&task.id, TaskState::Pending)?;
             } else {
-                self.store
-                    .update_state(&task.id, TaskState::Failed)?;
+                self.store.update_state(&task.id, TaskState::Failed)?;
             }
         }
 
         // Start heartbeat
         self.start_heartbeat().await;
 
-        tracing::info!(
-            recovered = incomplete.len(),
-            "Agent manager booted"
-        );
+        tracing::info!(recovered = incomplete.len(), "Agent manager booted");
         Ok(())
     }
 
@@ -175,7 +187,12 @@ impl AgentManager {
                 if let Err(e) = store.update_state(&task_id, TaskState::Failed) {
                     tracing::error!(error = %e, "Failed to mark stale task as failed");
                 }
-                let _ = event_tx.send(AgentEvent::failed(&task_id, "Task stale — no progress", 0, false));
+                let _ = event_tx.send(AgentEvent::failed(
+                    &task_id,
+                    "Task stale — no progress",
+                    0,
+                    false,
+                ));
             }
         });
 
@@ -214,15 +231,15 @@ impl AgentManager {
         self.store.save_task(&task)?;
 
         // Emit created event
-        let _ = self
-            .event_tx
-            .send(AgentEvent::created(&task_id, input));
+        let _ = self.event_tx.send(AgentEvent::created(&task_id, input));
 
         // Set up execution
         let cancel = CancellationToken::new();
         let (event_tx, mut event_rx) = mpsc::channel::<AgentEvent>(64);
 
-        let config = agent_config.cloned().unwrap_or_else(|| self.agent_config.clone());
+        let config = agent_config
+            .cloned()
+            .unwrap_or_else(|| self.agent_config.clone());
         let exec_config = self.config.executor.clone();
         let provider = self.provider.clone();
         let tools = self.tools.clone();
@@ -231,6 +248,7 @@ impl AgentManager {
         let broadcast_tx = self.event_tx.clone();
         let tracker = self.tracker.clone();
         let cancel_clone = cancel.clone();
+        let running_tasks = self.running.clone();
 
         // Register with heartbeat tracker
         self.tracker.register_task(&task_id).await;
@@ -238,11 +256,13 @@ impl AgentManager {
         let task_id_clone = task_id.clone();
 
         // Spawn the executor task
+        let fallback_broadcast_tx = self.event_tx.clone();
         let handle = tokio::spawn(async move {
             // Forward events from executor to broadcast + tracker
             let tracker_ref = tracker.clone();
             let task_id_for_fwd = task_id_clone.clone();
             let fwd_handle = tokio::spawn(async move {
+                let mut saw_terminal_event = false;
                 while let Some(event) = event_rx.recv().await {
                     // Update tracker on iteration events
                     if let AgentEvent::IterationComplete {
@@ -255,8 +275,10 @@ impl AgentManager {
                             .record_activity(&task_id_for_fwd, *iteration, *tokens_used)
                             .await;
                     }
+                    saw_terminal_event |= event.is_terminal();
                     let _ = broadcast_tx.send(event);
                 }
+                saw_terminal_event
             });
 
             let result = executor::execute_task(
@@ -277,12 +299,29 @@ impl AgentManager {
             let _ = store.save_task(&task);
             tracker.unregister_task(&task.id).await;
 
-            if let Err(e) = &result {
-                tracing::error!(task_id = %task.id, error = %e, "Task failed");
+            let saw_terminal_event = match fwd_handle.await {
+                Ok(saw_terminal_event) => saw_terminal_event,
+                Err(e) => {
+                    tracing::warn!(task_id = %task.id, error = %e, "Event forwarder join failed");
+                    false
+                }
+            };
+
+            if !saw_terminal_event {
+                if let Err(e) = &result {
+                    tracing::error!(task_id = %task.id, error = %e, "Task failed");
+                    // Safety net: ensure a terminal event reaches subscribers even if
+                    // the executor failed to emit one (e.g. early provider init error).
+                    let _ = fallback_broadcast_tx.send(AgentEvent::failed(
+                        &task.id,
+                        &e.to_string(),
+                        0,
+                        false,
+                    ));
+                }
             }
 
-            // Wait for event forwarding to finish
-            fwd_handle.abort();
+            let _ = running_tasks.lock().await.remove(&task.id);
         });
 
         // Track running task
@@ -304,9 +343,7 @@ impl AgentManager {
         } else {
             // Task might not be running — update store directly
             self.store.update_state(task_id, TaskState::Cancelled)?;
-            let _ = self
-                .event_tx
-                .send(AgentEvent::cancelled(task_id));
+            let _ = self.event_tx.send(AgentEvent::cancelled(task_id));
             Ok(())
         }
     }
@@ -332,7 +369,11 @@ impl AgentManager {
             .ok_or_else(|| anyhow!("Task {} not found", task_id))?;
 
         if task.state != TaskState::Paused {
-            return Err(anyhow!("Task {} is not paused (state: {})", task_id, task.state));
+            return Err(anyhow!(
+                "Task {} is not paused (state: {})",
+                task_id,
+                task.state
+            ));
         }
 
         // Load checkpoint messages
@@ -357,6 +398,8 @@ impl AgentManager {
         let tracker = self.tracker.clone();
         let cancel_clone = cancel.clone();
         let task_id_str = task_id.to_string();
+        let running_tasks = self.running.clone();
+        let fallback_broadcast_tx = self.event_tx.clone();
 
         self.tracker.register_task(task_id).await;
 
@@ -364,6 +407,7 @@ impl AgentManager {
             let tracker_ref = tracker.clone();
             let task_id_for_fwd = task_id_str.clone();
             let fwd_handle = tokio::spawn(async move {
+                let mut saw_terminal_event = false;
                 while let Some(event) = event_rx.recv().await {
                     if let AgentEvent::IterationComplete {
                         iteration,
@@ -375,11 +419,13 @@ impl AgentManager {
                             .record_activity(&task_id_for_fwd, *iteration, *tokens_used)
                             .await;
                     }
+                    saw_terminal_event |= event.is_terminal();
                     let _ = broadcast_tx.send(event);
                 }
+                saw_terminal_event
             });
 
-            let _ = executor::execute_task(
+            let result = executor::execute_task(
                 &mut task,
                 &config,
                 &exec_config,
@@ -395,7 +441,28 @@ impl AgentManager {
 
             let _ = store.save_task(&task);
             tracker.unregister_task(&task.id).await;
-            fwd_handle.abort();
+
+            let saw_terminal_event = match fwd_handle.await {
+                Ok(saw_terminal_event) => saw_terminal_event,
+                Err(e) => {
+                    tracing::warn!(task_id = %task.id, error = %e, "Event forwarder join failed");
+                    false
+                }
+            };
+
+            if !saw_terminal_event {
+                if let Err(e) = &result {
+                    tracing::error!(task_id = %task.id, error = %e, "Resumed task failed");
+                    let _ = fallback_broadcast_tx.send(AgentEvent::failed(
+                        &task.id,
+                        &e.to_string(),
+                        0,
+                        false,
+                    ));
+                }
+            }
+
+            let _ = running_tasks.lock().await.remove(&task.id);
         });
 
         let mut running = self.running.lock().await;
@@ -445,6 +512,31 @@ impl AgentManager {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::llm::{LlmResponse, Message, StopReason, ToolDef, Usage};
+    use tokio::time::{sleep, timeout, Duration};
+
+    struct TestProvider {
+        response: String,
+    }
+
+    #[async_trait::async_trait]
+    impl LlmProvider for TestProvider {
+        async fn chat(&self, _messages: &[Message], _tools: &[ToolDef]) -> Result<LlmResponse> {
+            Ok(LlmResponse {
+                content: Some(self.response.clone()),
+                tool_calls: vec![],
+                stop_reason: StopReason::EndTurn,
+                usage: Some(Usage {
+                    prompt_tokens: 10,
+                    completion_tokens: 5,
+                }),
+            })
+        }
+
+        fn name(&self) -> &str {
+            "test"
+        }
+    }
 
     fn test_config() -> (ManagerConfig, AgentConfig, tempfile::TempDir) {
         let dir = tempfile::tempdir().unwrap();
@@ -469,5 +561,90 @@ mod tests {
         }
         let manager = manager.unwrap();
         assert_eq!(manager.active_count().await, 0);
+    }
+
+    async fn wait_for_terminal_event(
+        rx: &mut broadcast::Receiver<AgentEvent>,
+        task_id: &str,
+    ) -> AgentEvent {
+        timeout(Duration::from_secs(5), async {
+            loop {
+                let event = rx.recv().await.expect("event channel should stay open");
+                if event.task_id() == task_id && event.is_terminal() {
+                    return event;
+                }
+            }
+        })
+        .await
+        .expect("timed out waiting for terminal event")
+    }
+
+    async fn wait_for_completion(manager: &AgentManager, task_id: &str) {
+        timeout(Duration::from_secs(5), async {
+            loop {
+                let task = manager
+                    .get_task(task_id)
+                    .expect("task lookup should succeed")
+                    .expect("task should exist");
+                if task.state == TaskState::Completed {
+                    return;
+                }
+                sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("timed out waiting for completed task");
+    }
+
+    #[tokio::test]
+    async fn test_manager_broadcasts_terminal_event() {
+        let (config, agent_config, dir) = test_config();
+        let manager = AgentManager::new_for_test(
+            config,
+            agent_config,
+            dir.path(),
+            Arc::new(TestProvider {
+                response: "Hello from manager".into(),
+            }),
+        )
+        .unwrap();
+
+        let mut rx = manager.subscribe();
+        let task_id = manager.spawn("Say hello").await.unwrap();
+
+        match wait_for_terminal_event(&mut rx, &task_id).await {
+            AgentEvent::TaskCompleted { output, .. } => {
+                assert_eq!(output, "Hello from manager");
+            }
+            other => panic!("expected completed event, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_manager_removes_completed_task_from_running_set() {
+        let (config, agent_config, dir) = test_config();
+        let manager = AgentManager::new_for_test(
+            config,
+            agent_config,
+            dir.path(),
+            Arc::new(TestProvider {
+                response: "Cleanup complete".into(),
+            }),
+        )
+        .unwrap();
+
+        let task_id = manager.spawn("Finish and clean up").await.unwrap();
+        wait_for_completion(&manager, &task_id).await;
+
+        timeout(Duration::from_secs(5), async {
+            loop {
+                if manager.active_count().await == 0 {
+                    return;
+                }
+                sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("running task set did not drain");
     }
 }

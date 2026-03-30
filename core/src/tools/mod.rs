@@ -23,7 +23,9 @@ pub struct ToolRegistry {
 
 impl ToolRegistry {
     pub fn new() -> Self {
-        Self { tools: HashMap::new() }
+        Self {
+            tools: HashMap::new(),
+        }
     }
 
     pub fn register(&mut self, tool: Box<dyn Tool>) {
@@ -38,7 +40,9 @@ impl ToolRegistry {
 
     /// Execute a tool call from the LLM.
     pub async fn execute(&self, call: &ToolCall, sandbox: &Sandbox) -> Result<String> {
-        let tool = self.tools.get(&call.name)
+        let tool = self
+            .tools
+            .get(&call.name)
             .ok_or_else(|| anyhow!("Unknown tool: {}", call.name))?;
         tool.execute(call.arguments.clone(), sandbox).await
     }
@@ -49,5 +53,7 @@ impl ToolRegistry {
 }
 
 impl Default for ToolRegistry {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }

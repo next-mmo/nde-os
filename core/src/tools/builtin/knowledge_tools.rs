@@ -57,7 +57,8 @@ impl Tool for KnowledgeStoreTool {
     }
 
     async fn execute(&self, args: serde_json::Value, sandbox: &Sandbox) -> Result<String> {
-        let action = args.get("action")
+        let action = args
+            .get("action")
             .and_then(|v| v.as_str())
             .ok_or_else(|| anyhow::anyhow!("Missing 'action' argument"))?;
 
@@ -66,16 +67,20 @@ impl Tool for KnowledgeStoreTool {
 
         match action {
             "entity" => {
-                let id = args.get("id")
+                let id = args
+                    .get("id")
                     .and_then(|v| v.as_str())
                     .ok_or_else(|| anyhow::anyhow!("Missing 'id' for entity"))?;
-                let entity_type = args.get("entity_type")
+                let entity_type = args
+                    .get("entity_type")
                     .and_then(|v| v.as_str())
                     .ok_or_else(|| anyhow::anyhow!("Missing 'entity_type' for entity"))?;
-                let name = args.get("name")
+                let name = args
+                    .get("name")
                     .and_then(|v| v.as_str())
                     .ok_or_else(|| anyhow::anyhow!("Missing 'name' for entity"))?;
-                let metadata = args.get("metadata")
+                let metadata = args
+                    .get("metadata")
                     .cloned()
                     .unwrap_or(serde_json::json!({}));
 
@@ -89,16 +94,20 @@ impl Tool for KnowledgeStoreTool {
                 Ok(format!("Stored entity: {} ({}: {})", id, entity_type, name))
             }
             "relation" => {
-                let source_id = args.get("source_id")
+                let source_id = args
+                    .get("source_id")
                     .and_then(|v| v.as_str())
                     .ok_or_else(|| anyhow::anyhow!("Missing 'source_id' for relation"))?;
-                let target_id = args.get("target_id")
+                let target_id = args
+                    .get("target_id")
                     .and_then(|v| v.as_str())
                     .ok_or_else(|| anyhow::anyhow!("Missing 'target_id' for relation"))?;
-                let relation_type = args.get("relation_type")
+                let relation_type = args
+                    .get("relation_type")
                     .and_then(|v| v.as_str())
                     .ok_or_else(|| anyhow::anyhow!("Missing 'relation_type' for relation"))?;
-                let metadata = args.get("metadata")
+                let metadata = args
+                    .get("metadata")
                     .cloned()
                     .unwrap_or(serde_json::json!({}));
 
@@ -109,9 +118,15 @@ impl Tool for KnowledgeStoreTool {
                     metadata,
                 })?;
 
-                Ok(format!("Stored relation: {} --[{}]--> {}", source_id, relation_type, target_id))
+                Ok(format!(
+                    "Stored relation: {} --[{}]--> {}",
+                    source_id, relation_type, target_id
+                ))
             }
-            other => Err(anyhow::anyhow!("Unknown action: '{}'. Use 'entity' or 'relation'", other)),
+            other => Err(anyhow::anyhow!(
+                "Unknown action: '{}'. Use 'entity' or 'relation'",
+                other
+            )),
         }
     }
 }
@@ -152,7 +167,8 @@ impl Tool for KnowledgeQueryTool {
     }
 
     async fn execute(&self, args: serde_json::Value, sandbox: &Sandbox) -> Result<String> {
-        let action = args.get("action")
+        let action = args
+            .get("action")
             .and_then(|v| v.as_str())
             .ok_or_else(|| anyhow::anyhow!("Missing 'action' argument"))?;
 
@@ -161,7 +177,8 @@ impl Tool for KnowledgeQueryTool {
 
         match action {
             "search" => {
-                let query = args.get("query")
+                let query = args
+                    .get("query")
                     .and_then(|v| v.as_str())
                     .ok_or_else(|| anyhow::anyhow!("Missing 'query' for search"))?;
 
@@ -173,7 +190,9 @@ impl Tool for KnowledgeQueryTool {
                     for e in &entities {
                         output.push_str(&format!(
                             "  [{}] {} (type: {}) meta: {}\n",
-                            e.id, e.name, e.entity_type,
+                            e.id,
+                            e.name,
+                            e.entity_type,
                             serde_json::to_string(&e.metadata).unwrap_or_default()
                         ));
                     }
@@ -181,7 +200,8 @@ impl Tool for KnowledgeQueryTool {
                 }
             }
             "by_type" => {
-                let entity_type = args.get("entity_type")
+                let entity_type = args
+                    .get("entity_type")
                     .and_then(|v| v.as_str())
                     .ok_or_else(|| anyhow::anyhow!("Missing 'entity_type' for by_type"))?;
 
@@ -189,7 +209,8 @@ impl Tool for KnowledgeQueryTool {
                 if entities.is_empty() {
                     Ok(format!("No entities of type '{}'", entity_type))
                 } else {
-                    let mut output = format!("{} entities of type '{}':\n\n", entities.len(), entity_type);
+                    let mut output =
+                        format!("{} entities of type '{}':\n\n", entities.len(), entity_type);
                     for e in &entities {
                         output.push_str(&format!("  [{}] {}\n", e.id, e.name));
                     }
@@ -197,7 +218,8 @@ impl Tool for KnowledgeQueryTool {
                 }
             }
             "relations" => {
-                let entity_id = args.get("entity_id")
+                let entity_id = args
+                    .get("entity_id")
                     .and_then(|v| v.as_str())
                     .ok_or_else(|| anyhow::anyhow!("Missing 'entity_id' for relations"))?;
 
@@ -215,7 +237,10 @@ impl Tool for KnowledgeQueryTool {
                     Ok(output)
                 }
             }
-            other => Err(anyhow::anyhow!("Unknown action: '{}'. Use 'search', 'by_type', or 'relations'", other)),
+            other => Err(anyhow::anyhow!(
+                "Unknown action: '{}'. Use 'search', 'by_type', or 'relations'",
+                other
+            )),
         }
     }
 }

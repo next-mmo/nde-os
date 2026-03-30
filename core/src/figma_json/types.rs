@@ -57,9 +57,15 @@ pub enum FFill {
     },
 }
 
-fn default_opacity() -> f64 { 1.0 }
-fn default_angle() -> f64 { 180.0 }
-fn default_scale_mode() -> String { "FILL".to_string() }
+fn default_opacity() -> f64 {
+    1.0
+}
+fn default_angle() -> f64 {
+    180.0
+}
+fn default_scale_mode() -> String {
+    "FILL".to_string()
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FStroke {
@@ -131,7 +137,9 @@ pub struct FBaseProps {
     pub on_click: Option<String>,
 }
 
-fn default_true() -> bool { true }
+fn default_true() -> bool {
+    true
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
@@ -161,12 +169,10 @@ pub enum FNode {
 impl FNode {
     pub fn base(&self) -> &FBaseProps {
         match self {
-            FNode::FRAME(d) | FNode::GROUP(d)
-            | FNode::COMPONENT(d) | FNode::INSTANCE(d) => &d.base,
+            FNode::FRAME(d) | FNode::GROUP(d) | FNode::COMPONENT(d) | FNode::INSTANCE(d) => &d.base,
             FNode::TEXT(d) => &d.base,
             FNode::RECTANGLE(d) | FNode::ELLIPSE(d) => &d.base,
-            FNode::VECTOR(d) | FNode::LINE(d)
-            | FNode::STAR(d) | FNode::POLYGON(d) => &d.base,
+            FNode::VECTOR(d) | FNode::LINE(d) | FNode::STAR(d) | FNode::POLYGON(d) => &d.base,
             FNode::IMAGE(d) => &d.base,
         }
     }

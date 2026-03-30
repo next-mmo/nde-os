@@ -1,5 +1,5 @@
 use anyhow::Result;
-use sha2::{Sha256, Digest};
+use sha2::{Digest, Sha256};
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -29,7 +29,9 @@ impl AuditTrail {
         let last_hash = if log_path.exists() {
             // Read last line to get the chain hash
             let content = fs::read_to_string(&log_path)?;
-            content.lines().last()
+            content
+                .lines()
+                .last()
                 .and_then(|line| serde_json::from_str::<serde_json::Value>(line).ok())
                 .and_then(|v| v.get("hash").and_then(|h| h.as_str()).map(String::from))
                 .unwrap_or_else(|| "genesis".into())
@@ -37,12 +39,18 @@ impl AuditTrail {
             "genesis".into()
         };
 
-        Ok(Self { log_path, last_hash, enabled })
+        Ok(Self {
+            log_path,
+            last_hash,
+            enabled,
+        })
     }
 
     /// Log an event to the audit trail with hash chain integrity.
     pub fn log(&mut self, event_type: &str, data: &str) -> Result<()> {
-        if !self.enabled { return Ok(()); }
+        if !self.enabled {
+            return Ok(());
+        }
 
         let timestamp = chrono::Utc::now().to_rfc3339();
 
@@ -74,22 +82,32 @@ impl AuditTrail {
 
     /// Verify the integrity of the audit trail.
     pub fn verify(&self) -> Result<bool> {
-        if !self.enabled || !self.log_path.exists() { return Ok(true); }
+        if !self.enabled || !self.log_path.exists() {
+            return Ok(true);
+        }
 
         let content = fs::read_to_string(&self.log_path)?;
         let mut expected_prev = "genesis".to_string();
 
         for line in content.lines() {
-            if line.trim().is_empty() { continue; }
+            if line.trim().is_empty() {
+                continue;
+            }
             let entry: serde_json::Value = serde_json::from_str(line)?;
 
-            let prev = entry.get("prev_hash").and_then(|v| v.as_str()).unwrap_or("");
+            let prev = entry
+                .get("prev_hash")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
             if prev != expected_prev {
                 return Ok(false);
             }
 
             // Recompute hash
-            let timestamp = entry.get("timestamp").and_then(|v| v.as_str()).unwrap_or("");
+            let timestamp = entry
+                .get("timestamp")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
             let event = entry.get("event").and_then(|v| v.as_str()).unwrap_or("");
             let data = entry.get("data").and_then(|v| v.as_str()).unwrap_or("");
 

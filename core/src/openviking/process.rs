@@ -9,8 +9,8 @@ use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use tokio::process::{Child, Command};
 
-use super::config::VikingConfig;
 use super::client::VikingClient;
+use super::config::VikingConfig;
 
 /// Manages the OpenViking server lifecycle.
 pub struct VikingProcess {
@@ -124,9 +124,11 @@ impl VikingProcess {
 
         // Write config files
         let conf_dir = self.data_dir.join(".openviking");
-        self.config.write_server_conf(&conf_dir)
+        self.config
+            .write_server_conf(&conf_dir)
             .context("Failed to write ov.conf")?;
-        self.config.write_client_conf(&conf_dir)
+        self.config
+            .write_client_conf(&conf_dir)
             .context("Failed to write ovcli.conf")?;
 
         let conf_path = conf_dir.join("ov.conf");
@@ -181,7 +183,7 @@ impl VikingProcess {
     pub fn is_running(&mut self) -> bool {
         if let Some(child) = &mut self.child {
             match child.try_wait() {
-                Ok(None) => true,  // Still running
+                Ok(None) => true, // Still running
                 _ => {
                     self.child = None;
                     false

@@ -1,6 +1,6 @@
+use super::{temp_base, test_manifest};
 use crate::app_manager::AppManager;
 use crate::manifest::AppStatus;
-use super::{temp_base, test_manifest};
 
 #[test]
 fn creation() {

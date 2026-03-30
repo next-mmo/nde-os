@@ -19,7 +19,8 @@ impl Sandbox {
         fs::create_dir_all(root)
             .with_context(|| format!("Failed to create sandbox: {}", root.display()))?;
 
-        let root = root.canonicalize()
+        let root = root
+            .canonicalize()
             .with_context(|| format!("Failed to canonicalize: {}", root.display()))?;
 
         // Platform-specific permissions
@@ -30,7 +31,11 @@ impl Sandbox {
             blocked_names.insert(name.to_string());
         }
 
-        Ok(Self { root, readonly_paths: Vec::new(), blocked_names })
+        Ok(Self {
+            root,
+            readonly_paths: Vec::new(),
+            blocked_names,
+        })
     }
 
     /// Set directory permissions (owner-only access)
@@ -47,7 +52,12 @@ impl Sandbox {
         let path_str = path.to_string_lossy();
         // Remove inherited permissions, grant full control to current user
         Command::new("icacls")
-            .args([path_str.as_ref(), "/inheritance:r", "/grant:r", "%USERNAME%:(OI)(CI)F"])
+            .args([
+                path_str.as_ref(),
+                "/inheritance:r",
+                "/grant:r",
+                "%USERNAME%:(OI)(CI)F",
+            ])
             .output()
             .ok(); // Best-effort on Windows
         Ok(())
@@ -83,7 +93,8 @@ impl Sandbox {
 
         // For existing paths: canonicalize resolves symlinks
         if full.exists() {
-            let canonical = full.canonicalize()
+            let canonical = full
+                .canonicalize()
                 .with_context(|| format!("Failed to canonicalize: {}", full.display()))?;
 
             if canonical.starts_with(&self.root) {
@@ -96,7 +107,8 @@ impl Sandbox {
             }
             return Err(anyhow!(
                 "Path escapes sandbox: {} -> {}",
-                path.display(), canonical.display()
+                path.display(),
+                canonical.display()
             ));
         }
 
@@ -144,7 +156,10 @@ impl Sandbox {
             "readonly_paths": self.readonly_paths.iter()
                 .map(|p| p.to_string_lossy().into_owned()).collect::<Vec<_>>(),
         });
-        fs::write(self.root.join(".sandbox_info"), serde_json::to_string_pretty(&info)?)?;
+        fs::write(
+            self.root.join(".sandbox_info"),
+            serde_json::to_string_pretty(&info)?,
+        )?;
         Ok(())
     }
 
@@ -157,14 +172,29 @@ impl Sandbox {
             ("HOME".into(), root_str.clone()),
             ("USERPROFILE".into(), root_str.clone()), // Windows HOME equivalent
             ("TMPDIR".into(), format!("{}{}{}", root_str, sep, "tmp")),
-            ("TEMP".into(), format!("{}{}{}", root_str, sep, "tmp")),     // Windows
-            ("TMP".into(), format!("{}{}{}", root_str, sep, "tmp")),      // Windows
-            ("XDG_DATA_HOME".into(), format!("{}{}{}", root_str, sep, "data")),
-            ("XDG_CONFIG_HOME".into(), format!("{}{}{}", root_str, sep, "config")),
-            ("XDG_CACHE_HOME".into(), format!("{}{}{}", root_str, sep, "tmp")),
-            ("APPDATA".into(), format!("{}{}{}", root_str, sep, "config")),    // Windows
-            ("LOCALAPPDATA".into(), format!("{}{}{}", root_str, sep, "data")), // Windows
-            ("PIP_TARGET".into(), format!("{}{}{}", root_str, sep, "pip_packages")),
+            ("TEMP".into(), format!("{}{}{}", root_str, sep, "tmp")), // Windows
+            ("TMP".into(), format!("{}{}{}", root_str, sep, "tmp")),  // Windows
+            (
+                "XDG_DATA_HOME".into(),
+                format!("{}{}{}", root_str, sep, "data"),
+            ),
+            (
+                "XDG_CONFIG_HOME".into(),
+                format!("{}{}{}", root_str, sep, "config"),
+            ),
+            (
+                "XDG_CACHE_HOME".into(),
+                format!("{}{}{}", root_str, sep, "tmp"),
+            ),
+            ("APPDATA".into(), format!("{}{}{}", root_str, sep, "config")), // Windows
+            (
+                "LOCALAPPDATA".into(),
+                format!("{}{}{}", root_str, sep, "data"),
+            ), // Windows
+            (
+                "PIP_TARGET".into(),
+                format!("{}{}{}", root_str, sep, "pip_packages"),
+            ),
             ("PYTHONDONTWRITEBYTECODE".into(), "1".into()),
         ]
     }
@@ -173,8 +203,9 @@ impl Sandbox {
     pub fn verify(&self) -> SandboxVerifyResult {
         // Test platform-appropriate path traversal
         let path_traversal = if cfg!(windows) {
-            self.resolve(Path::new("..\\..\\..\\Windows\\System32\\config\\SAM")).is_err()
-            && self.resolve(Path::new("../../../etc/passwd")).is_err()
+            self.resolve(Path::new("..\\..\\..\\Windows\\System32\\config\\SAM"))
+                .is_err()
+                && self.resolve(Path::new("../../../etc/passwd")).is_err()
         } else {
             self.resolve(Path::new("../../../etc/passwd")).is_err()
         };
