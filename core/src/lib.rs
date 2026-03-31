@@ -27,6 +27,9 @@ pub mod figma_json;
 // Shield Browser (anti-detect)
 pub mod shield;
 
+// FreeCut video editor engine
+pub mod freecut;
+
 #[cfg(feature = "screenshot")]
 pub mod screenshot;
 

@@ -86,6 +86,10 @@
   {#await import("🍎/components/apps/Terminal/Terminal.svelte") then { default: Terminal }}
     <Terminal {window} />
   {/await}
+{:else if window.app_id === "freecut"}
+  {#await import("🍎/components/apps/FreeCut/FreeCut.svelte") then { default: FreeCut }}
+    <FreeCut />
+  {/await}
 {:else}
   {#await import("🍎/components/apps/Placeholder/Placeholder.svelte") then { default: Placeholder }}
     <Placeholder app_id={window.app_id} />

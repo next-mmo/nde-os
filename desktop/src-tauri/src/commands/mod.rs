@@ -10,3 +10,4 @@ pub mod sandbox;
 pub mod screenshot;
 pub mod shield;
 pub mod system;
+pub mod freecut;

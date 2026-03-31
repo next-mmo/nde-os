@@ -1,0 +1,234 @@
+Loading svelte-check in workspace: c:\Users\dila\Downloads\ai-launcher-v0.2\ai-launcher\desktop
+Getting Svelte diagnostics...
+
+c:\Users\dila\Downloads\ai-launcher-v0.2\ai-launcher\desktop\[32msrc\components\apps\VibeCodeStudio\ide\SourceControl.svelte[39m:101:7
+[33mWarn[39m: Visible, non-interactive elements with a click event must be accompanied by a keyboard event handler. Consider whether an interactive element such as `<button type="button">` or `<a>` might be more appropriate
+https://svelte.dev/e/a11y_click_events_have_key_events (svelte)
+[36m    {#each files as file}
+      [35m<div 
+        class="flex items-center justify-between px-4 py-1.5 hover:bg-white/5 group cursor-pointer"
+        onclick={() => onSelectFile(file.path, file.status)}
+      >
+        <div class="flex items-center gap-2 truncate">
+          <span class="text-[10px] w-4 font-mono font-bold shrink-0
+            {file.status.includes('M') ? 'text-blue-400' :
+             file.status.includes('A') || file.status.includes('??') ? 'text-emerald-400' :
+             file.status.includes('D') ? 'text-red-400' : 'text-white/40'}
+          ">
+            {file.status.trim() || 'M'}
+          </span>
+          <span class="truncate text-white/70 group-hover:text-white text-xs">{file.path.split('/').pop()}</span>
+        </div>
+        <div class="flex items-center opacity-0 group-hover:opacity-100 transition-opacity">
+          <!-- svelte-ignore a11y_click_events_have_key_events -->
+          <!-- svelte-ignore a11y_no_static_element_interactions -->
+          <div title="Discard Changes" class="hover:bg-red-500/20 text-white/50 hover:text-red-400 rounded w-5 h-5 flex items-center justify-center p-0.5" onclick={(e) => { e.stopPropagation(); discardChange(file.path); }}>
+            <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"></path></svg>
+          </div>
+        </div>
+      </div[36m>
+    {/each}[39m
+
+c:\Users\dila\Downloads\ai-launcher-v0.2\ai-launcher\desktop\[32msrc\components\apps\VibeCodeStudio\ide\SourceControl.svelte[39m:101:7
+[33mWarn[39m: `<div>` with a click handler must have an ARIA role
+https://svelte.dev/e/a11y_no_static_element_interactions (svelte)
+[36m    {#each files as file}
+      [35m<div 
+        class="flex items-center justify-between px-4 py-1.5 hover:bg-white/5 group cursor-pointer"
+        onclick={() => onSelectFile(file.path, file.status)}
+      >
+        <div class="flex items-center gap-2 truncate">
+          <span class="text-[10px] w-4 font-mono font-bold shrink-0
+            {file.status.includes('M') ? 'text-blue-400' :
+             file.status.includes('A') || file.status.includes('??') ? 'text-emerald-400' :
+             file.status.includes('D') ? 'text-red-400' : 'text-white/40'}
+          ">
+            {file.status.trim() || 'M'}
+          </span>
+          <span class="truncate text-white/70 group-hover:text-white text-xs">{file.path.split('/').pop()}</span>
+        </div>
+        <div class="flex items-center opacity-0 group-hover:opacity-100 transition-opacity">
+          <!-- svelte-ignore a11y_click_events_have_key_events -->
+          <!-- svelte-ignore a11y_no_static_element_interactions -->
+          <div title="Discard Changes" class="hover:bg-red-500/20 text-white/50 hover:text-red-400 rounded w-5 h-5 flex items-center justify-center p-0.5" onclick={(e) => { e.stopPropagation(); discardChange(file.path); }}>
+            <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"></path></svg>
+          </div>
+        </div>
+      </div[36m>
+    {/each}[39m
+
+c:\Users\dila\Downloads\ai-launcher-v0.2\ai-launcher\desktop\[32msrc\components\Desktop\Window\Window.svelte[39m:109:39
+[33mWarn[39m: This reference only captures the initial value of `window`. Did you mean to reference it inside a closure instead?
+https://svelte.dev/e/state_referenced_locally (svelte)
+[36m
+  const savedGeo = loadWindowGeometry([35mwindow[36m.app_id);
+  if (savedGeo) {[39m
+
+c:\Users\dila\Downloads\ai-launcher-v0.2\ai-launcher\desktop\[32msrc\components\Desktop\Window\Window.svelte[39m:111:5
+[33mWarn[39m: This reference only captures the initial value of `window`. Did you mean to reference it inside a closure instead?
+https://svelte.dev/e/state_referenced_locally (svelte)
+[36m  if (savedGeo) {
+    [35mwindow[36m.width = savedGeo.width;
+    window.height = savedGeo.height;[39m
+
+c:\Users\dila\Downloads\ai-launcher-v0.2\ai-launcher\desktop\[32msrc\components\Desktop\Window\Window.svelte[39m:112:5
+[33mWarn[39m: This reference only captures the initial value of `window`. Did you mean to reference it inside a closure instead?
+https://svelte.dev/e/state_referenced_locally (svelte)
+[36m    window.width = savedGeo.width;
+    [35mwindow[36m.height = savedGeo.height;
+  }[39m
+
+c:\Users\dila\Downloads\ai-launcher-v0.2\ai-launcher\desktop\[32msrc\components\Desktop\LockScreen.svelte[39m:27:1
+[33mWarn[39m: Non-interactive element `<main>` cannot have interactive role 'dialog'
+https://svelte.dev/e/a11y_no_noninteractive_element_to_interactive_role (svelte)
+[36m<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+[35m<main
+  class="fixed inset-0 z-[99999] flex flex-col items-center justify-center select-none bg-black/40 backdrop-blur-3xl"
+  onclick={unlockScreen}
+  role="dialog"
+  aria-modal="true"
+>
+  <div class="flex flex-col items-center text-white drop-shadow-lg mb-20 animate-in fade-in zoom-in duration-500">
+    <!-- Lock Icon -->
+    <svg class="w-10 h-10 mb-4 opacity-80" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+      <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+    </svg>
+
+    <h1 class="text-7xl font-light tracking-tight mb-2">{formattedTime}</h1>
+    <h2 class="text-2xl font-normal opacity-90">{formattedDate}</h2>
+  </div>
+
+  <div class="absolute bottom-12 flex flex-col items-center animate-pulse opacity-70">
+    <span class="text-white/90 text-sm tracking-wide font-medium">Click anywhere to unlock</span>
+  </div>
+</main[36m>[39m
+
+c:\Users\dila\Downloads\ai-launcher-v0.2\ai-launcher\desktop\[32msrc\lib\json-render\components\Input.svelte[39m:6:5
+[33mWarn[39m: A form label must be associated with a control
+https://svelte.dev/e/a11y_label_has_associated_control (svelte)
+[36m  {#if p.label}
+    [35m<label style="font-size:0.75rem;color:var(--system-color-text-muted)">{p.label}</label>[36m
+  {/if}[39m
+
+c:\Users\dila\Downloads\ai-launcher-v0.2\ai-launcher\desktop\[32msrc\lib\json-render\components\Select.svelte[39m:6:5
+[33mWarn[39m: A form label must be associated with a control
+https://svelte.dev/e/a11y_label_has_associated_control (svelte)
+[36m  {#if p.label}
+    [35m<label style="font-size:0.75rem;color:var(--system-color-text-muted)">{p.label}</label>[36m
+  {/if}[39m
+
+c:\Users\dila\Downloads\ai-launcher-v0.2\ai-launcher\desktop\[32msrc\lib\figma-json\JsonRenderer.svelte[39m:54:9
+[33mWarn[39m: `<svelte:self>` is deprecated — use self-imports (e.g. `import JsonRenderer from './JsonRenderer.svelte'`) instead
+https://svelte.dev/e/svelte_self_deprecated (svelte)
+[36m      {#each (node as FFrameNode).children! as child (child.id)}
+        [35m<svelte:self node={child} {onClick} />[36m
+      {/each}[39m
+
+c:\Users\dila\Downloads\ai-launcher-v0.2\ai-launcher\desktop\[32msrc\lib\figma-json\JsonRenderer.svelte[39m:71:3
+[33mWarn[39m: Non-interactive element `<img>` should not be assigned mouse or keyboard event listeners
+https://svelte.dev/e/a11y_no_noninteractive_element_interactions (svelte)
+[36m  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  [35m<img
+    data-fj-id={node.id}
+    data-fj-name={node.name}
+    data-fj-type="IMAGE"
+    src={(node as FImageNode).src}
+    alt={(node as FImageNode).alt ?? node.name}
+    {style}
+    style:object-fit={(node as FImageNode).objectFit ?? "cover"}
+    onclick={node.onClick ? handleClick : undefined}
+  />[36m
+{:else if isVector && (node as FVectorNode).svgPath}[39m
+
+c:\Users\dila\Downloads\ai-launcher-v0.2\ai-launcher\desktop\[32me2e\debug.spec.ts[39m:19:19
+[31mError[39m: Property 'offsetParent' does not exist on type 'HTMLElement | SVGElement'.
+  Property 'offsetParent' does not exist on type 'SVGElement'. 
+[36m      text: el.textContent?.trim().slice(0, 80),
+      visible: el.[35moffsetParent[36m !== null,
+      classes: el.className?.slice(0, 80),[39m
+
+c:\Users\dila\Downloads\ai-launcher-v0.2\ai-launcher\desktop\[32me2e\debug.spec.ts[39m:29:19
+[31mError[39m: Property 'offsetParent' does not exist on type 'HTMLElement | SVGElement'.
+  Property 'offsetParent' does not exist on type 'SVGElement'. 
+[36m      text: el.textContent?.trim().slice(0, 60),
+      visible: el.[35moffsetParent[36m !== null,
+    })).filter(b => b.visible && b.text && b.text.length > 0)[39m
+
+c:\Users\dila\Downloads\ai-launcher-v0.2\ai-launcher\desktop\[32me2e\debug.spec.ts[39m:39:19
+[31mError[39m: Property 'offsetParent' does not exist on type 'HTMLElement | SVGElement'.
+  Property 'offsetParent' does not exist on type 'SVGElement'. 
+[36m      text: el.textContent?.trim().slice(0, 80),
+      visible: el.[35moffsetParent[36m !== null,
+    }))[39m
+
+c:\Users\dila\Downloads\ai-launcher-v0.2\ai-launcher\desktop\[32me2e\kanban-crud.spec.ts[39m:2:21
+[31mError[39m: Cannot find module 'node:fs' or its corresponding type declarations. 
+[36mimport { test, expect } from './fixtures';
+import * as fs from [35m'node:fs'[36m;
+import * as path from 'node:path';[39m
+
+c:\Users\dila\Downloads\ai-launcher-v0.2\ai-launcher\desktop\[32me2e\kanban-crud.spec.ts[39m:3:23
+[31mError[39m: Cannot find module 'node:path' or its corresponding type declarations. 
+[36mimport * as fs from 'node:fs';
+import * as path from [35m'node:path'[36m;
+import { fileURLToPath } from 'node:url';[39m
+
+c:\Users\dila\Downloads\ai-launcher-v0.2\ai-launcher\desktop\[32me2e\kanban-crud.spec.ts[39m:4:31
+[31mError[39m: Cannot find module 'node:url' or its corresponding type declarations. 
+[36mimport * as path from 'node:path';
+import { fileURLToPath } from [35m'node:url'[36m;[39m
+
+c:\Users\dila\Downloads\ai-launcher-v0.2\ai-launcher\desktop\[32me2e\kanban-drag-fix.spec.ts[39m:15:21
+[31mError[39m: Cannot find module 'fs' or its corresponding type declarations. 
+[36mimport { test, expect } from "./fixtures";
+import * as fs from [35m"fs"[36m;
+import * as path from "path";[39m
+
+c:\Users\dila\Downloads\ai-launcher-v0.2\ai-launcher\desktop\[32me2e\kanban-drag-fix.spec.ts[39m:16:23
+[31mError[39m: Cannot find module 'path' or its corresponding type declarations. 
+[36mimport * as fs from "fs";
+import * as path from [35m"path"[36m;
+import { fileURLToPath } from "url";[39m
+
+c:\Users\dila\Downloads\ai-launcher-v0.2\ai-launcher\desktop\[32me2e\kanban-drag-fix.spec.ts[39m:17:31
+[31mError[39m: Cannot find module 'url' or its corresponding type declarations. 
+[36mimport * as path from "path";
+import { fileURLToPath } from [35m"url"[36m;[39m
+
+c:\Users\dila\Downloads\ai-launcher-v0.2\ai-launcher\desktop\[32me2e\verify-resize.spec.ts[39m:3:31
+[31mError[39m: Cannot find module 'path' or its corresponding type declarations. 
+[36mimport { dockButton } from './helpers';
+import { join, dirname } from [35m'path'[36m;
+import { fileURLToPath } from 'url';[39m
+
+c:\Users\dila\Downloads\ai-launcher-v0.2\ai-launcher\desktop\[32me2e\verify-resize.spec.ts[39m:4:31
+[31mError[39m: Cannot find module 'url' or its corresponding type declarations. 
+[36mimport { join, dirname } from 'path';
+import { fileURLToPath } from [35m'url'[36m;[39m
+
+c:\Users\dila\Downloads\ai-launcher-v0.2\ai-launcher\desktop\[32me2e\vibe-kanban.spec.ts[39m:2:21
+[31mError[39m: Cannot find module 'fs' or its corresponding type declarations. 
+[36mimport { test, expect } from "./fixtures";
+import * as fs from [35m"fs"[36m;
+import * as path from "path";[39m
+
+c:\Users\dila\Downloads\ai-launcher-v0.2\ai-launcher\desktop\[32me2e\vibe-kanban.spec.ts[39m:3:23
+[31mError[39m: Cannot find module 'path' or its corresponding type declarations. 
+[36mimport * as fs from "fs";
+import * as path from [35m"path"[36m;
+import { fileURLToPath } from "url";[39m
+
+c:\Users\dila\Downloads\ai-launcher-v0.2\ai-launcher\desktop\[32me2e\vibe-kanban.spec.ts[39m:4:31
+[31mError[39m: Cannot find module 'url' or its corresponding type declarations. 
+[36mimport * as path from "path";
+import { fileURLToPath } from [35m"url"[36m;[39m
+
+c:\Users\dila\Downloads\ai-launcher-v0.2\ai-launcher\desktop\[32me2e\vibecode-v0.spec.ts[39m:3:16
+[31mError[39m: Cannot find module 'fs' or its corresponding type declarations. 
+[36mimport { dockButton } from './helpers';
+import fs from [35m'fs'[36m;[39m
+
+====================================
+[31msvelte-check found 15 errors and 10 warnings in 12 files
+[39m

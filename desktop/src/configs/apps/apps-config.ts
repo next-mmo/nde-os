@@ -105,6 +105,12 @@ export const apps_config = {
     width: 800,
     height: 600,
   }),
+  "freecut": create_app_config({
+    title: "FreeCut",
+    width: 1400,
+    height: 860,
+    dock_breaks_before: true,
+  }),
   launchpad: create_app_config({
     title: "Launchpad",
     should_open_window: false,

@@ -1,0 +1,515 @@
+[2m[WebServer] [22mwarning: unused imports: `AgentTask` and `TaskState`
+[2m[WebServer] [22m  --> core\src\agent\heartbeat.rs:17:21
+[2m[WebServer] [22m   |
+[2m[WebServer] [22m17 | use super::models::{AgentTask, TaskState};
+[2m[WebServer] [22m   |[2m[WebServer] [22m                     ^^^^^^^^^  ^^^^^^^^^
+[2m[WebServer] [22m   |
+[2m[WebServer] [22m   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+[2m[WebServer] [22m
+[2m[WebServer] [22mwarning: unused import: `crate::llm::Usage`
+[2m[WebServer] [22m  --> core\src\agent\protocol.rs:10:5
+[2m[WebServer] [22m   |
+[2m[WebServer] [22m10 | use crate::llm::Usage;
+[2m[WebServer] [22m   |     ^^^^^^^^^^^^^^^^^
+[2m[WebServer] [22m
+[2m[WebServer] [22mwarning: unused import: `OptionalExtension`
+[2m[WebServer] [22m --> core\src\agent\scheduler.rs:8:36
+[2m[WebServer] [22m  |
+[2m[WebServer] [22m8 | use rusqlite::{params, Connection, OptionalExtension};
+[2m[WebServer] [22m  |                                    ^^^^^^^^^^^^^^^^^
+[2m[WebServer] [22m
+[2m[WebServer] [22mwarning: unused import: `ChannelResponse`
+[2m[WebServer] [22m --> core\src\channels\gateway.rs:1:29
+[2m[WebServer] [22m  |
+[2m[WebServer] [22m1 | use super::{ChannelMessage, ChannelResponse, ChannelType};
+[2m[WebServer] [22m  |                             ^^^^^^^^^^^^^^^
+[2m[WebServer] [22m
+[2m[WebServer] [22mwarning: unused import: `ChannelType`
+[2m[WebServer] [22m --> core\src\channels\manager.rs:1:70
+[2m[WebServer] [22m  |
+[2m[WebServer] [22m1 | use super::{Channel, ChannelMessage, ChannelResponse, ChannelStatus, ChannelType};
+[2m[WebServer] [22m  |                                                                      ^^^^^^^^^^^
+[2m[WebServer] [22m
+[2m[WebServer] [22mwarning: unused import: `Attachment`
+[2m[WebServer] [22m --> core\src\channels\telegram.rs:1:13
+[2m[WebServer] [22m  |
+[2m[WebServer] [22m1 | use super::{Attachment, Channel, ChannelMessage, ChannelResponse, ChannelType};
+[2m[WebServer] [22m  |             ^^^^^^^^^^
+[2m[WebServer] [22m
+[2m[WebServer] [22mwarning: unused import: `Deserialize`
+[2m[WebServer] [22m --> core\src\mcp\kanban.rs:2:13
+[2m[WebServer] [22m  |
+[2m[WebServer] [22m2 | use serde::{Deserialize, Serialize};
+[2m[WebServer] [22m  |             ^^^^^^^^^^^
+[2m[WebServer] [22m
+[2m[WebServer] [22mwarning: unused import: `Path`
+[2m[WebServer] [22m --> core\src\mcp\kanban.rs:5:17
+[2m[WebServer] [22m  |
+[2m[WebServer] [22m5 | use std::path::{Path, PathBuf};
+[2m[WebServer] [22m  |                 ^^^^
+[2m[WebServer] [22m
+[2m[WebServer] [22mwarning: unused import: `std::io::Read`
+[2m[WebServer] [22m   --> core\src\shield\engine.rs:265:9
+[2m[WebServer] [22m    |
+[2m[WebServer] [22m265 |     use std::io::Read;
+[2m[WebServer] [22m    |         ^^^^^^^^^^^^^
+[2m[WebServer] [22m
+[2m[WebServer] [22mwarning: unused import: `ProxyConfig`
+[2m[WebServer] [22m --> core\src\shield\launcher.rs:8:43
+[2m[WebServer] [22m  |
+[2m[WebServer] [22m8 | use super::browser::{self, BrowserEngine, ProxyConfig};
+[2m[WebServer] [22m  |                                           ^^^^^^^^^^^
+[2m[WebServer] [22m
+[2m[WebServer] [22mwarning: unused import: `ShieldProfile`
+[2m[WebServer] [22m  --> core\src\shield\launcher.rs:10:38
+[2m[WebServer] [22m   |
+[2m[WebServer] [22m10 | use super::profile::{ProfileManager, ShieldProfile};
+[2m[WebServer] [22m   |                                      ^^^^^^^^^^^^^
+[2m[WebServer] [22m
+[2m[WebServer] [22mwarning: unused import: `FrameRenderedEvent`
+[2m[WebServer] [22m  --> core\src\freecut\render_engine.rs:18:5
+[2m[WebServer] [22m   |
+[2m[WebServer] [22m18 |     FrameRenderedEvent, ItemType, Project, ProjectResolution, ProjectTimeline, TimelineItem,
+[2m[WebServer] [22m   |     ^^^^^^^^^^^^^^^^^^
+[2m[WebServer] [22m
+[2m[WebServer] [22mwarning: unused import: `BitmapAlphaMode`
+[2m[WebServer] [22m --> core\src\screenshot\ocr.rs:8:38
+[2m[WebServer] [22m  |
+[2m[WebServer] [22m8 |     use windows::Graphics::Imaging::{BitmapAlphaMode, BitmapPixelFormat, SoftwareBitmap};
+[2m[WebServer] [22m  |                                      ^^^^^^^^^^^^^^^
+[2m[WebServer] [22m
+[2m[WebServer] [22mwarning: unused variable: `tools`
+[2m[WebServer] [22m   --> core\src\llm\gguf.rs:871:48
+[2m[WebServer] [22m    |
+[2m[WebServer] [22m871 |     async fn chat(&self, messages: &[Message], tools: &[ToolDef]) -> Result<LlmResponse> {
+[2m[WebServer] [22m    |                                                ^^^^^ help: if this is intentional, prefix it with an underscore: `_tools`
+[2m[WebServer] [22m    |
+[2m[WebServer] [22m    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+[2m[WebServer] [22m
+[2m[WebServer] [22mwarning: unused variable: `clean`
+[2m[WebServer] [22m   --> core\src\tools\builtin\web_browse.rs:218:17
+[2m[WebServer] [22m    |
+[2m[WebServer] [22m218 |             let clean = clean_text(&strip_tags(&content));
+[2m[WebServer] [22m    |                 ^^^^^ help: if this is intentional, prefix it with an underscore: `_clean`
+[2m[WebServer] [22m
+[2m[WebServer] [22mwarning: variable does not need to be mutable
+[2m[WebServer] [22m   --> core\src\tools\builtin\web_browse.rs:292:9
+[2m[WebServer] [22m    |
+[2m[WebServer] [22m292 |     let mut lines: Vec<&str> = text.lines().map(|l| l.trim()).collect();
+[2m[WebServer] [22m    |         ----^^^^^
+[2m[WebServer] [22m    |         |
+[2m[WebServer] [22m    |         help: remove this `mut`
+[2m[WebServer] [22m    |
+[2m[WebServer] [22m    = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+[2m[WebServer] [22m
+[2m[WebServer] [22mwarning: field `handle` is never read
+[2m[WebServer] [22m  --> core\src\agent\manager.rs:56:5
+[2m[WebServer] [22m   |
+[2m[WebServer] [22m54 | struct RunningTask {
+[2m[WebServer] [22m   |        ----------- field in this struct
+[2m[WebServer] [22m55 |     cancel: CancellationToken,
+[2m[WebServer] [22m56 |     handle: tokio::task::JoinHandle<()>,
+[2m[WebServer] [22m   |     ^^^^^^
+[2m[WebServer] [22m   |
+[2m[WebServer] [22m   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+[2m[WebServer] [22m
+[2m[WebServer] [22mwarning: field `data_dir` is never read
+[2m[WebServer] [22m  --> core\src\agent\manager.rs:71:5
+[2m[WebServer] [22m   |
+[2m[WebServer] [22m60 | pub struct AgentManager {
+[2m[WebServer] [22m   |            ------------ field in this struct
+[2m[WebServer] [22m...
+[2m[WebServer] [22m71 |     data_dir: PathBuf,
+[2m[WebServer] [22m   |     ^^^^^^^^
+[2m[WebServer] [22m
+[2m[WebServer] [22mwarning: fields `ok` and `description` are never read
+[2m[WebServer] [22m  --> core\src\channels\telegram.rs:45:5
+[2m[WebServer] [22m   |
+[2m[WebServer] [22m44 | struct TelegramResponse<T> {
+[2m[WebServer] [22m   |        ---------------- fields in this struct
+[2m[WebServer] [22m45 |     ok: bool,
+[2m[WebServer] [22m   |     ^^
+[2m[WebServer] [22m46 |     result: Option<T>,
+[2m[WebServer] [22m47 |     description: Option<String>,
+[2m[WebServer] [22m   |     ^^^^^^^^^^^
+[2m[WebServer] [22m
+[2m[WebServer] [22mwarning: field `document` is never read
+[2m[WebServer] [22m  --> core\src\channels\telegram.rs:63:5
+[2m[WebServer] [22m   |
+[2m[WebServer] [22m57 | struct TelegramMessage {
+[2m[WebServer] [22m   |        --------------- field in this struct
+[2m[WebServer] [22m...
+[2m[WebServer] [22m63 |     document: Option<TelegramDocument>,
+[2m[WebServer] [22m   |     ^^^^^^^^
+[2m[WebServer] [22m
+[2m[WebServer] [22mwarning: field `username` is never read
+[2m[WebServer] [22m  --> core\src\channels\telegram.rs:73:5
+[2m[WebServer] [22m   |
+[2m[WebServer] [22m67 | struct TelegramUser {
+[2m[WebServer] [22m   |        ------------ field in this struct
+[2m[WebServer] [22m...
+[2m[WebServer] [22m73 |     username: Option<String>,
+[2m[WebServer] [22m   |     ^^^^^^^^
+[2m[WebServer] [22m
+[2m[WebServer] [22mwarning: fields `file_name`, `file_size`, and `mime_type` are never read
+[2m[WebServer] [22m  --> core\src\channels\telegram.rs:85:5
+[2m[WebServer] [22m   |
+[2m[WebServer] [22m84 | struct TelegramDocument {
+[2m[WebServer] [22m   |        ---------------- fields in this struct
+[2m[WebServer] [22m85 |     file_name: Option<String>,
+[2m[WebServer] [22m   |     ^^^^^^^^^
+[2m[WebServer] [22m86 |     file_size: Option<u64>,
+[2m[WebServer] [22m   |     ^^^^^^^^^
+[2m[WebServer] [22m87 |     mime_type: Option<String>,
+[2m[WebServer] [22m   |     ^^^^^^^^^
+[2m[WebServer] [22m
+[2m[WebServer] [22mwarning: fields `event_type` and `index` are never read
+[2m[WebServer] [22m   --> core\src\llm\anthropic.rs:132:5
+[2m[WebServer] [22m    |
+[2m[WebServer] [22m130 | struct StreamEvent {
+[2m[WebServer] [22m    |        ----------- fields in this struct
+[2m[WebServer] [22m131 |     #[serde(rename = "type")]
+[2m[WebServer] [22m132 |     event_type: String,
+[2m[WebServer] [22m    |     ^^^^^^^^^^
+[2m[WebServer] [22m133 |     #[serde(default)]
+[2m[WebServer] [22m134 |     index: Option<usize>,
+[2m[WebServer] [22m    |     ^^^^^
+[2m[WebServer] [22m
+[2m[WebServer] [22mwarning: fields `delta_type` and `stop_reason` are never read
+[2m[WebServer] [22m   --> core\src\llm\anthropic.rs:147:5
+[2m[WebServer] [22m    |
+[2m[WebServer] [22m144 | struct StreamDelta {
+[2m[WebServer] [22m    |        ----------- fields in this struct
+[2m[WebServer] [22m...
+[2m[WebServer] [22m147 |     delta_type: Option<String>,
+[2m[WebServer] [22m    |     ^^^^^^^^^^
+[2m[WebServer] [22m...
+[2m[WebServer] [22m153 |     stop_reason: Option<String>,
+[2m[WebServer] [22m    |     ^^^^^^^^^^^
+[2m[WebServer] [22m
+[2m[WebServer] [22mwarning: function `to_oai_tools` is never used
+[2m[WebServer] [22m   --> core\src\llm\gguf.rs:853:4
+[2m[WebServer] [22m    |
+[2m[WebServer] [22m853 | fn to_oai_tools(tools: &[ToolDef]) -> Vec<OaiTool> {
+[2m[WebServer] [22m    |    ^^^^^^^^^^^^
+[2m[WebServer] [22m
+[2m[WebServer] [22mwarning: field `done` is never read
+[2m[WebServer] [22m  --> core\src\llm\ollama.rs:73:5
+[2m[WebServer] [22m   |
+[2m[WebServer] [22m70 | struct OllamaResponse {
+[2m[WebServer] [22m   |        -------------- field in this struct
+[2m[WebServer] [22m...
+[2m[WebServer] [22m73 |     done: bool,
+[2m[WebServer] [22m   |     ^^^^
+[2m[WebServer] [22m
+[2m[WebServer] [22mwarning: `ai-launcher-core` (lib) generated 26 warnings (run `cargo fix --lib -p ai-launcher-core` to apply 16 suggestions)
+[2m[WebServer] [22mwarning: unused import: `ConversationStore`
+[2m[WebServer] [22m --> server\src\agent_handler.rs:3:32
+[2m[WebServer] [22m  |
+[2m[WebServer] [22m3 | use ai_launcher_core::memory::{ConversationStore, MemoryManager};
+[2m[WebServer] [22m  |                                ^^^^^^^^^^^^^^^^^
+[2m[WebServer] [22m  |
+[2m[WebServer] [22m  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+[2m[WebServer] [22m
+[2m[WebServer] [22mwarning: variable does not need to be mutable
+[2m[WebServer] [22m   --> server\src\main.rs:355:9
+[2m[WebServer] [22m    |
+[2m[WebServer] [22m355 |     let mut llm_mgr = LlmManager::load_from_disk(&llm_config_path).unwrap_or_else(|_| {
+[2m[WebServer] [22m    |         ----^^^^^^^
+[2m[WebServer] [22m    |         |
+[2m[WebServer] [22m    |         help: remove this `mut`
+[2m[WebServer] [22m    |
+[2m[WebServer] [22m    = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+[2m[WebServer] [22m
+[2m[WebServer] [22mwarning: struct `CreateConversationRequest` is never constructed
+[2m[WebServer] [22m  --> server\src\agent_handler.rs:64:12
+[2m[WebServer] [22m   |
+[2m[WebServer] [22m64 | pub struct CreateConversationRequest {
+[2m[WebServer] [22m   |            ^^^^^^^^^^^^^^^^^^^^^^^^^
+[2m[WebServer] [22m   |
+[2m[WebServer] [22m   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+[2m[WebServer] [22m
+[2m[WebServer] [22mwarning: field `filename` is never read
+[2m[WebServer] [22m  --> server\src\agent_handler.rs:72:9
+[2m[WebServer] [22m   |
+[2m[WebServer] [22m69 | pub struct AutocompleteRequest {
+[2m[WebServer] [22m   |            ------------------- field in this struct
+[2m[WebServer] [22m...
+[2m[WebServer] [22m72 |     pub filename: Option<String>,
+[2m[WebServer] [22m   |         ^^^^^^^^
+[2m[WebServer] [22m
+[2m[WebServer] [22mwarning: `ai-launcher-server` (bin "ai-launcher-server") generated 4 warnings (run `cargo fix --bin "ai-launcher-server" -p ai-launcher-server` to apply 2 suggestions)
+[2m[WebServer] [22m    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.96s
+[2m[WebServer] [22m     Running `target\debug\ai-launcher-server.exe`
+[2m[WebServer] [22m     Running BeforeDevCommand (`pnpm dev`)
+[2m[WebServer] [22m     Running DevCommand (`cargo  run --no-default-features --color always --`)
+[2m[WebServer] [22m        Info Watching C:\Users\dila\Downloads\ai-launcher-v0.2\ai-launcher\desktop\src-tauri for changes...
+[2m[WebServer] [22m        Info Watching C:\Users\dila\Downloads\ai-launcher-v0.2\ai-launcher\core for changes...
+[2m[WebServer] [22m[1m[93mwarning[0m[1m[97m: unused imports: `AgentTask` and `TaskState`[0m
+[2m[WebServer] [22m  [1m[96m--> [0mcore\src\agent\heartbeat.rs:17:21
+[2m[WebServer] [22m   [1m[96m|[0m
+[2m[WebServer] [22m[1m[96m17[0m [1m[96m|[0m use super::models::{AgentTask, TaskState};
+[2m[WebServer] [22m   [1m[96m|[0m                     [1m[93m^^^^^^^^^[0m  [1m[93m^^^^^^^^^[0m
+[2m[WebServer] [22m   [1m[96m|[0m
+[2m[WebServer] [22m   [1m[96m= [0m[1m[97mnote[0m: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+[2m[WebServer] [22m
+[2m[WebServer] [22m[1m[93mwarning[0m[1m[97m: unused import: `crate::llm::Usage`[0m
+[2m[WebServer] [22m  [1m[96m--> [0mcore\src\agent\protocol.rs:10:5
+[2m[WebServer] [22m   [1m[96m|[0m
+[2m[WebServer] [22m[1m[96m10[0m [1m[96m|[0m use crate::llm::Usage;
+[2m[WebServer] [22m   [1m[96m|[0m     [1m[93m^^^^^^^^^^^^^^^^^[0m
+[2m[WebServer] [22m
+[2m[WebServer] [22m[1m[93mwarning[0m[1m[97m: unused import: `OptionalExtension`[0m
+[2m[WebServer] [22m [1m[96m--> [0mcore\src\agent\scheduler.rs:8:36
+[2m[WebServer] [22m  [1m[96m|[0m
+[2m[WebServer] [22m[1m[96m8[0m [1m[96m|[0m use rusqlite::{params, Connection, OptionalExtension};
+[2m[WebServer] [22m  [1m[96m|[0m                                    [1m[93m^^^^^^^^^^^^^^^^^[0m
+[2m[WebServer] [22m
+[2m[WebServer] [22m[1m[93mwarning[0m[1m[97m: unused import: `ChannelResponse`[0m
+[2m[WebServer] [22m [1m[96m--> [0mcore\src\channels\gateway.rs:1:29
+[2m[WebServer] [22m  [1m[96m|[0m
+[2m[WebServer] [22m[1m[96m1[0m [1m[96m|[0m use super::{ChannelMessage, ChannelResponse, ChannelType};
+[2m[WebServer] [22m  [1m[96m|[0m                             [1m[93m^^^^^^^^^^^^^^^[0m
+[2m[WebServer] [22m
+[2m[WebServer] [22m[1m[93mwarning[0m[1m[97m: unused import: `ChannelType`[0m
+[2m[WebServer] [22m [1m[96m--> [0mcore\src\channels\manager.rs:1:70
+[2m[WebServer] [22m  [1m[96m|[0m
+[2m[WebServer] [22m[1m[96m1[0m [1m[96m|[0m use super::{Channel, ChannelMessage, ChannelResponse, ChannelStatus, ChannelType};
+[2m[WebServer] [22m  [1m[96m|[0m                                                                      [1m[93m^^^^^^^^^^^[0m
+[2m[WebServer] [22m
+[2m[WebServer] [22m[1m[93mwarning[0m[1m[97m: unused import: `Attachment`[0m
+[2m[WebServer] [22m [1m[96m--> [0mcore\src\channels\telegram.rs:1:13
+[2m[WebServer] [22m  [1m[96m|[0m
+[2m[WebServer] [22m[1m[96m1[0m [1m[96m|[0m use super::{Attachment, Channel, ChannelMessage, ChannelResponse, ChannelType};
+[2m[WebServer] [22m  [1m[96m|[0m             [1m[93m^^^^^^^^^^[0m
+[2m[WebServer] [22m
+[2m[WebServer] [22m[1m[93mwarning[0m[1m[97m: unused import: `Deserialize`[0m
+[2m[WebServer] [22m [1m[96m--> [0mcore\src\mcp\kanban.rs:2:13
+[2m[WebServer] [22m  [1m[96m|[0m
+[2m[WebServer] [22m[1m[96m2[0m [1m[96m|[0m use serde::{Deserialize, Serialize};
+[2m[WebServer] [22m  [1m[96m|[0m             [1m[93m^^^^^^^^^^^[0m
+[2m[WebServer] [22m
+[2m[WebServer] [22m[1m[93mwarning[0m[1m[97m: unused import: `Path`[0m
+[2m[WebServer] [22m [1m[96m--> [0mcore\src\mcp\kanban.rs:5:17
+[2m[WebServer] [22m  [1m[96m|[0m
+[2m[WebServer] [22m[1m[96m5[0m [1m[96m|[0m use std::path::{Path, PathBuf};
+[2m[WebServer] [22m  [1m[96m|[0m                 [1m[93m^^^^[0m
+[2m[WebServer] [22m
+[2m[WebServer] [22m[1m[93mwarning[0m[1m[97m: unused import: `std::io::Read`[0m
+[2m[WebServer] [22m   [1m[96m--> [0mcore\src\shield\engine.rs:265:9
+[2m[WebServer] [22m    [1m[96m|[0m
+[2m[WebServer] [22m[1m[96m265[0m [1m[96m|[0m     use std::io::Read;
+[2m[WebServer] [22m    [1m[96m|[0m         [1m[93m^^^^^^^^^^^^^[0m
+[2m[WebServer] [22m
+[2m[WebServer] [22m[1m[93mwarning[0m[1m[97m: unused import: `ProxyConfig`[0m
+[2m[WebServer] [22m [1m[96m--> [0mcore\src\shield\launcher.rs:8:43
+[2m[WebServer] [22m  [1m[96m|[0m
+[2m[WebServer] [22m[1m[96m8[0m [1m[96m|[0m use super::browser::{self, BrowserEngine, ProxyConfig};
+[2m[WebServer] [22m  [1m[96m|[0m                                           [1m[93m^^^^^^^^^^^[0m
+[2m[WebServer] [22m
+[2m[WebServer] [22m[1m[93mwarning[0m[1m[97m: unused import: `ShieldProfile`[0m
+[2m[WebServer] [22m  [1m[96m--> [0mcore\src\shield\launcher.rs:10:38
+[2m[WebServer] [22m   [1m[96m|[0m
+[2m[WebServer] [22m[1m[96m10[0m [1m[96m|[0m use super::profile::{ProfileManager, ShieldProfile};
+[2m[WebServer] [22m   [1m[96m|[0m                                      [1m[93m^^^^^^^^^^^^^[0m
+[2m[WebServer] [22m
+[2m[WebServer] [22m[1m[93mwarning[0m[1m[97m: unused import: `FrameRenderedEvent`[0m
+[2m[WebServer] [22m  [1m[96m--> [0mcore\src\freecut\render_engine.rs:18:5
+[2m[WebServer] [22m   [1m[96m|[0m
+[2m[WebServer] [22m[1m[96m18[0m [1m[96m|[0m     FrameRenderedEvent, ItemType, Project, ProjectResolution, ProjectTimeline, TimelineItem,
+[2m[WebServer] [22m   [1m[96m|[0m     [1m[93m^^^^^^^^^^^^^^^^^^[0m
+[2m[WebServer] [22m
+[2m[WebServer] [22m[1m[93mwarning[0m[1m[97m: unused import: `BitmapAlphaMode`[0m
+[2m[WebServer] [22m [1m[96m--> [0mcore\src\screenshot\ocr.rs:8:38
+[2m[WebServer] [22m  [1m[96m|[0m
+[2m[WebServer] [22m[1m[96m8[0m [1m[96m|[0m     use windows::Graphics::Imaging::{BitmapAlphaMode, BitmapPixelFormat, SoftwareBitmap};
+[2m[WebServer] [22m  [1m[96m|[0m                                      [1m[93m^^^^^^^^^^^^^^^[0m
+[2m[WebServer] [22m
+[2m[WebServer] [22m[1m[93mwarning[0m[1m[97m: unused variable: `tools`[0m
+[2m[WebServer] [22m   [1m[96m--> [0mcore\src\llm\gguf.rs:871:48
+[2m[WebServer] [22m    [1m[96m|[0m
+[2m[WebServer] [22m[1m[96m871[0m [1m[96m|[0m     async fn chat(&self, messages: &[Message], tools: &[ToolDef]) -> Result<LlmResponse> {
+[2m[WebServer] [22m    [1m[96m|[0m                                                [1m[93m^^^^^[0m [1m[93mhelp: if this is intentional, prefix it with an underscore: `_tools`[0m
+[2m[WebServer] [22m    [1m[96m|[0m
+[2m[WebServer] [22m    [1m[96m= [0m[1m[97mnote[0m: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+[2m[WebServer] [22m
+[2m[WebServer] [22m[1m[93mwarning[0m[1m[97m: unused variable: `clean`[0m
+[2m[WebServer] [22m   [1m[96m--> [0mcore\src\tools\builtin\web_browse.rs:218:17
+[2m[WebServer] [22m    [1m[96m|[0m
+[2m[WebServer] [22m[1m[96m218[0m [1m[96m|[0m             let clean = clean_text(&strip_tags(&content));
+[2m[WebServer] [22m    [1m[96m|[0m                 [1m[93m^^^^^[0m [1m[93mhelp: if this is intentional, prefix it with an underscore: `_clean`[0m
+[2m[WebServer] [22m
+[2m[WebServer] [22m[1m[93mwarning[0m[1m[97m: variable does not need to be mutable[0m
+[2m[WebServer] [22m   [1m[96m--> [0mcore\src\tools\builtin\web_browse.rs:292:9
+[2m[WebServer] [22m    [1m[96m|[0m
+[2m[WebServer] [22m[1m[96m292[0m [1m[96m|[0m     let mut lines: Vec<&str> = text.lines().map(|l| l.trim()).collect();
+[2m[WebServer] [22m    [1m[96m|[0m         [1m[96m----[0m[1m[93m^^^^^[0m
+[2m[WebServer] [22m    [1m[96m|[0m         [1m[96m|[0m
+[2m[WebServer] [22m    [1m[96m|[0m         [1m[96mhelp: remove this `mut`[0m
+[2m[WebServer] [22m    [1m[96m|[0m
+[2m[WebServer] [22m    [1m[96m= [0m[1m[97mnote[0m: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+[2m[WebServer] [22m
+[2m[WebServer] [22m[1m[93mwarning[0m[1m[97m: field `handle` is never read[0m
+[2m[WebServer] [22m  [1m[96m--> [0mcore\src\agent\manager.rs:56:5
+[2m[WebServer] [22m   [1m[96m|[0m
+[2m[WebServer] [22m[1m[96m54[0m [1m[96m|[0m struct RunningTask {
+[2m[WebServer] [22m   [1m[96m|[0m        [1m[96m-----------[0m [1m[96mfield in this struct[0m
+[2m[WebServer] [22m[1m[96m55[0m [1m[96m|[0m     cancel: CancellationToken,
+[2m[WebServer] [22m[1m[96m56[0m [1m[96m|[0m     handle: tokio::task::JoinHandle<()>,
+[2m[WebServer] [22m   [1m[96m|[0m     [1m[93m^^^^^^[0m
+[2m[WebServer] [22m   [1m[96m|[0m
+[2m[WebServer] [22m   [1m[96m= [0m[1m[97mnote[0m: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+[2m[WebServer] [22m
+[2m[WebServer] [22m[1m[93mwarning[0m[1m[97m: field `data_dir` is never read[0m
+[2m[WebServer] [22m  [1m[96m--> [0mcore\src\agent\manager.rs:71:5
+[2m[WebServer] [22m   [1m[96m|[0m
+[2m[WebServer] [22m[1m[96m60[0m [1m[96m|[0m pub struct AgentManager {
+[2m[WebServer] [22m   [1m[96m|[0m            [1m[96m------------[0m [1m[96mfield in this struct[0m
+[2m[WebServer] [22m[1m[96m...[0m
+[2m[WebServer] [22m[1m[96m71[0m [1m[96m|[0m     data_dir: PathBuf,
+[2m[WebServer] [22m   [1m[96m|[0m     [1m[93m^^^^^^^^[0m
+[2m[WebServer] [22m
+[2m[WebServer] [22m[1m[93mwarning[0m[1m[97m: fields `ok` and `description` are never read[0m
+[2m[WebServer] [22m  [1m[96m--> [0mcore\src\channels\telegram.rs:45:5
+[2m[WebServer] [22m   [1m[96m|[0m
+[2m[WebServer] [22m[1m[96m44[0m [1m[96m|[0m struct TelegramResponse<T> {
+[2m[WebServer] [22m   [1m[96m|[0m        [1m[96m----------------[0m [1m[96mfields in this struct[0m
+[2m[WebServer] [22m[1m[96m45[0m [1m[96m|[0m     ok: bool,
+[2m[WebServer] [22m   [1m[96m|[0m     [1m[93m^^[0m
+[2m[WebServer] [22m[1m[96m46[0m [1m[96m|[0m     result: Option<T>,
+[2m[WebServer] [22m[1m[96m47[0m [1m[96m|[0m     description: Option<String>,
+[2m[WebServer] [22m   [1m[96m|[0m     [1m[93m^^^^^^^^^^^[0m
+[2m[WebServer] [22m
+[2m[WebServer] [22m[1m[93mwarning[0m[1m[97m: field `document` is never read[0m
+[2m[WebServer] [22m  [1m[96m--> [0mcore\src\channels\telegram.rs:63:5
+[2m[WebServer] [22m   [1m[96m|[0m
+[2m[WebServer] [22m[1m[96m57[0m [1m[96m|[0m struct TelegramMessage {
+[2m[WebServer] [22m   [1m[96m|[0m        [1m[96m---------------[0m [1m[96mfield in this struct[0m
+[2m[WebServer] [22m[1m[96m...[0m
+[2m[WebServer] [22m[1m[96m63[0m [1m[96m|[0m     document: Option<TelegramDocument>,
+[2m[WebServer] [22m   [1m[96m|[0m     [1m[93m^^^^^^^^[0m
+[2m[WebServer] [22m
+[2m[WebServer] [22m[1m[93mwarning[0m[1m[97m: field `username` is never read[0m
+[2m[WebServer] [22m  [1m[96m--> [0mcore\src\channels\telegram.rs:73:5
+[2m[WebServer] [22m   [1m[96m|[0m
+[2m[WebServer] [22m[1m[96m67[0m [1m[96m|[0m struct TelegramUser {
+[2m[WebServer] [22m   [1m[96m|[0m        [1m[96m------------[0m [1m[96mfield in this struct[0m
+[2m[WebServer] [22m[1m[96m...[0m
+[2m[WebServer] [22m[1m[96m73[0m [1m[96m|[0m     username: Option<String>,
+[2m[WebServer] [22m   [1m[96m|[0m     [1m[93m^^^^^^^^[0m
+[2m[WebServer] [22m
+[2m[WebServer] [22m[1m[93mwarning[0m[1m[97m: fields `file_name`, `file_size`, and `mime_type` are never read[0m
+[2m[WebServer] [22m  [1m[96m--> [0mcore\src\channels\telegram.rs:85:5
+[2m[WebServer] [22m   [1m[96m|[0m
+[2m[WebServer] [22m[1m[96m84[0m [1m[96m|[0m struct TelegramDocument {
+[2m[WebServer] [22m   [1m[96m|[0m        [1m[96m----------------[0m [1m[96mfields in this struct[0m
+[2m[WebServer] [22m[1m[96m85[0m [1m[96m|[0m     file_name: Option<String>,
+[2m[WebServer] [22m   [1m[96m|[0m     [1m[93m^^^^^^^^^[0m
+[2m[WebServer] [22m[1m[96m86[0m [1m[96m|[0m     file_size: Option<u64>,
+[2m[WebServer] [22m   [1m[96m|[0m     [1m[93m^^^^^^^^^[0m
+[2m[WebServer] [22m[1m[96m87[0m [1m[96m|[0m     mime_type: Option<String>,
+[2m[WebServer] [22m   [1m[96m|[0m     [1m[93m^^^^^^^^^[0m
+[2m[WebServer] [22m
+[2m[WebServer] [22m[1m[93mwarning[0m[1m[97m: fields `event_type` and `index` are never read[0m
+[2m[WebServer] [22m   [1m[96m--> [0mcore\src\llm\anthropic.rs:132:5
+[2m[WebServer] [22m    [1m[96m|[0m
+[2m[WebServer] [22m[1m[96m130[0m [1m[96m|[0m struct StreamEvent {
+[2m[WebServer] [22m    [1m[96m|[0m        [1m[96m-----------[0m [1m[96mfields in this struct[0m
+[2m[WebServer] [22m[1m[96m131[0m [1m[96m|[0m     #[serde(rename = "type")]
+[2m[WebServer] [22m[1m[96m132[0m [1m[96m|[0m     event_type: String,
+[2m[WebServer] [22m    [1m[96m|[0m     [1m[93m^^^^^^^^^^[0m
+[2m[WebServer] [22m[1m[96m133[0m [1m[96m|[0m     #[serde(default)]
+[2m[WebServer] [22m[1m[96m134[0m [1m[96m|[0m     index: Option<usize>,
+[2m[WebServer] [22m    [1m[96m|[0m     [1m[93m^^^^^[0m
+[2m[WebServer] [22m
+[2m[WebServer] [22m[1m[93mwarning[0m[1m[97m: fields `delta_type` and `stop_reason` are never read[0m
+[2m[WebServer] [22m   [1m[96m--> [0mcore\src\llm\anthropic.rs:147:5
+[2m[WebServer] [22m    [1m[96m|[0m
+[2m[WebServer] [22m[1m[96m144[0m [1m[96m|[0m struct StreamDelta {
+[2m[WebServer] [22m    [1m[96m|[0m        [1m[96m-----------[0m [1m[96mfields in this struct[0m
+[2m[WebServer] [22m[1m[96m...[0m
+[2m[WebServer] [22m[1m[96m147[0m [1m[96m|[0m     delta_type: Option<String>,
+[2m[WebServer] [22m    [1m[96m|[0m     [1m[93m^^^^^^^^^^[0m
+[2m[WebServer] [22m[1m[96m...[0m
+[2m[WebServer] [22m[1m[96m153[0m [1m[96m|[0m     stop_reason: Option<String>,
+[2m[WebServer] [22m    [1m[96m|[0m     [1m[93m^^^^^^^^^^^[0m
+[2m[WebServer] [22m
+[2m[WebServer] [22m[1m[93mwarning[0m[1m[97m: function `to_oai_tools` is never used[0m
+[2m[WebServer] [22m   [1m[96m--> [0mcore\src\llm\gguf.rs:853:4
+[2m[WebServer] [22m    [1m[96m|[0m
+[2m[WebServer] [22m[1m[96m853[0m [1m[96m|[0m fn to_oai_tools(tools: &[ToolDef]) -> Vec<OaiTool> {
+[2m[WebServer] [22m    [1m[96m|[0m    [1m[93m^^^^^^^^^^^^[0m
+[2m[WebServer] [22m
+[2m[WebServer] [22m[1m[93mwarning[0m[1m[97m: field `done` is never read[0m
+[2m[WebServer] [22m  [1m[96m--> [0mcore\src\llm\ollama.rs:73:5
+[2m[WebServer] [22m   [1m[96m|[0m
+[2m[WebServer] [22m[1m[96m70[0m [1m[96m|[0m struct OllamaResponse {
+[2m[WebServer] [22m   [1m[96m|[0m        [1m[96m--------------[0m [1m[96mfield in this struct[0m
+[2m[WebServer] [22m[1m[96m...[0m
+[2m[WebServer] [22m[1m[96m73[0m [1m[96m|[0m     done: bool,
+[2m[WebServer] [22m   [1m[96m|[0m     [1m[93m^^^^[0m
+[2m[WebServer] [22m
+[2m[WebServer] [22m[1m[93mwarning[0m: `ai-launcher-core` (lib) generated 26 warnings (run `cargo fix --lib -p ai-launcher-core` to apply 16 suggestions)
+[2m[WebServer] [22m[1m[93mwarning[0m[1m[97m: unused import: `Manager`[0m
+[2m[WebServer] [22m [1m[96m--> [0mdesktop\src-tauri\src\commands\agent_tasks.rs:4:33
+[2m[WebServer] [22m  [1m[96m|[0m
+[2m[WebServer] [22m[1m[96m4[0m [1m[96m|[0m use tauri::{AppHandle, Emitter, Manager};
+[2m[WebServer] [22m  [1m[96m|[0m                                 [1m[93m^^^^^^^[0m
+[2m[WebServer] [22m  [1m[96m|[0m
+[2m[WebServer] [22m  [1m[96m= [0m[1m[97mnote[0m: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+[2m[WebServer] [22m
+[2m[WebServer] [22m[1m[93mwarning[0m[1m[97m: field `projects_dir` is never read[0m
+[2m[WebServer] [22m  [1m[96m--> [0mdesktop\src-tauri\src\commands\freecut.rs:25:9
+[2m[WebServer] [22m   [1m[96m|[0m
+[2m[WebServer] [22m[1m[96m23[0m [1m[96m|[0m pub struct FreeCutState {
+[2m[WebServer] [22m   [1m[96m|[0m            [1m[96m------------[0m [1m[96mfield in this struct[0m
+[2m[WebServer] [22m[1m[96m24[0m [1m[96m|[0m     pub store: Arc<Mutex<FreeCutStore>>,
+[2m[WebServer] [22m[1m[96m25[0m [1m[96m|[0m     pub projects_dir: PathBuf,
+[2m[WebServer] [22m   [1m[96m|[0m         [1m[93m^^^^^^^^^^^^[0m
+[2m[WebServer] [22m   [1m[96m|[0m
+[2m[WebServer] [22m   [1m[96m= [0m[1m[97mnote[0m: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+[2m[WebServer] [22m
+[2m[WebServer] [22m[1m[93mwarning[0m: `ai-launcher-desktop` (lib) generated 2 warnings
+[2m[WebServer] [22m[1m[92m    Finished[0m ]8;;https://doc.rust-lang.org/cargo/reference/profiles.html#default-profiles\`dev` profile [unoptimized + debuginfo]]8;;\ target(s) in 1.45s
+[2m[WebServer] [22m[1m[92m     Running[0m `C:\Users\dila\Downloads\ai-launcher-v0.2\ai-launcher\target\debug\ai-launcher-desktop.exe`
+
+Running 1 test using 1 worker
+
+[2m[WebServer] [22m[2m11:37:11 PM[22m [33m[1m[vite][22m[39m [33m[2m(client)[22m[39m [2m[console.warn] [22m[svelte] ownership_invalid_mutation
+[2m[WebServer] [22mMutating unbound props (`window`, at src/​components/​Desktop/​Window/​Window.svelte:111:4) is strongly discouraged. Consider using `bind:window={...}` in src/components/Desktop/Window/WindowsArea.svelte (or using a callback) instead
+[2m[WebServer] [22mhttps://svelte.dev/e/ownership_invalid_mutation
+[2m[WebServer] [22m[2m11:37:11 PM[22m [33m[1m[vite][22m[39m [33m[2m(client)[22m[39m [2m[console.warn] [22m[svelte] ownership_invalid_mutation
+[2m[WebServer] [22mMutating unbound props (`window`, at src/​components/​Desktop/​Window/​Window.svelte:112:4) is strongly discouraged. Consider using `bind:window={...}` in src/components/Desktop/Window/WindowsArea.svelte (or using a callback) instead
+[2m[WebServer] [22mhttps://svelte.dev/e/ownership_invalid_mutation
+  ✘  1 [chromium] › e2e\freecut-edit-export.spec.ts:4:3 › FreeCut Edit and Export Workflow › creates a project, drops text, trims it, edit properties, and exports (5.7s)
+
+
+  1) [chromium] › e2e\freecut-edit-export.spec.ts:4:3 › FreeCut Edit and Export Workflow › creates a project, drops text, trims it, edit properties, and exports 
+
+    Error: [2mexpect([22m[31mlocator[39m[2m).[22mtoBeVisible[2m([22m[2m)[22m failed
+
+    Locator: locator('text=Drag to timeline')
+    Expected: visible
+    Timeout: 5000ms
+    Error: element(s) not found
+
+    Call log:
+    [2m  - Expect "toBeVisible" with timeout 5000ms[22m
+    [2m  - waiting for locator('text=Drag to timeline')[22m
+
+
+      38 |     await textTabBtn.click({ force: true }); // switch to text tab
+      39 |     // Wait for the preset to appear
+    > 40 |     await expect(page.locator('text=Drag to timeline')).toBeVisible();
+         |                                                         ^
+      41 |
+      42 |     await page.evaluate(() => {
+      43 |       const source = document.querySelector('.cursor-grab') as HTMLElement;
+        at C:\Users\dila\Downloads\ai-launcher-v0.2\ai-launcher\desktop\e2e\freecut-edit-export.spec.ts:40:57
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\freecut-edit-export-FreeCu-d147e-edit-properties-and-exports-chromium\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  1 failed
+    [chromium] › e2e\freecut-edit-export.spec.ts:4:3 › FreeCut Edit and Export Workflow › creates a project, drops text, trims it, edit properties, and exports 

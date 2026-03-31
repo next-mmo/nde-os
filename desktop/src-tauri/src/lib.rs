@@ -2,6 +2,7 @@ mod commands;
 mod state;
 
 use ai_launcher_core::shield::launcher::BrowserLauncher;
+use commands::freecut::FreeCutState;
 use commands::shield::ShieldLauncherState;
 use state::AppState;
 use std::path::PathBuf;
@@ -32,6 +33,10 @@ pub fn run() {
         launcher: Arc::new(Mutex::new(BrowserLauncher::new(&base_dir))),
     };
 
+    // FreeCut video editor state
+    let freecut_state =
+        FreeCutState::new(&base_dir).expect("Failed to initialize FreeCut state");
+
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
@@ -53,6 +58,7 @@ pub fn run() {
         })
         .manage(app_state)
         .manage(shield_launcher)
+        .manage(freecut_state)
         .manage(commands::pty::PtyState::new())
         .invoke_handler(tauri::generate_handler![
             // system
@@ -125,6 +131,21 @@ pub fn run() {
             // pty
             commands::pty::spawn_pty,
             commands::pty::write_pty,
+            // freecut video editor
+            commands::freecut::freecut_create_project,
+            commands::freecut::freecut_list_projects,
+            commands::freecut::freecut_get_project,
+            commands::freecut::freecut_save_project,
+            commands::freecut::freecut_delete_project,
+            commands::freecut::freecut_import_media,
+            commands::freecut::freecut_probe_media,
+            commands::freecut::freecut_generate_thumbnails,
+            commands::freecut::freecut_generate_waveform,
+            commands::freecut::freecut_list_media,
+            commands::freecut::freecut_delete_media,
+            commands::freecut::freecut_render_frame,
+            commands::freecut::freecut_get_hw_encoders,
+            commands::freecut::freecut_export_video,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
