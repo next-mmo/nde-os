@@ -19,7 +19,7 @@ export interface ZoomActions {
   zoomToFit: (containerWidth: number, contentDurationSeconds: number) => void;
 }
 
-const ZOOM_THROTTLE_MS = 120;
+const ZOOM_THROTTLE_MS = 50;
 let lastZoomUpdate = 0;
 let pendingZoomLevel: number | null = null;
 let zoomThrottleTimeout: ReturnType<typeof setTimeout> | null = null;

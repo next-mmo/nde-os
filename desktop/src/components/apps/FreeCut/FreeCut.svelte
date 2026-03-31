@@ -11,7 +11,8 @@
     Settings, ZoomIn, ZoomOut, Layers, Type, Image, Music, Video,
     ChevronRight, Repeat, PanelLeftClose, PanelRightClose, PanelLeft, PanelRight,
     MousePointer2, Slice, GripHorizontal, FolderOpen, Download, Sparkles,
-    Circle, Triangle, RectangleHorizontal, Undo2, Redo2, Grid
+    Circle, Triangle, RectangleHorizontal, Undo2, Redo2, Grid,
+    Magnet, Maximize2, Minus, GripVertical
   } from "@lucide/svelte";
 
   // ─── Stores (Zustand vanilla → Svelte 5 reactive) ─────────────────────
@@ -74,6 +75,31 @@
 
   // Trim interaction
   let isTrimming = $state(false);
+
+  // Playhead drag
+  let isDraggingPlayhead = $state(false);
+
+  // Timeline resize drag
+  let isResizingTimeline = $state(false);
+  let resizeStartY = $state(0);
+  let resizeStartHeight = $state(0);
+
+  // Snap visual feedback
+  let activeSnapFrame = $state<number | null>(null);
+
+  // Clipboard for copy/paste
+  let clipboardItems: TimelineItem[] = [];
+
+  // In/Out points
+  let inPoint = $state<number | null>(null);
+  let outPoint = $state<number | null>(null);
+
+  // Markers
+  type Marker = { id: string; frame: number; label: string; color: string };
+  let markers = $state<Marker[]>([]);
+
+  // Preview scrubber (ghost playhead on hover)
+  let previewFrame = $state<number | null>(null);
 
   // Derived
   let totalFrames = $derived(currentProject?.duration ?? ti.maxItemEndFrame);
@@ -163,6 +189,23 @@
           }
           playbackStore.getState().setCurrentFrame(Math.round(nextFrame));
           lastFrameTime = now - (elapsed % frameDuration);
+
+          // Auto-scroll: keep playhead visible during playback
+          const playheadPx = frameToPixel(Math.round(nextFrame));
+          const tracksEl = document.getElementById('tracks-container');
+          if (tracksEl) {
+            const viewportWidth = tracksEl.clientWidth - 120; // subtract track headers
+            const scrollLeft = ti.scrollLeft;
+            const playheadInView = playheadPx - scrollLeft;
+            // If playhead is past 80% of visible width, scroll forward
+            if (playheadInView > viewportWidth * 0.8) {
+              itemsStore.getState().setScrollLeft(playheadPx - viewportWidth * 0.2);
+            }
+            // If playhead is before 10% of visible width (rewound), jump scroll
+            if (playheadInView < 0) {
+              itemsStore.getState().setScrollLeft(Math.max(0, playheadPx - viewportWidth * 0.1));
+            }
+          }
         }
         animFrame = requestAnimationFrame(tick);
       };
@@ -353,8 +396,12 @@
   }
 
   function handleRulerClick(e: MouseEvent) {
-    const target = e.currentTarget as HTMLElement;
-    const rect = target.getBoundingClientRect();
+    // Now handled by startPlayheadDrag/scrubPlayhead
+    const ruler = document.getElementById('timeline-ruler');
+    if (!ruler) return;
+    const rulerArea = ruler.querySelector('.flex-1') as HTMLElement;
+    if (!rulerArea) return;
+    const rect = rulerArea.getBoundingClientRect();
     const x = e.clientX - rect.left + ti.scrollLeft;
     const frame = pixelToFrame(x);
     playbackStore.getState().setCurrentFrame(Math.max(0, Math.min(frame, totalFrames)));
@@ -468,32 +515,113 @@
         itemsStore.getState().splitItem(item.id, frame);
       }
     } else if (sel.activeTool === "select") {
-      selectionStore.getState().selectItems([item.id]);
+      if (e.shiftKey || e.ctrlKey || e.metaKey) {
+        // Multi-select: toggle item in selection
+        const current = selectionStore.getState().selectedItemIds;
+        if (current.includes(item.id)) {
+          selectionStore.getState().selectItems(current.filter(id => id !== item.id));
+        } else {
+          selectionStore.getState().selectItems([...current, item.id]);
+        }
+      } else {
+        selectionStore.getState().selectItems([item.id]);
+      }
     }
   }
 
   function startClipDrag(e: MouseEvent, itemId: string, itemFrom: number, trackId: string) {
     if (sel.activeTool !== "select") return;
 
+    // Don't drag on locked tracks
+    const track = itemsStore.getState().tracks.find(t => t.id === trackId);
+    if (track?.locked) return;
+
     const target = e.target as HTMLElement;
-    if (target.dataset.dragMode === "trim") return; // Let trim handles take over
+    if (target.dataset.dragMode === "trim") return;
 
     e.preventDefault();
-    historyStore.getState().push();
-    isDraggingClip = true;
-    dragClipId = itemId;
-    dragStartX = e.clientX;
-    dragStartY = e.clientY;
-    dragStartFrom = itemFrom;
-    dragStartTrackId = trackId;
-    selectionStore.getState().selectItems([itemId]);
+    const mouseStartX = e.clientX;
+    const mouseStartY = e.clientY;
+    let hasDragged = false;
 
     const onMove = (ev: MouseEvent) => {
-      if (!isDraggingClip || !dragClipId) return;
-      const dx = ev.clientX - dragStartX;
-      const dFrames = pixelToFrame(dx);
-      const newFrom = Math.max(0, dragStartFrom + dFrames);
+      const dx = ev.clientX - mouseStartX;
+      const dy = ev.clientY - mouseStartY;
 
+      // 3px drag threshold — prevents accidental moves on click
+      if (!hasDragged) {
+        if (Math.abs(dx) < 3 && Math.abs(dy) < 3) return;
+        hasDragged = true;
+        historyStore.getState().push();
+        isDraggingClip = true;
+        dragClipId = itemId;
+        dragStartX = mouseStartX;
+        dragStartY = mouseStartY;
+        dragStartFrom = itemFrom;
+        dragStartTrackId = trackId;
+        selectionStore.getState().selectItems([itemId]);
+        // Alt+drag starts duplicate mode
+        const isAltDrag = ev.altKey;
+        document.body.style.cursor = isAltDrag ? "copy" : "grabbing";
+        document.body.style.userSelect = "none";
+      }
+
+      // Update cursor dynamically based on alt key
+      if (hasDragged) {
+        document.body.style.cursor = ev.altKey ? "copy" : "grabbing";
+      }
+
+      if (!isDraggingClip || !dragClipId) return;
+      const dFrames = pixelToFrame(dx);
+      let newFrom = Math.max(0, dragStartFrom + dFrames);
+
+      // Snap-to-edges: snap clip start/end to other item edges and playhead
+      if (ti.snapEnabled) {
+        const SNAP_THRESHOLD = 8; // pixels
+        const snapThresholdFrames = pixelToFrame(SNAP_THRESHOLD);
+        const clipDuration = itemsStore.getState().itemById[dragClipId]?.durationInFrames ?? 0;
+        const clipEnd = newFrom + clipDuration;
+        
+        // Build snap targets from other items' edges + playhead
+        const snapTargets: number[] = [pb.currentFrame]; // playhead
+        const allItems = itemsStore.getState().items;
+        for (const otherItem of allItems) {
+          if (otherItem.id === dragClipId) continue;
+          snapTargets.push(otherItem.from); // start edge
+          snapTargets.push(otherItem.from + otherItem.durationInFrames); // end edge
+        }
+
+        let bestSnap: number | null = null;
+        let bestDist = snapThresholdFrames;
+        
+        // Check clip start against all targets
+        for (const target of snapTargets) {
+          const dist = Math.abs(newFrom - target);
+          if (dist < bestDist) {
+            bestDist = dist;
+            bestSnap = target;
+          }
+        }
+        // Check clip end against all targets
+        for (const target of snapTargets) {
+          const dist = Math.abs(clipEnd - target);
+          if (dist < bestDist) {
+            bestDist = dist;
+            bestSnap = target - clipDuration; // Adjust so end aligns
+          }
+        }
+
+        if (bestSnap !== null) {
+          newFrom = Math.max(0, bestSnap);
+          activeSnapFrame = newFrom; // For visual indicator
+        } else {
+          activeSnapFrame = null;
+        }
+      } else {
+        activeSnapFrame = null;
+      }
+
+      // Cross-track movement
       let newTrackId = dragStartTrackId;
       const tracksContainer = document.getElementById("tracks-container");
       if (tracksContainer) {
@@ -511,9 +639,37 @@
       itemsStore.getState().moveItem(dragClipId, newFrom, newTrackId);
     };
 
-    const onUp = () => {
+    let altDragDuplicated = false; // prevent re-duplicating on same drag
+    const onUp = (ev: MouseEvent) => {
+      if (hasDragged && ev.altKey && dragClipId && !altDragDuplicated) {
+        // Alt+drag: revert item to original position, create duplicate at new position
+        altDragDuplicated = true;
+        const currentItem = itemsStore.getState().itemById[dragClipId];
+        if (currentItem) {
+          // Move original back
+          itemsStore.getState().moveItem(dragClipId, dragStartFrom, dragStartTrackId);
+          // Add duplicate at the drop position
+          const duplicate: TimelineItem = {
+            ...currentItem,
+            id: crypto.randomUUID(),
+            from: currentItem.from, // was already moved to new position
+            originId: crypto.randomUUID(),
+          };
+          // Re-calculate from the UI position
+          const dFrames = pixelToFrame(ev.clientX - dragStartX);
+          duplicate.from = Math.max(0, dragStartFrom + dFrames);
+          itemsStore.getState().addItem(duplicate);
+          selectionStore.getState().selectItems([duplicate.id]);
+        }
+      }
+      if (!hasDragged) {
+        // Was just a click, not a drag
+      }
       isDraggingClip = false;
       dragClipId = null;
+      activeSnapFrame = null;
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
     };
@@ -621,6 +777,83 @@
     itemsStore.getState().setTracks([]);
     selectionStore.getState().clearSelection();
     historyStore.getState().clear();
+    markers = [];
+    inPoint = null;
+    outPoint = null;
+    clipboardItems = [];
+  }
+
+  // ─── In/Out Points ────────────────────────────────────────────────────
+  function setInPoint() {
+    inPoint = pb.currentFrame;
+    if (outPoint !== null && outPoint <= inPoint) outPoint = null;
+  }
+
+  function setOutPoint() {
+    outPoint = pb.currentFrame;
+    if (inPoint !== null && inPoint >= outPoint) inPoint = null;
+  }
+
+  // ─── Markers ──────────────────────────────────────────────────────────
+  const markerColors = ["#ef4444", "#f59e0b", "#22c55e", "#3b82f6", "#a855f7", "#ec4899"];
+  function addMarker(frame: number) {
+    markers = [...markers, {
+      id: crypto.randomUUID(),
+      frame,
+      label: `M${markers.length + 1}`,
+      color: markerColors[markers.length % markerColors.length]!,
+    }];
+  }
+
+  function removeMarker(id: string) {
+    markers = markers.filter(m => m.id !== id);
+  }
+
+  // ─── Clipboard & Duplicate ────────────────────────────────────────────
+  function duplicateSelectedItems() {
+    historyStore.getState().push();
+    const state = itemsStore.getState();
+    const selected = sel.selectedItemIds.map(id => state.itemById[id]).filter(Boolean) as TimelineItem[];
+    if (selected.length === 0) return;
+
+    const positions = selected.map(item => ({
+      from: item.from + item.durationInFrames,
+      trackId: item.trackId,
+    }));
+    const newItems = state.duplicateItems(sel.selectedItemIds, positions);
+    selectionStore.getState().selectItems(newItems.map(i => i.id));
+  }
+
+  function pasteItemsAtPlayhead() {
+    if (clipboardItems.length === 0) return;
+    const baseFrame = pb.currentFrame;
+    const minFrom = Math.min(...clipboardItems.map(i => i.from));
+    
+    const newItems: TimelineItem[] = clipboardItems.map(item => ({
+      ...item,
+      id: crypto.randomUUID(),
+      from: baseFrame + (item.from - minFrom),
+      originId: crypto.randomUUID(),
+    }));
+
+    for (const item of newItems) {
+      itemsStore.getState().addItem(item);
+    }
+    selectionStore.getState().selectItems(newItems.map(i => i.id));
+  }
+
+  // ─── Preview Scrubber ─────────────────────────────────────────────────
+  function handleTrackMouseMove(e: MouseEvent) {
+    const tracksContainer = document.getElementById("tracks-container");
+    if (!tracksContainer || isDraggingClip || isTrimming) { previewFrame = null; return; }
+    const rect = tracksContainer.getBoundingClientRect();
+    const x = e.clientX - rect.left - 120 + ti.scrollLeft; // subtract track header
+    if (x < 0) { previewFrame = null; return; }
+    previewFrame = Math.max(0, pixelToFrame(x));
+  }
+
+  function handleTrackMouseLeave() {
+    previewFrame = null;
   }
 
   // ─── Editable Properties Update ────────────────────────────────────────
@@ -657,16 +890,48 @@
         playbackStore.getState().setCurrentFrame(pb.currentFrame + (e.shiftKey ? 10 : 1));
         break;
       case "Home":
+        e.preventDefault();
         playbackStore.getState().setCurrentFrame(0);
+        itemsStore.getState().setScrollLeft(0);
         break;
       case "End":
+        e.preventDefault();
         playbackStore.getState().setCurrentFrame(totalFrames);
         break;
       case "Delete":
       case "Backspace":
         if (sel.selectedItemIds.length > 0) {
+          e.preventDefault();
           historyStore.getState().push();
-          itemsStore.getState().removeItems(sel.selectedItemIds);
+          // Ripple delete: shift subsequent items left to fill gaps
+          if (e.shiftKey) {
+            const state = itemsStore.getState();
+            const deletedItems = sel.selectedItemIds.map(id => state.itemById[id]).filter(Boolean) as TimelineItem[];
+            // Find the smallest start frame among deleted items per track
+            const gapsByTrack = new Map<string, { start: number; gap: number }[]>();
+            for (const item of deletedItems) {
+              const gaps = gapsByTrack.get(item.trackId) ?? [];
+              gaps.push({ start: item.from, gap: item.durationInFrames });
+              gapsByTrack.set(item.trackId, gaps);
+            }
+            state.removeItems(sel.selectedItemIds);
+            // Shift remaining items on each track to close gaps
+            for (const [trackId, gaps] of gapsByTrack) {
+              gaps.sort((a, b) => a.start - b.start);
+              const trackItems = itemsStore.getState().items.filter(i => i.trackId === trackId).sort((a, b) => a.from - b.from);
+              let totalShift = 0;
+              for (const gap of gaps) {
+                for (const ti of trackItems) {
+                  if (ti.from >= gap.start - totalShift) {
+                    itemsStore.getState().moveItem(ti.id, ti.from - gap.gap);
+                  }
+                }
+                totalShift += gap.gap;
+              }
+            }
+          } else {
+            itemsStore.getState().removeItems(sel.selectedItemIds);
+          }
           selectionStore.getState().clearItemSelection();
         }
         break;
@@ -675,12 +940,18 @@
         break;
       case "i":
         if (e.ctrlKey || e.metaKey) { e.preventDefault(); importMedia(); }
+        else { setInPoint(); }
+        break;
+      case "o":
+        if (!e.ctrlKey && !e.metaKey) { setOutPoint(); }
         break;
       case "z":
         if (e.ctrlKey || e.metaKey) { 
           e.preventDefault();
           if (e.shiftKey) historyStore.getState().redo();
           else historyStore.getState().undo();
+        } else {
+          zoomToFit();
         }
         break;
       case "y":
@@ -697,27 +968,229 @@
         if (e.ctrlKey || e.metaKey) { e.preventDefault(); zoomStore.getState().zoomOut(); }
         break;
       case "b":
-        if (!e.ctrlKey && !e.metaKey && sel.selectedItemIds.length === 1) {
-          historyStore.getState().push();
-          itemsStore.getState().splitItem(sel.selectedItemIds[0]!, pb.currentFrame);
+        if (!e.ctrlKey && !e.metaKey) {
+          // Split all selected items at playhead (or just one if single selected)
+          if (sel.selectedItemIds.length > 0) {
+            historyStore.getState().push();
+            for (const id of sel.selectedItemIds) {
+              itemsStore.getState().splitItem(id, pb.currentFrame);
+            }
+          }
+        }
+        break;
+      case "d":
+        if (e.altKey || ((e.ctrlKey || e.metaKey) && e.shiftKey)) {
+          // Alt+D or Ctrl+Shift+D: Duplicate selected items
+          e.preventDefault();
+          if (sel.selectedItemIds.length > 0) {
+            duplicateSelectedItems();
+          }
         }
         break;
       case "v": if (!e.ctrlKey) selectionStore.getState().setActiveTool("select"); break;
-      case "c": if (!e.ctrlKey) selectionStore.getState().setActiveTool("razor"); break;
+      case "c":
+        if (e.ctrlKey || e.metaKey) {
+          // Ctrl+C: Copy items to clipboard (store in local var)
+          e.preventDefault();
+          clipboardItems = sel.selectedItemIds.map(id => itemsStore.getState().itemById[id]).filter(Boolean) as TimelineItem[];
+        } else {
+          selectionStore.getState().setActiveTool("razor");
+        }
+        break;
+      case "x":
+        if (e.ctrlKey || e.metaKey) {
+          // Ctrl+X: Cut (copy + delete)
+          e.preventDefault();
+          clipboardItems = sel.selectedItemIds.map(id => itemsStore.getState().itemById[id]).filter(Boolean) as TimelineItem[];
+          if (clipboardItems.length > 0) {
+            historyStore.getState().push();
+            itemsStore.getState().removeItems(sel.selectedItemIds);
+            selectionStore.getState().clearItemSelection();
+          }
+        }
+        break;
+      case "v":
+        if (e.ctrlKey || e.metaKey) {
+          // Ctrl+V: Paste at playhead
+          e.preventDefault();
+          if (clipboardItems.length > 0) {
+            historyStore.getState().push();
+            pasteItemsAtPlayhead();
+          }
+        } else {
+          selectionStore.getState().setActiveTool("select");
+        }
+        break;
+      case "m":
+        if (!e.ctrlKey && !e.metaKey) {
+          // M: Add marker at playhead
+          addMarker(pb.currentFrame);
+        }
+        break;
+      case "a":
+        if (e.ctrlKey || e.metaKey) {
+          e.preventDefault();
+          const allIds = itemsStore.getState().items.map(i => i.id);
+          selectionStore.getState().selectItems(allIds);
+        }
+        break;
+      case "Escape":
+        selectionStore.getState().clearSelection();
+        inPoint = null;
+        outPoint = null;
+        break;
+      case "l":
+        if (!e.ctrlKey && !e.metaKey) {
+          // L: Toggle playback rate (1x -> 2x -> 4x -> 1x)
+          const rates = [1, 2, 4];
+          const currentIdx = rates.indexOf(pb.playbackRate);
+          const nextRate = rates[(currentIdx + 1) % rates.length]!;
+          playbackStore.getState().setPlaybackRate(nextRate);
+        }
+        break;
+      case "j":
+        if (!e.ctrlKey && !e.metaKey) {
+          // J: Reverse playback direction / decrease rate
+          const rate = pb.playbackRate;
+          if (rate > 0) {
+            playbackStore.getState().setPlaybackRate(-1);
+          } else {
+            const rr = Math.min(-1, rate * 2);
+            playbackStore.getState().setPlaybackRate(rr);
+          }
+          if (!pb.isPlaying) playbackStore.getState().togglePlayPause();
+        }
+        break;
+      case "k":
+        if (!e.ctrlKey && !e.metaKey) {
+          // K: Stop playback
+          if (pb.isPlaying) playbackStore.getState().pause();
+        }
+        break;
     }
   }
 
   function handleTimelineWheel(e: WheelEvent) {
-    // Only intercept if hovering over tracks
     if (e.ctrlKey || e.metaKey) {
       e.preventDefault();
-      if (e.deltaY > 0) zoomStore.getState().zoomOut();
-      else zoomStore.getState().zoomIn();
-    } else if (e.shiftKey || e.deltaX !== 0) {
+      // Cursor-anchored zoom: keep mouse position stable
+      const target = e.currentTarget as HTMLElement;
+      const rect = target.getBoundingClientRect();
+      // Account for 120px track header offset in tracks container
+      const headerOffset = target.id === 'tracks-container' ? 120 : 0;
+      const cursorScreenX = e.clientX - rect.left - headerOffset;
+      const cursorContentX = ti.scrollLeft + cursorScreenX;
+      const currentZoom = zm.level;
+      const currentPPS = currentZoom * 100;
+      const cursorTime = currentPPS > 0 ? cursorContentX / currentPPS : 0;
+
+      // Logarithmic zoom for symmetric in/out feel
+      const logZoom = Math.log(currentZoom);
+      const zoomDelta = e.deltaY > 0 ? -0.08 : 0.08;
+      const newZoom = Math.max(0.01, Math.min(10, Math.exp(logZoom + zoomDelta)));
+      const newPPS = newZoom * 100;
+      const newCursorContentX = cursorTime * newPPS;
+      const newScrollLeft = Math.max(0, newCursorContentX - cursorScreenX);
+
+      zoomStore.getState().setZoomLevelImmediate(newZoom);
+      itemsStore.getState().setScrollLeft(newScrollLeft);
+    } else if (e.shiftKey) {
+      // Shift+scroll = vertical scroll (let native behavior handle it)
+    } else {
+      // Default scroll = horizontal timeline scroll (NLE convention)
       e.preventDefault();
-      const dx = e.shiftKey ? e.deltaY : e.deltaX;
+      const dx = e.deltaY || e.deltaX;
       itemsStore.getState().setScrollLeft(Math.max(0, ti.scrollLeft + dx));
     }
+  }
+
+  function handleZoomSlider(e: Event) {
+    const val = parseFloat((e.target as HTMLInputElement).value);
+    // Logarithmic mapping: slider 0..1 -> zoom 0.01..10
+    const newZoom = 0.01 * Math.pow(10 / 0.01, val);
+    zoomStore.getState().setZoomLevelImmediate(newZoom);
+  }
+
+  function zoomToFit() {
+    const tracksContainer = document.getElementById('tracks-container');
+    if (!tracksContainer) return;
+    const containerWidth = tracksContainer.clientWidth - 120; // subtract track headers
+    const contentDuration = Math.max(totalFrames / fps, 10);
+    const newZoom = Math.max(0.01, Math.min(10, containerWidth / (contentDuration * 100)));
+    zoomStore.getState().setZoomLevelImmediate(newZoom);
+    itemsStore.getState().setScrollLeft(0);
+  }
+
+  // Inverse: zoom -> slider value (0..1)
+  function zoomToSlider(zoom: number): number {
+    return Math.log(zoom / 0.01) / Math.log(10 / 0.01);
+  }
+
+  // Playhead drag
+  function startPlayheadDrag(e: MouseEvent) {
+    e.preventDefault();
+    isDraggingPlayhead = true;
+    scrubPlayhead(e);
+
+    const onMove = (ev: MouseEvent) => {
+      if (!isDraggingPlayhead) return;
+      scrubPlayhead(ev);
+    };
+    const onUp = () => {
+      isDraggingPlayhead = false;
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  }
+
+  function scrubPlayhead(e: MouseEvent) {
+    const ruler = document.getElementById('timeline-ruler');
+    if (!ruler) return;
+    // The ruler has a 120px spacer on the left for track headers.
+    // Target the flex-1 ruler area child for accurate frame calculation.
+    const rulerArea = ruler.querySelector('.flex-1') as HTMLElement;
+    if (!rulerArea) return;
+    const rect = rulerArea.getBoundingClientRect();
+    const x = e.clientX - rect.left + ti.scrollLeft;
+    const frame = Math.max(0, Math.min(pixelToFrame(x), totalFrames));
+    playbackStore.getState().setCurrentFrame(frame);
+  }
+
+  // Timeline resize handle
+  function startTimelineResize(e: MouseEvent) {
+    e.preventDefault();
+    isResizingTimeline = true;
+    resizeStartY = e.clientY;
+    resizeStartHeight = ed.timelineHeight;
+
+    const onMove = (ev: MouseEvent) => {
+      if (!isResizingTimeline) return;
+      const dy = resizeStartY - ev.clientY;
+      const newHeight = Math.max(120, Math.min(600, resizeStartHeight + dy));
+      editorStore.getState().setTimelineHeight(newHeight);
+    };
+    const onUp = () => {
+      isResizingTimeline = false;
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  }
+
+  function toggleSnap() {
+    itemsStore.getState().setSnapEnabled(!ti.snapEnabled);
+  }
+
+  function addNewTrack(kind: 'video' | 'audio') {
+    createDefaultTrack(kind);
+  }
+
+  function removeTrack(trackId: string) {
+    historyStore.getState().push();
+    itemsStore.getState().removeTrack(trackId);
   }
 
   // ─── Format formatting ────────────────────────────────────────────────
@@ -1018,29 +1491,136 @@
           </button>
         </div>
 
+        <!-- Timeline Resize Handle -->
+        <!-- svelte-ignore a11y_no_static_element_interactions -->
+        <div
+          class="h-1.5 bg-zinc-800 hover:bg-violet-500/40 cursor-ns-resize flex items-center justify-center transition-colors group/resize shrink-0"
+          onmousedown={startTimelineResize}
+        >
+          <GripVertical class="w-3 h-3 text-white/10 group-hover/resize:text-white/30 rotate-90" />
+        </div>
+
         <!-- Timeline Area -->
         <div class="shrink-0 bg-zinc-900/30 flex flex-col" style:height="{ed.timelineHeight}px">
-          <!-- Timeline header / ruler -->
-          <div class="h-6 border-b border-white/5 bg-zinc-900/50 flex items-center px-2 gap-1" onwheel={handleTimelineWheel}>
-            <span class="text-[10px] text-white/20 font-mono w-16">{currentTime}</span>
-            <!-- svelte-ignore a11y_click_events_have_key_events -->
-            <!-- svelte-ignore a11y_no_static_element_interactions -->
-            <div class="flex-1 relative h-full cursor-pointer overflow-hidden" onclick={handleRulerClick}>
+          <!-- Timeline toolbar -->
+          <div class="h-7 border-b border-white/5 bg-zinc-900/60 flex items-center px-2 gap-1 shrink-0">
+            <!-- Track controls -->
+            <button class="p-0.5 rounded hover:bg-white/5 text-white/25 hover:text-white/50" onclick={() => addNewTrack('video')} aria-label="Add video track">
+              <Plus class="w-3 h-3" />
+            </button>
+            <button class="p-0.5 rounded hover:bg-white/5 text-white/25 hover:text-white/50" onclick={() => {
+              if (ti.tracks.length > 0) removeTrack(ti.tracks[ti.tracks.length - 1]!.id);
+            }} aria-label="Remove last track" disabled={ti.tracks.length === 0}>
+              <Minus class="w-3 h-3" />
+            </button>
+
+            <div class="w-px h-3.5 bg-white/8 mx-1"></div>
+
+            <!-- Snap toggle -->
+            <button
+              class="p-0.5 rounded transition-colors {ti.snapEnabled ? 'bg-violet-600/20 text-violet-400' : 'hover:bg-white/5 text-white/25 hover:text-white/50'}"
+              onclick={toggleSnap}
+              aria-label="Toggle snap"
+            >
+              <Magnet class="w-3 h-3" />
+            </button>
+
+            <div class="flex-1"></div>
+
+            <!-- Zoom controls -->
+            <button class="p-0.5 rounded hover:bg-white/5 text-white/25 hover:text-white/50" onclick={() => zoomStore.getState().zoomOut()} aria-label="Zoom out">
+              <ZoomOut class="w-3 h-3" />
+            </button>
+            <input
+              type="range"
+              min="0"
+              max="1"
+              step="0.005"
+              value={zoomToSlider(zm.level)}
+              oninput={handleZoomSlider}
+              class="w-20 h-1 appearance-none bg-white/10 rounded-full cursor-pointer accent-violet-500
+                [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-2.5 [&::-webkit-slider-thumb]:h-2.5
+                [&::-webkit-slider-thumb]:bg-violet-400 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:cursor-pointer
+                [&::-webkit-slider-thumb]:shadow-[0_0_4px_rgba(139,92,246,0.5)]"
+            />
+            <button class="p-0.5 rounded hover:bg-white/5 text-white/25 hover:text-white/50" onclick={() => zoomStore.getState().zoomIn()} aria-label="Zoom in">
+              <ZoomIn class="w-3 h-3" />
+            </button>
+            <button class="p-0.5 rounded hover:bg-white/5 text-white/25 hover:text-white/50" onclick={zoomToFit} aria-label="Zoom to fit">
+              <Maximize2 class="w-3 h-3" />
+            </button>
+            <span class="text-[9px] text-white/25 font-mono w-10 text-right">{Math.round(zm.level * 100)}%</span>
+          </div>
+
+          <!-- Timeline ruler -->
+          <!-- svelte-ignore a11y_no_static_element_interactions -->
+          <div
+            id="timeline-ruler"
+            class="h-5 border-b border-white/5 bg-zinc-900/50 flex items-center shrink-0 cursor-pointer overflow-hidden relative"
+            onmousedown={startPlayheadDrag}
+            onwheel={handleTimelineWheel}
+          >
+            <!-- Track header spacer -->
+            <div class="w-[120px] shrink-0 flex items-center justify-center">
+              <span class="text-[9px] text-white/20 font-mono">{currentTime}</span>
+            </div>
+            <!-- Ruler area -->
+            <div class="flex-1 relative h-full overflow-hidden">
               <div class="absolute top-0 h-full pointer-events-none" style:left="{-ti.scrollLeft}px">
-                {#each Array(Math.ceil((totalFrames / fps) + 5)) as _, i}
-                   <div class="absolute bottom-0" style:left="{frameToPixel(i * fps)}px">
-                    <div class="w-px h-2 bg-white/10"></div>
-                    <span class="absolute top-0 left-1 text-[8px] text-white/15">{i}s</span>
+                {#each Array(Math.ceil((totalFrames / fps) + 10)) as _, i}
+                  <!-- Major tick (every second) -->
+                  <div class="absolute bottom-0" style:left="{frameToPixel(i * fps)}px">
+                    <div class="w-px h-3 bg-white/15"></div>
+                    <span class="absolute top-0 left-1 text-[7px] text-white/20 select-none">{i}s</span>
                   </div>
+                  <!-- Half-second subdivisions (shown when zoomed enough) -->
+                  {#if zm.pixelsPerSecond > 60}
+                    <div class="absolute bottom-0" style:left="{frameToPixel(i * fps + Math.round(fps / 2))}px">
+                      <div class="w-px h-1.5 bg-white/8"></div>
+                    </div>
+                  {/if}
+                  <!-- Quarter-second subdivisions (shown when more zoomed) -->
+                  {#if zm.pixelsPerSecond > 150}
+                    <div class="absolute bottom-0" style:left="{frameToPixel(i * fps + Math.round(fps / 4))}px">
+                      <div class="w-px h-1 bg-white/5"></div>
+                    </div>
+                    <div class="absolute bottom-0" style:left="{frameToPixel(i * fps + Math.round(fps * 3 / 4))}px">
+                      <div class="w-px h-1 bg-white/5"></div>
+                    </div>
+                  {/if}
                 {/each}
               </div>
+              <!-- Playhead indicator on ruler -->
               <div class="absolute top-0 bottom-0 w-px bg-violet-500 z-10 pointer-events-none" style:left="{frameToPixel(pb.currentFrame) - ti.scrollLeft}px">
-                <div class="absolute -top-0.5 -left-1 w-2 h-2 bg-violet-500 rounded-sm rotate-45"></div>
+                <div class="absolute -bottom-0.5 -left-[4px] w-0 h-0 border-l-[5px] border-l-transparent border-r-[5px] border-r-transparent border-t-[5px] border-t-violet-500"></div>
               </div>
-            </div>
-            <div class="flex items-center gap-1 w-[80px]">
-              <button class="p-0.5 rounded hover:bg-white/5 text-white/20" onclick={() => zoomStore.getState().zoomOut()}><ZoomOut class="w-3 h-3" /></button>
-              <button class="p-0.5 rounded hover:bg-white/5 text-white/20" onclick={() => zoomStore.getState().zoomIn()}><ZoomIn class="w-3 h-3" /></button>
+
+              <!-- In/Out point indicators on ruler -->
+              {#if inPoint !== null}
+                <div class="absolute top-0 bottom-0 w-0.5 bg-cyan-400 z-10 pointer-events-none" style:left="{frameToPixel(inPoint) - ti.scrollLeft}px">
+                  <span class="absolute -top-0.5 left-0.5 text-[6px] text-cyan-400 font-bold">I</span>
+                </div>
+              {/if}
+              {#if outPoint !== null}
+                <div class="absolute top-0 bottom-0 w-0.5 bg-cyan-400 z-10 pointer-events-none" style:left="{frameToPixel(outPoint) - ti.scrollLeft}px">
+                  <span class="absolute -top-0.5 -left-2 text-[6px] text-cyan-400 font-bold">O</span>
+                </div>
+              {/if}
+              {#if inPoint !== null && outPoint !== null}
+                <div class="absolute top-0 bottom-0 bg-cyan-400/10 pointer-events-none z-5" style:left="{frameToPixel(inPoint) - ti.scrollLeft}px" style:width="{frameToPixel(outPoint - inPoint)}px"></div>
+              {/if}
+
+              <!-- Preview scrubber ghost on ruler -->
+              {#if previewFrame !== null && !isDraggingPlayhead}
+                <div class="absolute top-0 bottom-0 w-px bg-white/20 z-5 pointer-events-none" style:left="{frameToPixel(previewFrame) - ti.scrollLeft}px"></div>
+              {/if}
+
+              <!-- Marker diamonds on ruler -->
+              {#each markers as marker (marker.id)}
+                <div class="absolute top-0 bottom-0 pointer-events-none z-10" style:left="{frameToPixel(marker.frame) - ti.scrollLeft}px">
+                  <div class="absolute top-0 -left-[3px] w-[7px] h-[7px] rotate-45" style:background={marker.color}></div>
+                </div>
+              {/each}
             </div>
           </div>
 
@@ -1052,6 +1632,8 @@
             onwheel={handleTimelineWheel}
             ondragover={handleTimelineDragOver}
             ondrop={handleTimelineDrop}
+            onmousemove={handleTrackMouseMove}
+            onmouseleave={handleTrackMouseLeave}
           >
             {#if ti.tracks.length === 0}
               <div class="flex items-center justify-center h-full text-white/15 text-xs pointer-events-none">
@@ -1061,7 +1643,7 @@
                 </div>
               </div>
             {:else}
-              <div class="relative w-full" style:min-width="{frameToPixel(totalFrames)}px">
+              <div class="relative w-full" style:min-width="{frameToPixel(totalFrames) + 200}px">
                 {#each ti.tracks as track, trackIndex (track.id)}
                   <div class="flex border-b border-white/3 flex-col relative w-full group/track" style:height="{track.height}px">
                     
@@ -1074,6 +1656,9 @@
                       </button>
                       <button class="p-0.5 rounded pointer-events-auto hover:bg-white/5 text-white/30" onclick={() => itemsStore.getState().toggleTrackVisibility(track.id)}>
                         {#if !track.visible}<EyeOff class="w-2.5 h-2.5" />{:else}<Eye class="w-2.5 h-2.5" />{/if}
+                      </button>
+                      <button class="p-0.5 rounded pointer-events-auto opacity-0 group-hover/track:opacity-100 hover:bg-red-500/20 text-white/20 hover:text-red-400 transition-all" onclick={() => removeTrack(track.id)} aria-label="Remove track">
+                        <Trash2 class="w-2.5 h-2.5" />
                       </button>
                     </div>
 
@@ -1096,7 +1681,7 @@
                             class:ring-2={isSelected}
                             class:ring-white={isSelected}
                             style:left="{startPx}px"
-                            style:width="{widthPx}px"
+                            style:width="{Math.max(4, widthPx)}px"
                             style:height="calc(100% - 4px)"
                             style:background="{isSelected ? `${color}40` : `${color}18`}"
                             style:border="1px solid {isSelected ? `${color}90` : `${color}30`}"
@@ -1136,7 +1721,37 @@
                           </div>
                         {/each}
 
+                        <!-- Playhead through tracks -->
                         <div class="absolute top-0 bottom-0 w-px bg-violet-500/50 pointer-events-none z-10" style:left="{frameToPixel(pb.currentFrame)}px"></div>
+
+                        <!-- Active snap guide line (shown during drag) -->
+                        {#if activeSnapFrame !== null && isDraggingClip}
+                          <div class="absolute top-0 bottom-0 w-px bg-yellow-400 pointer-events-none z-20 opacity-80" style:left="{frameToPixel(activeSnapFrame)}px">
+                            <div class="absolute top-0 w-px h-full shadow-[0_0_6px_rgba(250,204,21,0.6)]"></div>
+                          </div>
+                        {/if}
+
+                        <!-- In/Out point shading through tracks -->
+                        {#if inPoint !== null && outPoint !== null}
+                          <div class="absolute top-0 bottom-0 bg-cyan-400/5 border-l border-r border-cyan-400/20 pointer-events-none z-5" style:left="{frameToPixel(inPoint)}px" style:width="{frameToPixel(outPoint - inPoint)}px"></div>
+                        {/if}
+
+                        <!-- Marker lines through tracks -->
+                        {#each markers as marker (marker.id)}
+                          <div class="absolute top-0 bottom-0 w-px pointer-events-none z-10 opacity-60" style:left="{frameToPixel(marker.frame)}px" style:background={marker.color}></div>
+                        {/each}
+
+                        <!-- Preview scrubber ghost line -->
+                        {#if previewFrame !== null && !isDraggingClip && !isTrimming}
+                          <div class="absolute top-0 bottom-0 w-px bg-white/15 pointer-events-none z-5" style:left="{frameToPixel(previewFrame)}px"></div>
+                        {/if}
+
+                        <!-- Snap indicator lines (at second boundaries when snap enabled) -->
+                        {#if ti.snapEnabled && zm.pixelsPerSecond > 40}
+                          {#each Array(Math.ceil((totalFrames / fps) + 5)) as _, i}
+                            <div class="absolute top-0 bottom-0 w-px bg-white/2 pointer-events-none" style:left="{frameToPixel(i * fps)}px"></div>
+                          {/each}
+                        {/if}
                       </div>
                     </div>
 
@@ -1238,8 +1853,8 @@
       
       <div class="space-y-4 mb-6">
         <div>
-          <label class="block text-xs uppercase text-white/50 mb-1.5">Codec</label>
-          <select class="w-full bg-[#1c1c1c] border border-white/10 rounded px-3 py-2 text-sm text-white [&>option]:bg-zinc-900 [&>option]:text-white focus:outline-none focus:border-violet-500/50" bind:value={exportCodec}>
+          <label for="export-codec" class="block text-xs uppercase text-white/50 mb-1.5">Codec</label>
+          <select id="export-codec" class="w-full bg-[#1c1c1c] border border-white/10 rounded px-3 py-2 text-sm text-white [&>option]:bg-zinc-900 [&>option]:text-white focus:outline-none focus:border-violet-500/50" bind:value={exportCodec}>
             <option value="h264">H.264 (MP4)</option>
             <option value="hevc">H.265 / HEVC (MP4)</option>
             <option value="vp9">VP9 (WebM)</option>
@@ -1247,8 +1862,8 @@
         </div>
         
         <div>
-          <label class="block text-xs uppercase text-white/50 mb-1.5">Quality Profile</label>
-          <select class="w-full bg-[#1c1c1c] border border-white/10 rounded px-3 py-2 text-sm text-white [&>option]:bg-zinc-900 [&>option]:text-white focus:outline-none focus:border-violet-500/50" bind:value={exportQuality}>
+          <label for="export-quality" class="block text-xs uppercase text-white/50 mb-1.5">Quality Profile</label>
+          <select id="export-quality" class="w-full bg-[#1c1c1c] border border-white/10 rounded px-3 py-2 text-sm text-white [&>option]:bg-zinc-900 [&>option]:text-white focus:outline-none focus:border-violet-500/50" bind:value={exportQuality}>
             <option value="low">Fast / Low Size</option>
             <option value="medium">Balanced</option>
             <option value="high">High Quality</option>
@@ -1257,11 +1872,11 @@
         </div>
 
         <div>
-          <label class="flex justify-between text-xs uppercase text-white/50 mb-1.5">
+          <label for="export-hwaccel" class="flex justify-between text-xs uppercase text-white/50 mb-1.5">
             Hardware Acceleration (GPU)
             <span class="text-white/30 lowercase">{hwEncoders.length} detected</span>
           </label>
-          <select class="w-full bg-[#1c1c1c] border border-white/10 rounded px-3 py-2 text-sm text-white [&>option]:bg-zinc-900 [&>option]:text-white focus:outline-none focus:border-violet-500/50" bind:value={exportHwAccel}>
+          <select id="export-hwaccel" class="w-full bg-[#1c1c1c] border border-white/10 rounded px-3 py-2 text-sm text-white [&>option]:bg-zinc-900 [&>option]:text-white focus:outline-none focus:border-violet-500/50" bind:value={exportHwAccel}>
             <option value={null}>None (CPU Rendering - Slowest)</option>
             {#each hwEncoders as enc}
               {#if enc.codec === (exportCodec === "h264" ? "H.264" : exportCodec === "hevc" ? "H.265" : "unknown")}
