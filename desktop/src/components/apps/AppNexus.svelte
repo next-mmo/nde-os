@@ -8,91 +8,48 @@
   }
 
   let { window }: Props = $props();
+
+  const apps: Record<string, () => Promise<any>> = {
+    "ai-launcher": () => import("🍎/components/apps/Launcher/Launcher.svelte"),
+    "browser": () => import("🍎/components/apps/Browser/Browser.svelte"),
+    "logs": () => import("🍎/components/apps/Logs/Logs.svelte"),
+    "chat": () => import("🍎/components/apps/Chat/Chat.svelte"),
+    "settings": () => import("🍎/components/apps/Settings/Settings.svelte"),
+    "code-editor": () => import("🍎/components/apps/CodeEditor/CodeEditor.svelte"),
+    "command-center": () => import("🍎/components/apps/CommandCenter/CommandCenter.svelte"),
+    "model-settings": () => import("🍎/components/apps/ModelSettings/ModelSettings.svelte"),
+    "plugins": () => import("🍎/components/apps/Plugins/Plugins.svelte"),
+    "channels": () => import("🍎/components/apps/Channels/Channels.svelte"),
+    "mcp-tools": () => import("🍎/components/apps/McpTools/McpTools.svelte"),
+    "skills": () => import("🍎/components/apps/Skills/Skills.svelte"),
+    "knowledge": () => import("🍎/components/apps/Knowledge/Knowledge.svelte"),
+    "shield-browser": () => import("🍎/components/apps/ShieldBrowser/ShieldBrowser.svelte"),
+    "file-explorer": () => import("🍎/components/apps/FileExplorer/FileExplorer.svelte"),
+    "architecture": () => import("🍎/components/apps/Architecture/Architecture.svelte"),
+    "vibe-studio": () => import("🍎/components/apps/VibeCodeStudio/VibeCodeStudio.svelte"),
+    "screenshot": () => import("🍎/components/apps/Screenshot/Screenshot.svelte"),
+    "terminal": () => import("🍎/components/apps/Terminal/Terminal.svelte"),
+    "freecut": () => import("🍎/components/apps/FreeCut/FreeCut.svelte")
+  };
+
+  const needsWindowProp = new Set(["browser", "vibe-studio", "screenshot", "terminal"]);
+
+  const getAppPromise = (app_id: string) => {
+    if (app_id in apps) {
+      return apps[app_id]();
+    }
+    return import("🍎/components/apps/Placeholder/Placeholder.svelte");
+  };
+
+  let appPromise = $derived(getAppPromise(window.app_id));
 </script>
 
-{#if window.app_id === "ai-launcher"}
-  {#await import("🍎/components/apps/Launcher/Launcher.svelte") then { default: Launcher }}
-    <Launcher />
-  {/await}
-{:else if window.app_id === "browser"}
-  {#await import("🍎/components/apps/Browser/Browser.svelte") then { default: Browser }}
-    <Browser {window} />
-  {/await}
-{:else if window.app_id === "logs"}
-  {#await import("🍎/components/apps/Logs/Logs.svelte") then { default: Logs }}
-    <Logs />
-  {/await}
-{:else if window.app_id === "chat"}
-  {#await import("🍎/components/apps/Chat/Chat.svelte") then { default: Chat }}
-    <Chat />
-  {/await}
-{:else if window.app_id === "settings"}
-  {#await import("🍎/components/apps/Settings/Settings.svelte") then { default: Settings }}
-    <Settings />
-  {/await}
-{:else if window.app_id === "code-editor"}
-  {#await import("🍎/components/apps/CodeEditor/CodeEditor.svelte") then { default: CodeEditor }}
-    <CodeEditor />
-  {/await}
-{:else if window.app_id === "command-center"}
-  {#await import("🍎/components/apps/CommandCenter/CommandCenter.svelte") then { default: CommandCenter }}
-    <CommandCenter />
-  {/await}
-{:else if window.app_id === "model-settings"}
-  {#await import("🍎/components/apps/ModelSettings/ModelSettings.svelte") then { default: ModelSettings }}
-    <ModelSettings />
-  {/await}
-{:else if window.app_id === "plugins"}
-  {#await import("🍎/components/apps/Plugins/Plugins.svelte") then { default: Plugins }}
-    <Plugins />
-  {/await}
-{:else if window.app_id === "channels"}
-  {#await import("🍎/components/apps/Channels/Channels.svelte") then { default: Channels }}
-    <Channels />
-  {/await}
-{:else if window.app_id === "mcp-tools"}
-  {#await import("🍎/components/apps/McpTools/McpTools.svelte") then { default: McpTools }}
-    <McpTools />
-  {/await}
-{:else if window.app_id === "skills"}
-  {#await import("🍎/components/apps/Skills/Skills.svelte") then { default: Skills }}
-    <Skills />
-  {/await}
-{:else if window.app_id === "knowledge"}
-  {#await import("🍎/components/apps/Knowledge/Knowledge.svelte") then { default: Knowledge }}
-    <Knowledge />
-  {/await}
-{:else if window.app_id === "shield-browser"}
-  {#await import("🍎/components/apps/ShieldBrowser/ShieldBrowser.svelte") then { default: ShieldBrowser }}
-    <ShieldBrowser />
-  {/await}
-{:else if window.app_id === "file-explorer"}
-  {#await import("🍎/components/apps/FileExplorer/FileExplorer.svelte") then { default: FileExplorer }}
-    <FileExplorer />
-  {/await}
-{:else if window.app_id === "architecture"}
-  {#await import("🍎/components/apps/Architecture/Architecture.svelte") then { default: Architecture }}
-    <Architecture />
-  {/await}
-{:else if window.app_id === "vibe-studio"}
-  {#await import("🍎/components/apps/VibeCodeStudio/VibeCodeStudio.svelte") then { default: VibeCodeStudio }}
-    <VibeCodeStudio {window} />
-  {/await}
-{:else if window.app_id === "screenshot"}
-  {#await import("🍎/components/apps/Screenshot/Screenshot.svelte") then { default: Screenshot }}
-    <Screenshot {window} />
-  {/await}
-{:else if window.app_id === "terminal"}
-  {#await import("🍎/components/apps/Terminal/Terminal.svelte") then { default: Terminal }}
-    <Terminal {window} />
-  {/await}
-{:else if window.app_id === "freecut"}
-  {#await import("🍎/components/apps/FreeCut/FreeCut.svelte") then { default: FreeCut }}
-    <FreeCut />
-  {/await}
-{:else}
-  {#await import("🍎/components/apps/Placeholder/Placeholder.svelte") then { default: Placeholder }}
-    <Placeholder app_id={window.app_id} />
-  {/await}
-{/if}
-
+{#await appPromise then { default: App }}
+  {#if needsWindowProp.has(window.app_id)}
+    <App {window} />
+  {:else if !(window.app_id in apps)}
+    <App app_id={window.app_id} />
+  {:else}
+    <App />
+  {/if}
+{/await}
