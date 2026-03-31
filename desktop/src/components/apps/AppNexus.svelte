@@ -1,14 +1,8 @@
 <svelte:options runes={true} />
 
-<script lang="ts">
-  import type { DesktopWindow } from "🍎/state/desktop.svelte";
-
-  interface Props {
-    window: DesktopWindow;
-  }
-
-  let { window }: Props = $props();
-
+<script module lang="ts">
+  // Declaring apps and config in a module block ensures they are only allocated ONCE in memory
+  // for the entire application, rather than re-allocated for every single window instance.
   const apps: Record<string, () => Promise<any>> = {
     "ai-launcher": () => import("🍎/components/apps/Launcher/Launcher.svelte"),
     "browser": () => import("🍎/components/apps/Browser/Browser.svelte"),
@@ -40,6 +34,16 @@
     }
     return import("🍎/components/apps/Placeholder/Placeholder.svelte");
   };
+</script>
+
+<script lang="ts">
+  import type { DesktopWindow } from "🍎/state/desktop.svelte";
+
+  interface Props {
+    window: DesktopWindow;
+  }
+
+  let { window }: Props = $props();
 
   let appPromise = $derived(getAppPromise(window.app_id));
 </script>
