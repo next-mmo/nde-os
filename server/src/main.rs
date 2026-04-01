@@ -69,6 +69,7 @@ fn route(
     llm_manager: Arc<Mutex<LlmManager>>,
     data_dir: &std::path::Path,
     agent_manager: &Arc<tokio::sync::Mutex<AgentManager>>,
+    viking: &Mutex<ai_launcher_core::openviking::VikingProcess>,
 ) -> tiny_http::Response<std::io::Cursor<Vec<u8>>> {
     let method = req.method().clone();
     let url = req.url().to_string();
@@ -171,7 +172,10 @@ fn route(
         // Memory
         (Method::Get, "/api/memory") => return subsystem_handler::list_memory(data_dir),
         // OpenViking
-        (Method::Get, "/api/viking/status") => return subsystem_handler::viking_status(rt),
+        (Method::Get, "/api/viking/status") => return subsystem_handler::viking_status(rt, viking),
+        (Method::Post, "/api/viking/install") => return subsystem_handler::viking_install(rt, viking),
+        (Method::Post, "/api/viking/start") => return subsystem_handler::viking_start(rt, viking),
+        (Method::Post, "/api/viking/stop") => return subsystem_handler::viking_stop(rt, viking),
         _ => {}
     }
 
@@ -414,6 +418,25 @@ fn main() {
         });
     }
 
+    // OpenViking process manager
+    let viking_config = ai_launcher_core::openviking::VikingConfig::default();
+    let viking_process = ai_launcher_core::openviking::VikingProcess::new(
+        viking_config,
+        &base_dir,
+    );
+    let viking = Arc::new(Mutex::new(viking_process));
+
+    // Startup: check OpenViking availability
+    {
+        let client = ai_launcher_core::openviking::VikingClient::new("http://localhost:1933");
+        let healthy = rt.block_on(async { client.health().await.unwrap_or(false) });
+        if healthy {
+            println!("  OpenViking:  connected (port 1933)");
+        } else {
+            println!("  OpenViking:  not running (POST /api/viking/install + /api/viking/start to onboard)");
+        }
+    }
+
     let server = Server::http("0.0.0.0:8080").expect("Failed to bind :8080");
 
     let os = std::env::consts::OS;
@@ -505,6 +528,9 @@ fn main() {
     println!();
     println!("  OpenViking:");
     println!("    GET    /api/viking/status              <- context database");
+    println!("    POST   /api/viking/install             <- install via uv/pip");
+    println!("    POST   /api/viking/start               <- start server");
+    println!("    POST   /api/viking/stop                <- stop server");
     println!();
 
     loop {
@@ -517,6 +543,7 @@ fn main() {
                 let llm_manager = llm_manager.clone();
                 let base_dir = base_dir.clone();
                 let agent_manager = agent_manager.clone();
+                let viking = viking.clone();
 
                 std::thread::spawn(move || {
                     let response = route(
@@ -528,6 +555,7 @@ fn main() {
                         llm_manager,
                         &base_dir,
                         &agent_manager,
+                        &viking,
                     );
                     if let Err(e) = request.respond(response) {
                         eprintln!("Response error: {}", e);

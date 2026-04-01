@@ -38,7 +38,44 @@ pub async fn spawn_pty(
     let mut cmd = if cfg!(windows) {
         CommandBuilder::new("cmd.exe")
     } else {
-        CommandBuilder::new("sh")
+        let mut b = CommandBuilder::new("bash");
+        
+        if let Ok(sandbox) = ai_launcher_core::sandbox::Sandbox::new(&app_state.base_dir) {
+            let sandbox_root = sandbox.root().to_string_lossy().to_string();
+            let rc_content = format!(r#"
+export PS1="nde-os:\w\$ "
+
+cd() {{
+    local target="${{1:-$HOME}}"
+    # Use python to resolve the path explicitly 
+    local abs_target
+    abs_target=$(python3 -c "import os; print(os.path.abspath('$target'))" 2>/dev/null)
+    
+    # Deny jumping outside the sandbox or common temp dirs
+    if [[ -n "$abs_target" && "$abs_target" != "{sandbox_root}"* && "$abs_target" != "/var/folders"* && "$abs_target" != "/tmp"* ]]; then
+        echo "nde-os: cd: $target: Permission denied (sandbox workspace strictly enforced)"
+        return 1
+    fi
+    builtin cd "$target"
+}}
+
+ls() {{
+    for arg in "$@"; do
+        if [[ ! "$arg" == -* && "$arg" == /* ]]; then
+            if [[ "$arg" != "{sandbox_root}"* && "$arg" != "/tmp"* && "$arg" != "/var/folders"* ]]; then
+                 echo "nde-os: ls: $arg: Permission denied"
+                 return 1
+            fi
+        fi
+    done
+    command ls "$@"
+}}
+"#);
+            let rc_path = sandbox.root().join(".nde_rc");
+            let _ = std::fs::write(&rc_path, rc_content);
+            b.args(["--noprofile", "--rcfile", &rc_path.to_string_lossy()]);
+        }
+        b
     };
     
     // Inject the NDE-OS strict jail environment variables.

@@ -15,7 +15,10 @@ pub fn test_manifest(id: &str) -> AppManifest {
         description: "test app".to_string(),
         author: "test".to_string(),
         repo: None,
+        runtime: crate::manifest::AppRuntime::Python,
         python_version: "3".to_string(),
+        node_version: None,
+        package_manager: None,
         needs_gpu: false,
         pip_deps: vec![],
         launch_cmd: if cfg!(windows) {

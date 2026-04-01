@@ -17,7 +17,8 @@ pub fn openapi_spec() -> serde_json::Value {
             {"name":"sandbox","description":"Sandbox security & disk usage"},
             {"name":"store","description":"Store: upload apps via folder, zip, or git URL"},
             {"name":"system","description":"Health & system info"},
-            {"name":"agent","description":"Agent chat, conversations, and config"}
+            {"name":"agent","description":"Agent chat, conversations, and config"},
+            {"name":"viking","description":"OpenViking context database — install, start, stop, and status"}
         ],
         "paths":{
             "/api/health":{"get":{"tags":["system"],"summary":"Health check","operationId":"healthCheck","responses":{"200":{"description":"Healthy"}}}},
@@ -67,7 +68,71 @@ pub fn openapi_spec() -> serde_json::Value {
             "/api/apps/{app_id}/launch":{"post":{"tags":["apps"],"summary":"Launch app in sandbox","description":"Spawns process inside uv venv with jailed HOME, TMPDIR, TEMP, USERPROFILE, PYTHONPATH, APPDATA, VIRTUAL_ENV (cross-platform)","operationId":"launchApp","parameters":[{"name":"app_id","in":"path","required":true,"schema":{"type":"string"}}],"responses":{"200":{"description":"Launched","content":{"application/json":{"schema":{"$ref":"#/components/schemas/ApiResponse"}}}},"404":{"description":"Not installed"},"409":{"description":"Already running"}}}},
             "/api/apps/{app_id}/stop":{"post":{"tags":["apps"],"summary":"Stop running app","operationId":"stopApp","parameters":[{"name":"app_id","in":"path","required":true,"schema":{"type":"string"}}],"responses":{"200":{"description":"Stopped"},"404":{"description":"Not running"}}}},
             "/api/sandbox/{app_id}/verify":{"get":{"tags":["sandbox"],"summary":"Verify sandbox security","description":"Tests: path traversal (Unix+Windows paths), absolute escape, symlink escape, valid path resolution","operationId":"verifySandbox","parameters":[{"name":"app_id","in":"path","required":true,"schema":{"type":"string"}}],"responses":{"200":{"description":"Verification results"}}}},
-            "/api/sandbox/{app_id}/disk":{"get":{"tags":["sandbox"],"summary":"Workspace disk usage","operationId":"getDiskUsage","parameters":[{"name":"app_id","in":"path","required":true,"schema":{"type":"string"}}],"responses":{"200":{"description":"Disk usage"}}}}
+            "/api/sandbox/{app_id}/disk":{"get":{"tags":["sandbox"],"summary":"Workspace disk usage","operationId":"getDiskUsage","parameters":[{"name":"app_id","in":"path","required":true,"schema":{"type":"string"}}],"responses":{"200":{"description":"Disk usage"}}}},
+            "/api/viking/status":{
+                "get":{
+                    "tags":["viking"],
+                    "summary":"OpenViking server status",
+                    "operationId":"vikingStatus",
+                    "description":"Returns connectivity status for the OpenViking context-database server running on localhost:1933. Reports both HTTP reachability and whether NDE-OS is managing the process.",
+                    "responses":{
+                        "200":{
+                            "description":"Status report (connected or not)",
+                            "content":{"application/json":{"schema":{"$ref":"#/components/schemas/VikingStatusResponse"}}}
+                        }
+                    }
+                }
+            },
+            "/api/viking/install":{
+                "post":{
+                    "tags":["viking"],
+                    "summary":"Install OpenViking via uv/pip",
+                    "operationId":"vikingInstall",
+                    "description":"Installs the `openviking` Python package into the system or active venv using `uv pip install` (with pip fallback). Safe to call multiple times — skips if already installed.",
+                    "responses":{
+                        "200":{
+                            "description":"Installation succeeded",
+                            "content":{"application/json":{"schema":{"$ref":"#/components/schemas/VikingInstallResponse"}}}
+                        },
+                        "500":{
+                            "description":"Installation failed — Python or uv/pip not available",
+                            "content":{"application/json":{"schema":{"$ref":"#/components/schemas/ApiResponse"}}}
+                        }
+                    }
+                }
+            },
+            "/api/viking/start":{
+                "post":{
+                    "tags":["viking"],
+                    "summary":"Start OpenViking server",
+                    "operationId":"vikingStart",
+                    "description":"Writes `ov.conf` / `ovcli.conf` and spawns `openviking-server` as a managed subprocess on port 1933. Waits up to 15 s for the health endpoint to respond before returning.",
+                    "responses":{
+                        "200":{
+                            "description":"Server started (or already running)",
+                            "content":{"application/json":{"schema":{"$ref":"#/components/schemas/VikingStartResponse"}}}
+                        },
+                        "500":{
+                            "description":"Failed to spawn process",
+                            "content":{"application/json":{"schema":{"$ref":"#/components/schemas/ApiResponse"}}}
+                        }
+                    }
+                }
+            },
+            "/api/viking/stop":{
+                "post":{
+                    "tags":["viking"],
+                    "summary":"Stop OpenViking server",
+                    "operationId":"vikingStop",
+                    "description":"Sends SIGKILL to the managed `openviking-server` subprocess. No-op if not currently running.",
+                    "responses":{
+                        "200":{
+                            "description":"Server stopped",
+                            "content":{"application/json":{"schema":{"$ref":"#/components/schemas/VikingStopResponse"}}}
+                        }
+                    }
+                }
+            }
         },
         "components":{"schemas":{
             "AppManifest":{"type":"object","properties":{"id":{"type":"string"},"name":{"type":"string"},"description":{"type":"string"},"author":{"type":"string"},"python_version":{"type":"string"},"needs_gpu":{"type":"boolean"},"pip_deps":{"type":"array","items":{"type":"string"}},"launch_cmd":{"type":"string"},"port":{"type":"integer"},"disk_size":{"type":"string"},"tags":{"type":"array","items":{"type":"string"}}}},
@@ -100,7 +165,36 @@ pub fn openapi_spec() -> serde_json::Value {
             "ChatResponse":{"type":"object","properties":{"response":{"type":"string","description":"Agent's response text"},"conversation_id":{"type":"string","description":"Conversation ID for follow-up messages"}}},
             "ConversationSummary":{"type":"object","properties":{"id":{"type":"string"},"title":{"type":"string"},"channel":{"type":"string"},"created_at":{"type":"string"},"updated_at":{"type":"string"}}},
             "StoredMessage":{"type":"object","properties":{"id":{"type":"integer"},"role":{"type":"string"},"content":{"type":"string","nullable":true},"tool_calls":{"type":"string","nullable":true},"tool_call_id":{"type":"string","nullable":true},"created_at":{"type":"string"}}},
-            "AgentConfigInfo":{"type":"object","properties":{"name":{"type":"string"},"provider":{"type":"string"},"model":{"type":"string"},"max_iterations":{"type":"integer"},"tools":{"type":"array","items":{"type":"string"}},"workspace":{"type":"string"}}}
+            "AgentConfigInfo":{"type":"object","properties":{"name":{"type":"string"},"provider":{"type":"string"},"model":{"type":"string"},"max_iterations":{"type":"integer"},"tools":{"type":"array","items":{"type":"string"}},"workspace":{"type":"string"}}},
+            "VikingStatusResponse":{
+                "type":"object",
+                "properties":{
+                    "connected":{"type":"boolean","description":"True when the OpenViking HTTP API is reachable on localhost:1933"},
+                    "process_managed":{"type":"boolean","description":"True when NDE-OS spawned and owns the openviking-server process"},
+                    "status":{"description":"Raw status object from GET /api/v1/system/status (present only when connected)","nullable":true},
+                    "message":{"type":"string","description":"Human-readable hint when not connected","nullable":true}
+                }
+            },
+            "VikingInstallResponse":{
+                "type":"object",
+                "properties":{
+                    "installed":{"type":"boolean","description":"True if openviking-server is now available on PATH"}
+                }
+            },
+            "VikingStartResponse":{
+                "type":"object",
+                "properties":{
+                    "running":{"type":"boolean"},
+                    "port":{"type":"integer","example":1933},
+                    "url":{"type":"string","example":"http://localhost:1933"}
+                }
+            },
+            "VikingStopResponse":{
+                "type":"object",
+                "properties":{
+                    "running":{"type":"boolean","example":false}
+                }
+            }
         }}
     })
 }

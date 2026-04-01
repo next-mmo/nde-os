@@ -25,7 +25,9 @@
       theme: { background: '#1e1e1e', foreground: '#cccccc' },
       fontFamily: 'Consolas, "Courier New", monospace',
       fontSize: 14,
-      cursorBlink: true
+      cursorBlink: true,
+      scrollback: 5000,
+      allowTransparency: true
     });
     fitAddon = new FitAddon();
     term.loadAddon(fitAddon);
@@ -63,4 +65,21 @@
   });
 </script>
 
-<div class="absolute inset-0 bg-[#1e1e1e] pl-2 pt-2" bind:this={terminalElement}></div>
+<div class="absolute inset-0 bg-[#1e1e1e] pl-2 pt-2" bind:this={terminalElement}>
+</div>
+
+<style>
+  /* Force xterm viewport to respect standard DOM scroll behavior and show the native overlay scrollbar */
+  :global(.xterm .xterm-viewport) {
+    overflow-y: scroll !important;
+    scrollbar-width: thin !important;
+  }
+  :global(.xterm-viewport::-webkit-scrollbar) {
+    display: block !important;
+    width: 8px !important;
+  }
+  :global(.xterm-viewport::-webkit-scrollbar-thumb) {
+    background-color: rgba(255, 255, 255, 0.2) !important;
+    border-radius: 4px !important;
+  }
+</style>

@@ -373,34 +373,100 @@ pub fn get_memory(key: &str, data_dir: &Path) -> Response<Cursor<Vec<u8>>> {
 
 // ── OpenViking ──────────────────────────────────────────────────────────────
 
-/// GET /api/viking/status — check OpenViking server connectivity.
-pub fn viking_status(rt: &tokio::runtime::Runtime) -> Response<Cursor<Vec<u8>>> {
+/// GET /api/viking/status — check OpenViking server status (process + connectivity).
+pub fn viking_status(
+    rt: &tokio::runtime::Runtime,
+    viking: &std::sync::Mutex<ai_launcher_core::openviking::VikingProcess>,
+) -> Response<Cursor<Vec<u8>>> {
+    let process_running = match viking.lock() {
+        Ok(mut v) => v.is_running(),
+        Err(_) => false,
+    };
+
     let client = ai_launcher_core::openviking::VikingClient::new("http://localhost:1933");
     let healthy = rt.block_on(async { client.health().await.unwrap_or(false) });
 
     if healthy {
-        match rt.block_on(async { client.status().await }) {
-            Ok(status) => ok(
-                "OpenViking connected",
-                serde_json::json!({
-                    "connected": true,
-                    "status": status,
-                }),
-            ),
-            Err(_) => ok(
-                "OpenViking connected",
-                serde_json::json!({
-                    "connected": true,
-                }),
-            ),
-        }
+        let status = rt.block_on(async { client.status().await }).ok();
+        ok(
+            "OpenViking connected",
+            serde_json::json!({
+                "connected": true,
+                "process_managed": process_running,
+                "status": status,
+            }),
+        )
     } else {
         ok(
             "OpenViking not available",
             serde_json::json!({
                 "connected": false,
-                "message": "OpenViking server not running on localhost:1933. Install with: pip install openviking"
+                "process_managed": process_running,
+                "message": "OpenViking server not running. Use POST /api/viking/install then POST /api/viking/start"
             }),
         )
     }
+}
+
+/// POST /api/viking/install — install OpenViking via uv/pip inside the sandbox.
+pub fn viking_install(
+    rt: &tokio::runtime::Runtime,
+    viking: &std::sync::Mutex<ai_launcher_core::openviking::VikingProcess>,
+) -> Response<Cursor<Vec<u8>>> {
+    let v = match viking.lock() {
+        Ok(v) => v,
+        Err(_) => return err(500, "Viking process lock failed"),
+    };
+
+    match rt.block_on(v.ensure_installed()) {
+        Ok(true) => ok("OpenViking installed", serde_json::json!({ "installed": true })),
+        Ok(false) => err(
+            500,
+            "OpenViking installation failed. Ensure Python and uv/pip are available.",
+        ),
+        Err(e) => err(500, &format!("Installation error: {}", e)),
+    }
+}
+
+/// POST /api/viking/start — start the OpenViking server process.
+pub fn viking_start(
+    rt: &tokio::runtime::Runtime,
+    viking: &std::sync::Mutex<ai_launcher_core::openviking::VikingProcess>,
+) -> Response<Cursor<Vec<u8>>> {
+    let mut v = match viking.lock() {
+        Ok(v) => v,
+        Err(_) => return err(500, "Viking process lock failed"),
+    };
+
+    match rt.block_on(v.start()) {
+        Ok(()) => {
+            let port = v.config().port;
+            ok(
+                "OpenViking server started",
+                serde_json::json!({
+                    "running": true,
+                    "port": port,
+                    "url": format!("http://localhost:{}", port),
+                }),
+            )
+        }
+        Err(e) => err(500, &format!("Failed to start OpenViking: {}", e)),
+    }
+}
+
+/// POST /api/viking/stop — stop the OpenViking server process.
+pub fn viking_stop(
+    rt: &tokio::runtime::Runtime,
+    viking: &std::sync::Mutex<ai_launcher_core::openviking::VikingProcess>,
+) -> Response<Cursor<Vec<u8>>> {
+    let mut v = match viking.lock() {
+        Ok(v) => v,
+        Err(_) => return err(500, "Viking process lock failed"),
+    };
+
+    rt.block_on(v.stop());
+    ok(
+        "OpenViking server stopped",
+        serde_json::json!({ "running": false }),
+    )
 }
