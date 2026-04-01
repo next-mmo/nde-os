@@ -99,7 +99,7 @@ dependencies = [
 
 [[package]]
 name = "ai-launcher-server"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "ai-launcher-core",
  "anyhow",
@@ -2938,7 +2938,7 @@ dependencies = [
 
 [[package]]
 name = "nde-cli"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "ai-launcher-core",
  "anyhow",
