@@ -1,6 +1,6 @@
 [package]
 name = "ai-launcher-server"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 description = "HTTP server for AI Launcher (tiny_http)"
 
