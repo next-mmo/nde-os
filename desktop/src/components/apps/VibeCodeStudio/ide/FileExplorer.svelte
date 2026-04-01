@@ -2,11 +2,11 @@
   import { invoke } from '@tauri-apps/api/core';
   import { onMount } from 'svelte';
 
-  let { onSelectFile, currentFile, onProjectChange, externalRoot = null } = $props<{
+  let { onSelectFile, currentFile, onProjectChange, basePath = "data" } = $props<{
     onSelectFile: (path: string, name: string) => void;
     currentFile: string | null;
     onProjectChange?: (selected: boolean) => void;
-    externalRoot?: string | null;
+    basePath?: string;
   }>();
 
   type FileEntry = {
@@ -21,13 +21,9 @@
   let currentDir = $state<string>("");
   let projectRoot = $state<string | null>(null);
 
-  // Use the external list command when browsing user-selected folders
-  let useExternalCmd = $derived(!!externalRoot);
-
   async function loadDirectory(path: string) {
     try {
-      const cmd = useExternalCmd ? "list_directory_external" : "list_directory";
-      entries = await invoke(cmd, { path });
+      entries = await invoke("list_directory", { path });
       currentDir = path;
     } catch (e) {
       console.error(e);
@@ -52,19 +48,16 @@
     onProjectChange?.(false);
   }
 
-  // When externalRoot is provided, auto-load that folder
+  // Load the appropriate directory on mount
   onMount(() => {
-    if (externalRoot) {
-      projectRoot = externalRoot;
-      loadDirectory(externalRoot);
-    }
+    projectRoot = basePath;
+    loadDirectory(basePath);
   });
 
-  // React to externalRoot changes (e.g., user picks a new folder)
   $effect(() => {
-    if (externalRoot && externalRoot !== projectRoot) {
-      projectRoot = externalRoot;
-      loadDirectory(externalRoot);
+    if (basePath && basePath !== projectRoot) {
+      projectRoot = basePath;
+      loadDirectory(basePath);
     }
   });
 </script>

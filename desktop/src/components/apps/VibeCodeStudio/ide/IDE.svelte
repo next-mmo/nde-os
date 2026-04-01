@@ -1,7 +1,9 @@
 <script lang="ts">
   import { invoke } from '@tauri-apps/api/core';
-  import { open } from '@tauri-apps/plugin-dialog';
+  import { onMount } from 'svelte';
+
   import FileExplorer from './FileExplorer.svelte';
+  import FolderPicker from './FolderPicker.svelte';
   import SourceControl from './SourceControl.svelte';
   import CodeEditor from './CodeEditor.svelte';
   import TerminalPanel from './TerminalPanel.svelte';
@@ -16,11 +18,32 @@
   let terminalHeight = $state(250);
   let projectSelected = $state(false);
   let showSidebar = $state(false);
-  let externalRoot = $state<string | null>(null);
   let isDraggingTerminal = $state(false);
+
+  type FileEntry = { name: string; path: string; is_dir: boolean; modified: string | null; };
+  let recentProjects = $state<FileEntry[]>([]);
+  let selectedProjectPath = $state<string>("data");
+  let showNewProjectInput = $state(false);
+  let newProjectName = $state("");
+  let showFolderPicker = $state(false);
 
   let activeFileName = $state<string>("");
   let isSaving = $state(false);
+
+  // Auto-restore project and sidebars if a file is opened programmatically
+  $effect(() => {
+    if (activeFilePath && !projectSelected) {
+      projectSelected = true;
+      showSidebar = true;
+      // Auto scope to project folder (e.g., "data/my-app/...")
+      const parts = activeFilePath.split(/[\/\\]/);
+      if (parts[0] === 'data' && parts.length >= 2) {
+        selectedProjectPath = parts.slice(0, 2).join('/');
+      } else {
+        selectedProjectPath = "data";
+      }
+    }
+  });
 
   // Derive language from extension
   let activeLanguage = $derived(() => {
@@ -43,22 +66,48 @@
     }
   });
 
-  /** Open native OS folder picker */
-  async function openFolder() {
-    const selected = await open({ directory: true, multiple: false, title: 'Open Folder' });
-    if (selected && typeof selected === 'string') {
-      externalRoot = selected;
-      projectSelected = true;
-      showSidebar = true;
-      activeSidebar = 'explorer';
+  async function loadRecentProjects() {
+    try {
+      const items: FileEntry[] = await invoke("list_directory", { path: "data" });
+      recentProjects = items.filter(i => i.is_dir).sort((a,b) => {
+          return (b.modified || "").localeCompare(a.modified || "");
+      });
+    } catch (e) {
+      console.error("Failed to load projects", e);
     }
+  }
+
+  onMount(() => {
+    loadRecentProjects();
+  });
+
+  async function openProject(path: string) {
+    selectedProjectPath = path;
+    projectSelected = true;
+    showSidebar = true;
+    activeSidebar = 'explorer';
+  }
+
+  async function confirmNewProject() {
+     if (!newProjectName || !newProjectName.trim()) {
+       showNewProjectInput = false;
+       return;
+     }
+     const path = `data/${newProjectName.trim()}`;
+     try {
+       await invoke("create_folder", { path });
+       await loadRecentProjects();
+       await openProject(path);
+       showNewProjectInput = false;
+       newProjectName = "";
+     } catch (e) {
+       alert("Create failed: " + e);
+     }
   }
 
   async function openFile(path: string, name: string) {
     try {
-      // Use external command when browsing a user-picked folder
-      const cmd = externalRoot ? "read_file_external" : "read_file_content";
-      const content = await invoke<string>(cmd, { path });
+      const content = await invoke<string>("read_file_content", { path });
       activeFilePath = path;
       activeFileName = name;
       fileContent = content;
@@ -72,8 +121,7 @@
     if (!activeFilePath) return;
     try {
       isSaving = true;
-      const cmd = externalRoot ? "write_file_external" : "write_file_content";
-      await invoke(cmd, { path: activeFilePath, content: fileContent });
+      await invoke("write_file_content", { path: activeFilePath, content: fileContent });
     } catch (e) {
       console.error(e);
       alert("Failed to save file: " + e);
@@ -140,7 +188,7 @@
       <!-- svelte-ignore a11y_no_static_element_interactions -->
       <div 
         class="w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer transition-all text-white/40 hover:text-rose-400"
-        onclick={() => { projectSelected = false; showSidebar = false; externalRoot = null; activeFilePath = null; fileContent = ''; }}
+        onclick={() => { projectSelected = false; showSidebar = false; activeFilePath = null; fileContent = ''; }}
         title="Close Project"
       >
         <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
@@ -153,8 +201,8 @@
         <FileExplorer
           onSelectFile={openFile}
           currentFile={activeFilePath}
-          {externalRoot}
-          onProjectChange={(selected) => { if (!selected) { projectSelected = false; showSidebar = false; externalRoot = null; } }}
+          basePath={selectedProjectPath}
+          onProjectChange={(selected) => { if (!selected) { projectSelected = false; showSidebar = false; } }}
         />
       {:else}
         <SourceControl onSelectFile={openFile} />
@@ -217,16 +265,48 @@
               </button>
             </div>
           {:else}
-            <p>Open a folder to get started</p>
-            <div class="flex gap-4 mt-4">
-              <button onclick={openFolder} class="px-5 py-2.5 bg-indigo-500/20 hover:bg-indigo-500/30 border border-indigo-500/30 text-indigo-300 rounded-lg transition-all flex items-center gap-2.5 shadow-lg hover:shadow-indigo-500/10 font-medium">
-                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"></path></svg>
-                Open Folder
-              </button>
-              <button onclick={() => { projectSelected = true; showSidebar = true; activeSidebar = 'scm'; }} class="px-5 py-2.5 bg-white/5 hover:bg-white/10 border border-white/10 text-white/60 hover:text-white/80 rounded-lg transition-all flex items-center gap-2.5 shadow-lg font-medium">
-                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2"></path></svg>
-                Clone Repository
-              </button>
+            <div class="flex flex-col items-center w-full max-w-md">
+              <h3 class="text-white/60 mb-3 text-lg font-medium">Recent Projects</h3>
+              <div class="flex flex-col gap-2 w-full max-h-48 overflow-y-auto mb-6 px-2 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
+                {#each recentProjects as proj}
+                  <button onclick={() => openProject(proj.path)} class="text-left px-4 py-3 bg-white/5 hover:bg-white/10 border border-white/10 text-white/60 hover:text-white rounded-lg transition-all flex items-center justify-between shadow-sm group">
+                    <div class="flex items-center gap-3">
+                      <svg class="w-4 h-4 text-indigo-400 group-hover:text-indigo-300 transition-colors" fill="currentColor" viewBox="0 0 20 20"><path d="M2 6a2 2 0 012-2h5l2 2h5a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z"></path></svg>
+                      <span class="truncate font-medium">{proj.name}</span>
+                    </div>
+                    <span class="text-xs text-white/30 truncate max-w-[120px]">{proj.modified ? proj.modified.split(" ")[0] : ""}</span>
+                  </button>
+                {/each}
+                {#if recentProjects.length === 0}
+                   <div class="text-white/30 italic text-[11px] text-center py-4 bg-black/20 rounded-lg border border-white/5">No projects found in workspace</div>
+                {/if}
+              </div>
+              
+              <div class="flex gap-4 w-full justify-center">
+                {#if showNewProjectInput}
+                  <div class="flex w-full box-border">
+                    <!-- svelte-ignore a11y_autofocus -->
+                    <input bind:value={newProjectName} placeholder="Project Name... (Enter to confirm)" class="flex-1 bg-black/60 border border-white/10 rounded-l-lg py-2.5 px-3 text-white placeholder-white/30 focus:outline-none focus:ring-1 focus:ring-indigo-500/50 text-sm" 
+                      onkeydown={(e) => {
+                        if (e.key === 'Enter') confirmNewProject();
+                        if (e.key === 'Escape') { showNewProjectInput = false; newProjectName = ''; }
+                      }} 
+                      autofocus
+                    />
+                    <button onclick={confirmNewProject} class="px-4 bg-indigo-500 hover:bg-indigo-600 text-white transition-colors font-medium text-sm">Create</button>
+                    <button onclick={() => { showNewProjectInput = false; newProjectName = ''; }} class="px-4 bg-white/5 hover:bg-white/10 text-white/60 rounded-r-lg border-y border-r border-white/10 transition-colors text-sm">Cancel</button>
+                  </div>
+                {:else}
+                  <button onclick={() => { showNewProjectInput = true; newProjectName = ''; }} class="px-5 py-2.5 bg-indigo-500/20 hover:bg-indigo-500/30 border border-indigo-500/30 text-indigo-300 rounded-lg transition-all flex items-center gap-2.5 shadow-lg font-medium flex-1 justify-center">
+                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+                    New Project
+                  </button>
+                  <button onclick={() => showFolderPicker = true} class="px-5 py-2.5 bg-white/5 hover:bg-white/10 border border-white/10 text-white/60 hover:text-white/80 rounded-lg transition-all flex items-center gap-2.5 shadow-lg font-medium flex-1 justify-center">
+                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"></path></svg>
+                    Browse Sandbox
+                  </button>
+                {/if}
+              </div>
             </div>
             <div class="mt-8 text-xs text-white/20 space-y-2">
               <div class="flex items-center gap-3">
@@ -266,11 +346,13 @@
             ✕
           </button>
         </div>
-        <div class="flex-1 relative">
+        <div class="flex-1 relative overflow-hidden">
           <TerminalPanel />
         </div>
       </div>
     {/if}
   </div>
 </div>
+
+<FolderPicker bind:isOpen={showFolderPicker} onSelect={(path) => openProject(path)} />
 

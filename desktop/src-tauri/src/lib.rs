@@ -89,9 +89,6 @@ pub fn run() {
             commands::filesystem::rename_entry,
             commands::filesystem::read_file_content,
             commands::filesystem::write_file_content,
-            commands::filesystem::list_directory_external,
-            commands::filesystem::read_file_external,
-            commands::filesystem::write_file_external,
             // shield browser
             commands::shield::list_shield_profiles,
             commands::shield::get_shield_profile,

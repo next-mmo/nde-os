@@ -374,7 +374,7 @@
   </div>
 
   <!-- Resize handle: Main Area <-> Chat Panel -->
-  <div class="hidden lg:block">
+  <div class="hidden lg:block h-full z-50 relative">
     <ResizeHandle onResize={(d) => chatWidth = clampPanel(chatWidth - d)} />
   </div>
 

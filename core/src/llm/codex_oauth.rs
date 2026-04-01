@@ -529,7 +529,7 @@ impl LlmProvider for CodexOAuthProvider {
         })?;
 
         let prompt = render_exec_prompt(messages, tools);
-        let output = tokio::process::Command::new("codex")
+        let mut child = tokio::process::Command::new("codex")
             .arg("exec")
             .arg("--skip-git-repo-check")
             .arg("--ephemeral")
@@ -546,10 +546,19 @@ impl LlmProvider for CodexOAuthProvider {
             .arg("-C")
             .arg(&self.workspace_dir)
             .arg("--json")
-            .arg(&prompt)
-            .output()
-            .await
-            .context("Failed to launch Codex CLI")?;
+            .arg("-")
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .context("Failed to spawn Codex CLI")?;
+
+        if let Some(mut stdin) = child.stdin.take() {
+            use tokio::io::AsyncWriteExt;
+            stdin.write_all(prompt.as_bytes()).await.context("Failed to write to stdin")?;
+        }
+
+        let output = child.wait_with_output().await.context("Failed to wait for Codex CLI")?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
@@ -569,6 +578,105 @@ impl LlmProvider for CodexOAuthProvider {
 
     fn name(&self) -> &str {
         "codex_oauth"
+    }
+}
+
+// ── oh-my-codex (OMX) Provider ───────────────────────────────────────────────
+
+/// LLM provider that uses oh-my-codex (`omx`) as the execution engine.
+/// OMX wraps Codex CLI with enhanced prompts, agent workflows, and skills.
+/// Requires: `npm install -g oh-my-codex` and Codex CLI auth configured.
+pub struct OmxProvider {
+    model: String,
+    data_dir: PathBuf,
+    workspace_dir: PathBuf,
+    /// Optional custom omx binary path (defaults to "omx" on PATH).
+    omx_binary: String,
+}
+
+impl OmxProvider {
+    pub fn new(model: &str, data_dir: &Path, omx_binary: Option<&str>) -> Result<Self> {
+        // Resolve omx binary: explicit path → sandbox → global PATH
+        let resolved = super::resolve_omx_binary(omx_binary)
+            .unwrap_or_else(|| "omx".to_string());
+        Ok(Self {
+            model: model.to_string(),
+            data_dir: data_dir.to_path_buf(),
+            workspace_dir: data_dir.join("workspace"),
+            omx_binary: resolved,
+        })
+    }
+}
+
+#[async_trait]
+impl LlmProvider for OmxProvider {
+    async fn chat(&self, messages: &[Message], tools: &[ToolDef]) -> Result<LlmResponse> {
+        if !CodexOAuthStatus::from_store(&self.data_dir).authenticated {
+            return Err(anyhow::anyhow!(
+                "Codex not authenticated — sign in via LLM Providers settings or run `codex login`"
+            ));
+        }
+
+        std::fs::create_dir_all(&self.workspace_dir).with_context(|| {
+            format!(
+                "Failed to initialize OMX workspace at {}",
+                self.workspace_dir.display()
+            )
+        })?;
+
+        let prompt = render_exec_prompt(messages, tools);
+
+        // OMX wraps Codex CLI — use `omx` with enhanced mode flags.
+        // The `omx` binary delegates to Codex exec internally with its agent catalog.
+        let mut child = tokio::process::Command::new(&self.omx_binary)
+            .arg("exec")
+            .arg("--skip-git-repo-check")
+            .arg("--ephemeral")
+            .arg("--model")
+            .arg(&self.model)
+            .arg("--sandbox")
+            .arg("workspace-write")
+            .arg("-c")
+            .arg("approval_policy=\"never\"")
+            .arg("-c")
+            .arg("mcp_servers.playwright.enabled=false")
+            .arg("-c")
+            .arg("mcp_servers.context7.enabled=false")
+            .arg("-C")
+            .arg(&self.workspace_dir)
+            .arg("--json")
+            .arg("-")
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .context("Failed to spawn oh-my-codex (omx) CLI — is it installed? Run: npm install -g oh-my-codex")?;
+
+        if let Some(mut stdin) = child.stdin.take() {
+            use tokio::io::AsyncWriteExt;
+            stdin.write_all(prompt.as_bytes()).await.context("Failed to write to stdin")?;
+        }
+
+        let output = child.wait_with_output().await.context("Failed to wait for omx process")?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+            let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            let detail = if !stderr.is_empty() {
+                stderr
+            } else if !stdout.is_empty() {
+                stdout
+            } else {
+                format!("omx exited with status {}", output.status)
+            };
+            return Err(anyhow::anyhow!("oh-my-codex error: {}", detail));
+        }
+
+        parse_exec_output(&output.stdout)
+    }
+
+    fn name(&self) -> &str {
+        "omx"
     }
 }
 

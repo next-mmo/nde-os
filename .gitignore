@@ -23,3 +23,4 @@ test_int.log
 test_output.log
 build.log
 .agents/tasks/achieved
+.omx

@@ -63,4 +63,4 @@
   });
 </script>
 
-<div class="w-full h-full p-2 bg-[#1e1e1e] overflow-hidden" bind:this={terminalElement}></div>
+<div class="absolute inset-0 bg-[#1e1e1e] pl-2 pt-2" bind:this={terminalElement}></div>

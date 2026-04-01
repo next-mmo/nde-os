@@ -22,6 +22,7 @@ pub async fn spawn_pty(
     cwd: String,
     app: AppHandle,
     state: State<'_, PtyState>,
+    app_state: State<'_, crate::state::AppState>,
 ) -> Result<(), String> {
     let pty_system = native_pty_system();
 
@@ -39,6 +40,28 @@ pub async fn spawn_pty(
     } else {
         CommandBuilder::new("sh")
     };
+    
+    // Inject the NDE-OS strict jail environment variables.
+    // This forcibly remaps HOME, TMPDIR, and configs directly to the sandbox root!
+    if let Ok(sandbox) = ai_launcher_core::sandbox::Sandbox::new(&app_state.base_dir) {
+        let _ = sandbox.init_workspace();
+        for (k, v) in sandbox.env_vars() {
+            cmd.env(k, v);
+        }
+        
+        // Auto-activate the sandbox Python virtual environment
+        let current_path = std::env::var("PATH").unwrap_or_default();
+        let venv_bin = if cfg!(windows) {
+            sandbox.root().join(".venv").join("Scripts")
+        } else {
+            sandbox.root().join(".venv").join("bin")
+        };
+        let sys_path_sep = if cfg!(windows) { ";" } else { ":" };
+        let isolated_path = format!("{}{}{}", venv_bin.display(), sys_path_sep, current_path);
+        
+        cmd.env("PATH", isolated_path);
+    }
+    
     cmd.cwd(cwd);
 
     let _child = pair.slave.spawn_command(cmd).map_err(|e| e.to_string())?;
