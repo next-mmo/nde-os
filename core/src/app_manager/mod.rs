@@ -1,7 +1,8 @@
 use crate::manifest::{
-    AppManifest, AppStatus, InstalledApp, SourceType, StoreUploadRequest, StoreUploadResult,
-    ValidationError,
+    AppManifest, AppRuntime, AppStatus, InstalledApp, SourceType, StoreUploadRequest,
+    StoreUploadResult, ValidationError,
 };
+use crate::node_env::NodeEnv;
 use crate::sandbox::Sandbox;
 use crate::uv_env::{self, UvEnv};
 use anyhow::{anyhow, Context, Result};
@@ -79,7 +80,8 @@ impl AppManager {
         UvEnv::new(&self.uv_bin, &self.app_workspace(app_id), python_version)
     }
 
-    /// Install an app: sandbox + uv venv + dependencies
+    /// Install an app: sandbox + runtime-specific environment setup.
+    /// Routes to Python (uv), Node.js (node_env), or Custom based on manifest.runtime.
     pub fn install(&self, manifest: &AppManifest) -> Result<()> {
         {
             let reg = self.registry.lock().unwrap();
@@ -88,8 +90,15 @@ impl AppManager {
             }
         }
 
+        let runtime_label = match manifest.runtime {
+            AppRuntime::Python => "Python",
+            AppRuntime::Node => "Node.js",
+            AppRuntime::Custom => "Custom",
+        };
+        println!("\n  [install] {} — runtime: {}", manifest.name, runtime_label);
+
         // 1. Create sandbox
-        println!("\n  [1/4] Creating sandbox...");
+        println!("  [1/5] Creating sandbox...");
         let sandbox = self.create_sandbox(&manifest.id)?;
         let verify = sandbox.verify();
         if !verify.path_traversal_blocked || !verify.absolute_escape_blocked {
@@ -97,7 +106,8 @@ impl AppManager {
         }
         println!("  [sandbox] Verified secure");
 
-        // Copy app source files from manifests/ directory if available
+        // 2. Copy app source files from manifests/ directory
+        println!("  [2/5] Copying app source files...");
         let current_dir = std::env::current_dir().unwrap_or_default();
         let possible_dirs = vec![
             current_dir.join("manifests").join(&manifest.id),
@@ -123,64 +133,15 @@ impl AppManager {
             println!("  [install] Warning: No local manifest directory found to copy files from.");
         }
 
-        // 2. Setup uv + Python (best-effort — sandbox is the security layer)
-        println!("  [2/4] Setting up Python environment...");
-        let uv = self.uv_for_app(&manifest.id, &manifest.python_version);
-        if let Err(e) = uv.ensure_python() {
-            println!(
-                "  [uv] Python setup skipped: {} (will use system Python)",
-                e
-            );
-        }
-
-        // 3. Create venv (best-effort)
-        println!("  [3/4] Creating virtual environment...");
-        let has_venv = match uv.create_venv() {
-            Ok(()) => true,
-            Err(e) => {
-                println!(
-                    "  [uv] Venv creation skipped: {} (will use system Python)",
-                    e
-                );
-                false
+        // 3-5. Runtime-specific environment setup
+        match manifest.runtime {
+            AppRuntime::Python => self.install_python_runtime(manifest, &sandbox)?,
+            AppRuntime::Node => self.install_node_runtime(manifest, &sandbox)?,
+            AppRuntime::Custom => {
+                println!("  [3/5] Custom runtime — skipping environment setup");
+                println!("  [4/5] No automatic dependency installation");
+                println!("  [5/5] Ready");
             }
-        };
-
-        // 4. Install python deps
-        if has_venv && !manifest.pip_deps.is_empty() {
-            println!("  [4/5] Installing dependencies via uv...");
-            if let Err(e) = uv.install_deps(&manifest.pip_deps) {
-                println!(
-                    "  [uv] Dep install issue: {} (app may need manual setup)",
-                    e
-                );
-            }
-            let req_file = sandbox.root().join("requirements.txt");
-            uv.install_requirements(&req_file).ok();
-        } else if !manifest.pip_deps.is_empty() {
-            println!("  [4/5] Skipping deps (no venv) — install manually or re-run with network");
-        } else {
-            println!("  [4/5] No Python dependencies needed");
-        }
-
-        // 5. Install Node.js deps if package.json exists
-        let package_json = sandbox.root().join("package.json");
-        if package_json.exists() {
-            println!("  [5/5] Found package.json, running npm install...");
-            let npm_cmd = if cfg!(windows) { "npm.cmd" } else { "npm" };
-            let npm_run = std::process::Command::new(npm_cmd)
-                .arg("install")
-                .current_dir(sandbox.root())
-                .status();
-            match npm_run {
-                Ok(status) if !status.success() => {
-                    println!("  [npm] install exited with {}", status)
-                }
-                Err(e) => println!("  [npm] install failed: {}", e),
-                _ => println!("  [npm] installed successfully"),
-            }
-        } else {
-            println!("  [5/5] No package.json found");
         }
 
         let installed = InstalledApp {
@@ -200,6 +161,76 @@ impl AppManager {
         Ok(())
     }
 
+    /// Python runtime install: uv venv + pip deps.
+    fn install_python_runtime(&self, manifest: &AppManifest, sandbox: &Sandbox) -> Result<()> {
+        // Setup uv + Python
+        println!("  [3/5] Setting up Python environment...");
+        let uv = self.uv_for_app(&manifest.id, &manifest.python_version);
+        if let Err(e) = uv.ensure_python() {
+            println!("  [uv] Python setup skipped: {} (will use system Python)", e);
+        }
+
+        // Create venv
+        println!("  [4/5] Creating virtual environment...");
+        let has_venv = match uv.create_venv() {
+            Ok(()) => true,
+            Err(e) => {
+                println!("  [uv] Venv creation skipped: {} (will use system Python)", e);
+                false
+            }
+        };
+
+        // Install pip deps
+        if has_venv && !manifest.pip_deps.is_empty() {
+            println!("  [5/5] Installing dependencies via uv...");
+            if let Err(e) = uv.install_deps(&manifest.pip_deps) {
+                println!("  [uv] Dep install issue: {} (app may need manual setup)", e);
+            }
+            let req_file = sandbox.root().join("requirements.txt");
+            uv.install_requirements(&req_file).ok();
+        } else if !manifest.pip_deps.is_empty() {
+            println!("  [5/5] Skipping deps (no venv) — install manually or re-run with network");
+        } else {
+            println!("  [5/5] No Python dependencies needed");
+        }
+
+        Ok(())
+    }
+
+    /// Node.js runtime install: detect package manager + install deps.
+    fn install_node_runtime(&self, manifest: &AppManifest, sandbox: &Sandbox) -> Result<()> {
+        println!("  [3/5] Detecting Node.js environment...");
+        let node_env = match NodeEnv::new(sandbox.root()) {
+            Ok(env) => env,
+            Err(e) => {
+                println!("  [node] Node.js not available: {}", e);
+                println!("  [node] Install Node.js from https://nodejs.org");
+                return Err(anyhow!("Node.js required but not found: {}", e));
+            }
+        };
+
+        // Also create a minimal Python venv (many Node apps have Python build deps)
+        println!("  [4/5] Setting up Python environment (for native modules)...");
+        let uv = self.uv_for_app(&manifest.id, &manifest.python_version);
+        if let Err(e) = uv.ensure_python() {
+            println!("  [uv] Python setup skipped: {} (native modules may fail)", e);
+        }
+        let _ = uv.create_venv(); // best-effort, not fatal for Node apps
+
+        // Install Node.js deps
+        let package_json = sandbox.root().join("package.json");
+        if package_json.exists() {
+            println!("  [5/5] Installing Node.js dependencies via {}...", node_env.package_manager().display_name());
+            if let Err(e) = node_env.install_deps() {
+                println!("  [node] Dep install issue: {} (app may need manual setup)", e);
+            }
+        } else {
+            println!("  [5/5] No package.json found");
+        }
+
+        Ok(())
+    }
+
     pub fn verify_sandbox(&self, app_id: &str) -> Result<crate::sandbox::SandboxVerifyResult> {
         let workspace = self.app_workspace(app_id);
         let sandbox = Sandbox::new(&workspace)?;
@@ -207,7 +238,7 @@ impl AppManager {
         Ok(sandbox.verify())
     }
 
-    /// Launch app inside sandbox with uv venv activated
+    /// Launch app inside sandbox with runtime-specific env vars.
     pub fn launch(&self, app_id: &str) -> Result<(u32, u16)> {
         let app = {
             let reg = self.registry.lock().unwrap();
@@ -227,17 +258,36 @@ impl AppManager {
         let sandbox = Sandbox::new(&workspace)?;
         let uv = self.uv_for_app(app_id, &app.manifest.python_version);
 
-        // Build environment: sandbox vars + venv vars
+        // Build environment: sandbox vars + runtime-specific vars + manifest env
         let mut env_vars = sandbox.env_vars();
-        env_vars.extend(uv.env_vars());
-        env_vars.extend(app.manifest.env.clone());
 
-        // Build the launch command using venv Python
-        let launch_cmd = if uv.has_venv() {
-            uv.build_launch_cmd(&app.manifest.launch_cmd)
-        } else {
-            app.manifest.launch_cmd.clone()
+        let launch_cmd = match app.manifest.runtime {
+            AppRuntime::Node => {
+                // Node.js launch: add Node env vars
+                if let Ok(node_env) = NodeEnv::new(&workspace) {
+                    env_vars.extend(node_env.env_vars());
+                    node_env.build_launch_cmd(&app.manifest.launch_cmd)
+                } else {
+                    app.manifest.launch_cmd.clone()
+                }
+            }
+            AppRuntime::Python => {
+                // Python launch: add uv venv vars
+                env_vars.extend(uv.env_vars());
+                if uv.has_venv() {
+                    uv.build_launch_cmd(&app.manifest.launch_cmd)
+                } else {
+                    app.manifest.launch_cmd.clone()
+                }
+            }
+            AppRuntime::Custom => {
+                // Custom: just sandbox vars
+                app.manifest.launch_cmd.clone()
+            }
         };
+
+        // Append manifest-level env overrides last (highest priority)
+        env_vars.extend(app.manifest.env.clone());
 
         // Spawn
         let child = if cfg!(windows) {

@@ -44,6 +44,7 @@
     { value: "together", label: "Together AI", icon: "🤝" },
     { value: "codex", label: "Codex", icon: "💻" },
     { value: "codex_oauth", label: "Codex (ChatGPT)", icon: "💻" },
+    { value: "omx", label: "oh-my-codex (OMX)", icon: "🚀" },
   ];
 
   const PROVIDER_DEFAULTS: Record<string, { model: string; baseUrl: string }> = {
@@ -55,6 +56,7 @@
     groq: { model: "llama-3.3-70b-versatile", baseUrl: "https://api.groq.com" },
     together: { model: "meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo", baseUrl: "https://api.together.xyz" },
     codex: { model: "gpt-4o-mini", baseUrl: "https://api.openai.com" },
+    omx: { model: "gpt-4o", baseUrl: "" },
   };
 
   $effect(() => {
@@ -100,6 +102,11 @@
       formBaseUrl = defs.baseUrl;
     }
     if (formType === "codex") {
+      try {
+        codexOAuthStatus = await api.codexOAuthStatus();
+      } catch { /* ignore */ }
+    } else if (formType === "omx") {
+      // OMX uses same Codex OAuth auth
       try {
         codexOAuthStatus = await api.codexOAuthStatus();
       } catch { /* ignore */ }
@@ -408,6 +415,102 @@
               disabled={addLoading || codexOAuthLoading || !connectionVerified}
             >
               {codexOAuthLoading ? "⏳ Adding..." : "Add Provider"}
+            </button>
+          </div>
+        </div>
+      {:else if formType === "omx"}
+        <!-- oh-my-codex (OMX) panel -->
+        <div class="flex flex-col gap-3">
+          <div class="flex gap-3 items-start p-3.5 rounded-xl bg-violet-500/6 border border-violet-500/15">
+            <div class="text-3xl shrink-0">🚀</div>
+            <div>
+              <strong class="block text-[0.92rem] mb-0.5 text-black dark:text-white">oh-my-codex (OMX)</strong>
+              <p class="m-0 text-[0.8rem] text-gray-500 dark:text-gray-400">Multi-agent orchestration for Codex CLI — adds enhanced prompts, skills ($plan, $architect, $team), and workflow runtime.</p>
+              <p class="m-0 mt-1 text-[0.72rem] text-gray-400 dark:text-gray-500">Requires: <code class="px-1 py-0.5 rounded bg-black/8 dark:bg-white/8 text-[0.7rem]">npm install -g @openai/codex oh-my-codex</code></p>
+            </div>
+          </div>
+
+          <!-- Codex OAuth status (OMX reuses the same auth) -->
+          {#if codexOAuthStatus?.authenticated}
+            <div class="flex gap-2.5 items-center px-3.5 py-2.5 rounded-xl bg-emerald-500/8 border border-emerald-500/20">
+              <span class="text-xl text-emerald-500">✓</span>
+              <div>
+                <strong class="block text-[0.85rem] text-black dark:text-white">{codexOAuthStatus.email || "Authenticated"}</strong>
+                {#if codexOAuthStatus.plan_type}
+                  <span class="text-[0.72rem] text-emerald-500 font-semibold uppercase tracking-[0.05em]">{codexOAuthStatus.plan_type}</span>
+                {/if}
+              </div>
+            </div>
+          {:else}
+            <div class="flex gap-2.5 items-center px-3.5 py-2.5 rounded-xl bg-amber-500/8 border border-amber-500/20">
+              <span class="text-xl">🔒</span>
+              <div>
+                <strong class="block text-[0.85rem] text-black dark:text-white">Not authenticated</strong>
+                <span class="block text-[0.78rem] text-gray-500 dark:text-gray-400 mt-0.5">OMX uses Codex auth — sign in with your ChatGPT account or run <code class="px-1 py-0.5 rounded bg-black/8 dark:bg-white/8 text-[0.7rem]">codex login</code></span>
+              </div>
+              <button
+                class="ml-auto px-4 py-1.5 rounded-full border border-violet-500/30 bg-violet-500/12 text-violet-500 text-[0.78rem] font-semibold cursor-pointer transition-colors duration-150 hover:bg-violet-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
+                onclick={handleCodexLogin}
+                disabled={codexOAuthLoading}
+              >
+                {codexOAuthLoading ? "⏳ Waiting..." : "🔑 Sign in"}
+              </button>
+            </div>
+          {/if}
+
+          <div class="grid grid-cols-[repeat(auto-fit,minmax(14rem,1fr))] gap-3">
+            <label class="flex flex-col gap-1">
+              <span class="text-[0.75rem] uppercase tracking-widest text-gray-500 dark:text-gray-400">Name</span>
+              <input type="text" bind:value={formName} placeholder="e.g. my-omx"
+                class="px-3 py-2.5 rounded-lg border border-black/10 dark:border-white/10 bg-white/50 dark:bg-black/50 text-black dark:text-white text-[0.88rem] focus:border-violet-500 focus:outline-none focus:ring-2 focus:ring-violet-500/15" />
+            </label>
+            <label class="flex flex-col gap-1">
+              <span class="text-[0.75rem] uppercase tracking-widest text-gray-500 dark:text-gray-400">Model</span>
+              <input type="text" bind:value={formModel} placeholder="e.g. gpt-4o"
+                class="px-3 py-2.5 rounded-lg border border-black/10 dark:border-white/10 bg-white/50 dark:bg-black/50 text-black dark:text-white text-[0.88rem] focus:border-violet-500 focus:outline-none focus:ring-2 focus:ring-violet-500/15" />
+            </label>
+            <label class="flex flex-col gap-1">
+              <span class="text-[0.75rem] uppercase tracking-widest text-gray-500 dark:text-gray-400">OMX Binary Path</span>
+              <input type="text" bind:value={formBaseUrl} placeholder="Optional (defaults to omx on PATH)"
+                class="px-3 py-2.5 rounded-lg border border-black/10 dark:border-white/10 bg-white/50 dark:bg-black/50 text-black dark:text-white text-[0.88rem] focus:border-violet-500 focus:outline-none focus:ring-2 focus:ring-violet-500/15" />
+            </label>
+            <label class="flex flex-col gap-1">
+              <span class="text-[0.75rem] uppercase tracking-widest text-gray-500 dark:text-gray-400">Max Tokens</span>
+              <input type="number" bind:value={formMaxTokens} min="256" max="128000"
+                class="px-3 py-2.5 rounded-lg border border-black/10 dark:border-white/10 bg-white/50 dark:bg-black/50 text-black dark:text-white text-[0.88rem] focus:border-violet-500 focus:outline-none focus:ring-2 focus:ring-violet-500/15" />
+            </label>
+          </div>
+
+          {#if addError}
+            <div class="flex gap-2 items-start px-3 py-2.5 rounded-xl mt-2 bg-red-500/10 border border-red-500/25">
+              <span class="text-base shrink-0 leading-snug">⚠</span>
+              <p class="m-0 text-red-400 text-[0.82rem] leading-snug">{addError}</p>
+            </div>
+          {/if}
+          {#if testResult}
+            <div class="flex gap-2.5 items-start px-3 py-2.5 rounded-xl mt-2 {testResult.ok ? 'bg-emerald-500/8 border border-emerald-500/20' : 'bg-red-500/8 border border-red-500/20'}">
+              <span class="text-lg shrink-0 leading-none {testResult.ok ? 'text-emerald-500' : 'text-red-500'}">{testResult.ok ? '✓' : '✕'}</span>
+              <div>
+                <strong class="block text-[0.85rem] mb-0.5 text-black dark:text-white">{testResult.ok ? 'Connected' : 'Connection Failed'}</strong>
+                <span class="text-[0.78rem] text-gray-500 dark:text-gray-400">{testResult.message}</span>
+              </div>
+            </div>
+          {/if}
+
+          <div class="flex items-center gap-3 flex-wrap mt-3">
+            <button
+              class="px-5 py-2.5 rounded-full border border-violet-500/30 bg-violet-500/12 text-violet-500 text-[0.88rem] font-semibold cursor-pointer transition-colors duration-150 hover:bg-violet-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
+              onclick={handleTestConnection}
+              disabled={testLoading || addLoading}
+            >
+              {testLoading ? "⏳ Testing..." : connectionVerified ? "✓ Re-test Connection" : "🔌 Test Connection"}
+            </button>
+            <button
+              class="px-5 py-2.5 rounded-full border-none bg-violet-500 text-white text-[0.88rem] font-semibold cursor-pointer transition-colors duration-150 hover:bg-violet-600 disabled:opacity-50 disabled:cursor-not-allowed"
+              onclick={handleAdd}
+              disabled={addLoading || !connectionVerified}
+            >
+              {addLoading ? "Adding..." : "Add Provider"}
             </button>
           </div>
         </div>

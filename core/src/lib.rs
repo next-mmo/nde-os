@@ -1,5 +1,7 @@
 pub mod app_manager;
+pub mod events;
 pub mod manifest;
+pub mod node_env;
 pub mod sandbox;
 pub mod system_metrics;
 pub mod uv_env;

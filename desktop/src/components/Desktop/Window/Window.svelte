@@ -198,7 +198,7 @@
     <div class="w-8"></div>
   </header>
 
-  <div class="min-h-0 bg-linear-to-b from-white/75 to-white/90 dark:from-gray-800/95 dark:to-gray-900/95 {isDragging || isResizing ? 'pointer-events-none' : ''}">
+  <div class="min-h-0 overflow-hidden bg-linear-to-b from-white/75 to-white/90 dark:from-gray-800/95 dark:to-gray-900/95 {isDragging || isResizing ? 'pointer-events-none' : ''}">
     <AppNexus {window} />
   </div>
 

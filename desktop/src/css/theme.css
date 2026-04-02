@@ -23,9 +23,9 @@ body {
   --system-radius-window: 0.75rem;
   --system-radius-panel: 1rem;
   --system-focus-outline: 0 0 0 3px hsla(211 100% 50% / 0.35);
-  --system-cursor-default: url("/cursors/normal-select.svg");
-  --system-cursor-pointer: url("/cursors/link-select.svg");
-  --system-cursor-text-select: url("/cursors/text-select.svg");
+  --system-cursor-default: url("/cursors/normal-select.svg") 5 2;
+  --system-cursor-pointer: url("/cursors/link-select.svg") 9 4;
+  --system-cursor-text-select: url("/cursors/text-select.svg") 16 16;
   --system-wallpaper: url("/wallpapers/ventura-1.webp");
 }
 

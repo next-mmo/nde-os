@@ -35,7 +35,7 @@
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
-  class="w-1 shrink-0 cursor-col-resize relative flex items-center justify-center transition-colors
+  class="h-full w-1 shrink-0 cursor-col-resize relative flex items-center justify-center transition-colors
     {isDragging ? 'bg-indigo-500/60' : isHovered ? 'bg-indigo-500/40' : 'bg-transparent'}"
   onmousedown={onMouseDown}
   onmouseenter={() => isHovered = true}

@@ -21,11 +21,26 @@ export const test = base.extend<{ page: Page }>({
     }
 
     const browser = await chromium.connectOverCDP(wsEndpoint);
-    const context = browser.contexts()[0];
-    const page = context.pages()[0];
     
+    // Find the correct Tauri WebView page among all contexts
+    let tauriPage = null;
+    for (const ctx of browser.contexts()) {
+      for (const p of ctx.pages()) {
+        const url = p.url();
+        if (url.includes('localhost:5174') || url.includes('tauri')) {
+          tauriPage = p;
+          break;
+        }
+      }
+      if (tauriPage) break;
+    }
+    
+    if (!tauriPage) {
+      throw new Error("Could not find Tauri WebView page. Found URLs: " + browser.contexts().flatMap(c => c.pages().map(p => p.url())).join(", "));
+    }
+
     // Tauri sets its own URL, no need to navigate
-    await use(page);
+    await use(tauriPage);
 
     await browser.close();
   }

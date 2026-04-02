@@ -34,7 +34,12 @@
   
   let chatBottom: HTMLDivElement | null = null;
   function scrollToBottom() {
-    requestAnimationFrame(() => chatBottom?.scrollIntoView({ behavior: "smooth" }));
+    requestAnimationFrame(() => {
+      const container = chatBottom?.parentElement;
+      if (container) {
+        container.scrollTop = container.scrollHeight;
+      }
+    });
   }
 
   const figmaPrompt = `You are the NDE Vibe Studio Agent (v0-style). You output ONLY valid HTML code describing a UI component.

@@ -11,7 +11,9 @@
       "Bash(grep -r \"screenshot\\\\|Screenshot\" /c/Users/dila/Downloads/ai-launcher-v0.2/ai-launcher --include=*.rs)",
       "Bash(grep -r \"ocr\\\\|OCR\" /c/Users/dila/Downloads/ai-launcher-v0.2/ai-launcher --include=*.rs)",
       "Bash(dir /s /b C:UsersdilaDownloadsai-launcher-v0.2ai-launchertest_fullscreen.png)",
-      "Bash(dir /s /b C:UsersdilaDownloadsai-launcher-v0.2ai-launchercoretest_fullscreen.png)"
+      "Bash(dir /s /b C:UsersdilaDownloadsai-launcher-v0.2ai-launchercoretest_fullscreen.png)",
+      "Bash(npx playwright:*)",
+      "Bash(node -e ':*)"
     ]
   }
 }

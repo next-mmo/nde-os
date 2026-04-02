@@ -231,8 +231,28 @@ pub fn create_provider(
                 });
             Ok(Box::new(codex_oauth::CodexOAuthProvider::new(model, &data_dir)?))
         }
+        "omx" | "oh-my-codex" | "oh_my_codex" => {
+            // oh-my-codex: workflow layer around Codex CLI.
+            // Uses the same Codex OAuth tokens from ~/.codex/auth.json.
+            // Falls back to explicit api_key or OMX_API_KEY / CODEX_API_KEY env vars.
+            let data_dir = std::env::var("AI_LAUNCHER_DATA_DIR")
+                .map(std::path::PathBuf::from)
+                .unwrap_or_else(|_| {
+                    if cfg!(windows) {
+                        std::env::var("LOCALAPPDATA")
+                            .map(|p| std::path::PathBuf::from(p).join("ai-launcher"))
+                            .unwrap_or_else(|_| std::path::PathBuf::from("C:\\ai-launcher-data"))
+                    } else {
+                        std::env::var("HOME")
+                            .map(std::path::PathBuf::from)
+                            .unwrap_or_else(|_| std::path::PathBuf::from("/tmp"))
+                            .join(".ai-launcher")
+                    }
+                });
+            Ok(Box::new(codex_oauth::OmxProvider::new(model, &data_dir, base_url)?))
+        }
         other => Err(anyhow::anyhow!(
-            "Unknown LLM provider: '{}'. Supported: gguf, ollama, openai, anthropic, codex, codex_oauth, groq, together, openai_compat",
+            "Unknown LLM provider: '{}'. Supported: gguf, ollama, openai, anthropic, codex, codex_oauth, omx, groq, together, openai_compat",
             other
         )),
     }
@@ -342,6 +362,25 @@ pub async fn verify_provider_config(config: &manager::ProviderConfig) -> anyhow:
             }
         }
 
+        // oh-my-codex: verify `omx` binary is available + Codex auth exists
+        "omx" | "oh-my-codex" | "oh_my_codex" => {
+            // Check omx binary — sandbox first, then PATH, then explicit base_url
+            let omx_path = resolve_omx_binary(config.base_url.as_deref());
+            if omx_path.is_none() {
+                return Err(anyhow::anyhow!(
+                    "oh-my-codex (omx) CLI not found. It will be auto-installed into the NDE-OS sandbox on first use, or set a custom path in 'OMX Binary Path'."
+                ));
+            }
+            tracing::info!(path = ?omx_path, "omx binary found");
+            // Verify Codex auth (omx uses the same tokens)
+            if codex_oauth::get_codex_access_token().is_err() {
+                return Err(anyhow::anyhow!(
+                    "Codex not authenticated — run `codex login` or sign in via LLM Providers"
+                ));
+            }
+            Ok(())
+        }
+
         // All other API providers: test with a ping
         _ => {
             let api_key = config.api_key.clone().or_else(|| {
@@ -384,4 +423,70 @@ pub async fn verify_provider_config(config: &manager::ProviderConfig) -> anyhow:
             }
         }
     }
+}
+
+/// Resolve the `omx` binary path. Search order:
+/// 1. Explicit path (from `base_url` config field)
+/// 2. NDE-OS sandbox: `~/.ai-launcher/tools/omx/node_modules/.bin/omx`
+/// 3. Global PATH
+///
+/// Returns the resolved path string, or None if not found.
+pub fn resolve_omx_binary(explicit_path: Option<&str>) -> Option<String> {
+    // 1. Explicit path provided by user
+    if let Some(path) = explicit_path {
+        if !path.is_empty() && std::path::Path::new(path).exists() {
+            return Some(path.to_string());
+        }
+    }
+
+    // 2. NDE-OS sandbox install
+    let sandbox_path = sandbox_omx_path();
+    if let Some(ref p) = sandbox_path {
+        if std::path::Path::new(p).exists() {
+            return sandbox_path;
+        }
+    }
+
+    // 3. Global PATH
+    let which_check = if cfg!(windows) {
+        std::process::Command::new("cmd").args(["/C", "where omx"]).output()
+    } else {
+        std::process::Command::new("sh").args(["-c", "which omx"]).output()
+    };
+    if let Ok(output) = which_check {
+        if output.status.success() {
+            let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if !path.is_empty() {
+                return Some(path);
+            }
+        }
+    }
+
+    None
+}
+
+/// Get the sandboxed omx binary path inside NDE-OS data dir.
+fn sandbox_omx_path() -> Option<String> {
+    let data_dir = std::env::var("AI_LAUNCHER_DATA_DIR")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|_| {
+            if cfg!(windows) {
+                std::env::var("LOCALAPPDATA")
+                    .map(|p| std::path::PathBuf::from(p).join("ai-launcher"))
+                    .unwrap_or_else(|_| std::path::PathBuf::from("C:\\ai-launcher-data"))
+            } else {
+                std::env::var("HOME")
+                    .map(std::path::PathBuf::from)
+                    .unwrap_or_else(|_| std::path::PathBuf::from("/tmp"))
+                    .join(".ai-launcher")
+            }
+        });
+
+    let omx_bin = if cfg!(windows) {
+        data_dir.join("tools").join("omx").join("node_modules").join(".bin").join("omx.cmd")
+    } else {
+        data_dir.join("tools").join("omx").join("node_modules").join(".bin").join("omx")
+    };
+
+    Some(omx_bin.to_string_lossy().to_string())
 }

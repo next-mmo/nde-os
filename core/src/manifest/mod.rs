@@ -1,5 +1,32 @@
 use serde::{Deserialize, Serialize};
 
+/// App runtime type — determines which environment manager to use.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum AppRuntime {
+    /// Python app — uses uv for venv + pip deps.
+    Python,
+    /// Node.js app — uses npm/pnpm/yarn for deps.
+    Node,
+    /// Custom/binary app — no automatic environment setup.
+    Custom,
+}
+
+impl Default for AppRuntime {
+    fn default() -> Self {
+        Self::Python
+    }
+}
+
+/// Node.js package manager preference (optional override in manifest).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ManifestPackageManager {
+    Npm,
+    Pnpm,
+    Yarn,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppManifest {
     pub id: String,
@@ -8,8 +35,25 @@ pub struct AppManifest {
     pub author: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub repo: Option<String>,
+
+    /// Runtime type. Defaults to "python" for backwards compatibility.
+    #[serde(default)]
+    pub runtime: AppRuntime,
+
+    /// Python version (only used when runtime == "python").
+    #[serde(default = "default_python_version")]
     pub python_version: String,
+    /// Node.js version constraint (only used when runtime == "node").
+    /// e.g. ">=18", "20", "lts". Currently informational.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub node_version: Option<String>,
+    /// Explicit package manager for Node.js apps.
+    /// If omitted, auto-detected from lockfile.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub package_manager: Option<ManifestPackageManager>,
+
     pub needs_gpu: bool,
+    /// Python pip dependencies (runtime == python).
     pub pip_deps: Vec<String>,
     pub launch_cmd: String,
     pub port: u16,
@@ -18,6 +62,10 @@ pub struct AppManifest {
     pub disk_size: String,
     #[serde(default)]
     pub tags: Vec<String>,
+}
+
+fn default_python_version() -> String {
+    "3".to_string()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -92,7 +140,10 @@ impl AppManifest {
             description: "A fullstack React + Express counter app to demonstrate Node.js support in AI Launcher".into(),
             author: "ai-launcher".into(),
             repo: None,
+            runtime: AppRuntime::Node,
             python_version: "3".into(),
+            node_version: Some(">=18".into()),
+            package_manager: None, // auto-detect
             needs_gpu: false,
             pip_deps: vec![],
             launch_cmd: "npm start".into(),
@@ -110,7 +161,10 @@ impl AppManifest {
             description: "A simple Gradio counter app to test the sandbox launcher".into(),
             author: "ai-launcher".into(),
             repo: None,
+            runtime: AppRuntime::Python,
             python_version: "3".into(),
+            node_version: None,
+            package_manager: None,
             needs_gpu: false,
             pip_deps: vec!["gradio".into()],
             launch_cmd: "python3 app.py".into(),
@@ -128,7 +182,10 @@ impl AppManifest {
             description: "AUTOMATIC1111 Stable Diffusion web interface".into(),
             author: "AUTOMATIC1111".into(),
             repo: Some("https://github.com/AUTOMATIC1111/stable-diffusion-webui.git".into()),
+            runtime: AppRuntime::Python,
             python_version: "3.10".into(),
+            node_version: None,
+            package_manager: None,
             needs_gpu: true,
             pip_deps: vec![],
             launch_cmd: "python3 launch.py --listen --port 7860".into(),
@@ -146,7 +203,10 @@ impl AppManifest {
             description: "Run large language models locally".into(),
             author: "ollama".into(),
             repo: Some("https://github.com/ollama/ollama.git".into()),
+            runtime: AppRuntime::Custom,
             python_version: "3".into(),
+            node_version: None,
+            package_manager: None,
             needs_gpu: false,
             pip_deps: vec![],
             launch_cmd: if cfg!(windows) {
@@ -177,5 +237,15 @@ impl AppManifest {
         } else {
             "python3"
         }
+    }
+
+    /// Whether this is a Node.js app.
+    pub fn is_node(&self) -> bool {
+        self.runtime == AppRuntime::Node
+    }
+
+    /// Whether this is a Python app.
+    pub fn is_python(&self) -> bool {
+        self.runtime == AppRuntime::Python
     }
 }

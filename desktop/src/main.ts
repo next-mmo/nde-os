@@ -11,6 +11,19 @@ initScreenshotHotkeys();
 // Suppress default browser context menu globally — the app uses its own Svelte context menus
 document.addEventListener("contextmenu", (e) => e.preventDefault());
 
+// NDE-OS is a virtual desktop — the root viewport must NEVER scroll.
+// Browser focus-scroll and scrollIntoView() can bypass overflow:hidden.
+// This guard immediately resets any root scroll to 0, preventing the top bar
+// from being pushed off-screen.
+document.addEventListener("scroll", () => {
+  if (document.documentElement.scrollTop !== 0) {
+    document.documentElement.scrollTop = 0;
+  }
+  if (document.body.scrollTop !== 0) {
+    document.body.scrollTop = 0;
+  }
+}, { passive: true, capture: true });
+
 mount(Desktop, {
   target: document.getElementById("root")!,
 });
