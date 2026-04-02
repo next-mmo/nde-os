@@ -146,6 +146,10 @@ pub fn run() {
             commands::freecut::freecut_render_frame,
             commands::freecut::freecut_get_hw_encoders,
             commands::freecut::freecut_export_video,
+            commands::freecut::freecut_detect_dubbing_tools,
+            commands::freecut::freecut_import_dubbing_srt,
+            commands::freecut::freecut_generate_dub_assets,
+            commands::freecut::freecut_install_dubbing_runtime,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

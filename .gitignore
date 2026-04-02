@@ -23,3 +23,7 @@ test_int.log
 test_output.log
 build.log
 .agents/tasks/achieved
+.omx
+target-codex-dub-check/
+target-codex-dub-check/debug/
+target-codex-dub-check

@@ -808,6 +808,7 @@ mod tests {
                 background_color: "#1a1a2e".to_string(),
             },
             timeline: None,
+            dubbing: None,
         }
     }
 

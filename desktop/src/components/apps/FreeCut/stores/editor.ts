@@ -6,7 +6,7 @@
 
 import { createStore } from 'zustand/vanilla';
 
-export type EditorTab = 'media' | 'effects' | 'transitions' | 'text' | 'audio' | 'shapes';
+export type EditorTab = 'media' | 'effects' | 'transitions' | 'text' | 'audio' | 'shapes' | 'dubbing';
 export type ClipInspectorTab = 'transform' | 'effects' | 'audio' | 'speed' | 'color';
 
 export interface EditorState {
@@ -49,7 +49,7 @@ export const editorStore = createStore<EditorState & EditorActions>()((set) => (
   keyframeEditorOpen: false,
   activeTab: 'media',
   clipInspectorTab: 'transform',
-  sidebarWidth: 260,
+  sidebarWidth: 340,
   rightSidebarWidth: 280,
   timelineHeight: 250,
   sourcePreviewMediaId: null,

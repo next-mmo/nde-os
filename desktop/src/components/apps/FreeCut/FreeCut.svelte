@@ -40,12 +40,93 @@
     metadata: { width: number; height: number; fps: number; backgroundColor: string };
     timeline: any;
     createdAt: string; updatedAt: string; schemaVersion: number;
+    dubbing?: DubbingSession | null;
   };
   type MediaItem = {
     id: string; fileName: string; filePath: string; fileSize: number;
     mediaType: "video" | "audio" | "image";
     width?: number; height?: number; durationSecs?: number; fps?: number;
     codec?: string; thumbnailPath?: string;
+  };
+  type DubbingRvcConfig = {
+    enabled: boolean;
+    pythonPath?: string | null;
+    cliPath?: string | null;
+    modelPath?: string | null;
+    indexPath?: string | null;
+    pitchShift?: number | null;
+  };
+  type DubbingSpeaker = {
+    id: string;
+    label: string;
+    voice: string;
+    rate?: string | null;
+    pitch?: string | null;
+    volume?: string | null;
+    rvc?: DubbingRvcConfig | null;
+  };
+  type DubbingSegment = {
+    id: string;
+    startSecs: number;
+    endSecs: number;
+    text: string;
+    outputText?: string | null;
+    speakerId?: string | null;
+    audioPath?: string | null;
+    status?: string | null;
+  };
+  type DubbingLlmConfig = {
+    enabled: boolean;
+    model?: string | null;
+    mode?: string | null;
+  };
+  type DubbingSession = {
+    sourceMediaId?: string | null;
+    sourceMediaPath?: string | null;
+    sourceLanguage: string;
+    targetLanguage: string;
+    ingestMode: "srt" | "whisper";
+    importedSrtPath?: string | null;
+    outputDir?: string | null;
+    notes?: string | null;
+    segments: DubbingSegment[];
+    speakers: DubbingSpeaker[];
+    llm?: DubbingLlmConfig | null;
+    updatedAt?: string | null;
+    lastGeneratedAt?: string | null;
+  };
+  type DubbingToolReport = {
+    whisperAvailable: boolean;
+    edgeTtsAvailable: boolean;
+    ndeLlmAvailable: boolean;
+    pythonAvailable: boolean;
+    rvcAvailable: boolean;
+    edgeVoices: string[];
+    ndeActiveModel?: string | null;
+    details: string[];
+  };
+  type DubbingImportResult = {
+    importedSrtPath: string;
+    segments: DubbingSegment[];
+    speakers: DubbingSpeaker[];
+  };
+  type DubbingProgress = {
+    phase: string;
+    current: number;
+    total: number;
+    message: string;
+  };
+  type DubbingRuntimeInstallResult = {
+    runtime: string;
+    installedPackages: string[];
+    workspacePath: string;
+    binPath: string;
+    message: string;
+  };
+  type WhisperSettings = {
+    model?: string | null;
+    language?: string | null;
+    task?: string | null;
   };
 
   let currentView = $state<"projects" | "editor">("projects");
@@ -54,6 +135,15 @@
   let mediaLibrary = $state<MediaItem[]>([]);
   let isLoading = $state(false);
   let renderedFramePath = $state<string | null>(null);
+  let dubbingTools = $state<DubbingToolReport | null>(null);
+  let dubbingBusy = $state(false);
+  let dubbingError = $state<string | null>(null);
+  let dubbingStatus = $state<string | null>(null);
+  let dubbingProgress = $state<DubbingProgress | null>(null);
+  let runtimeInstallBusy = $state(false);
+  let setupCopyStatus = $state<string | null>(null);
+  let whisperModel = $state("base");
+  let whisperLanguage = $state("auto");
 
   // Export state
   let showExportModal = $state(false);
@@ -83,6 +173,9 @@
   let isResizingTimeline = $state(false);
   let resizeStartY = $state(0);
   let resizeStartHeight = $state(0);
+  let isResizingLeftSidebar = $state(false);
+  let leftSidebarResizeStartX = $state(0);
+  let leftSidebarResizeStartWidth = $state(0);
 
   // Snap visual feedback
   let activeSnapFrame = $state<number | null>(null);
@@ -114,12 +207,166 @@
     }
     return null;
   });
+  let dubbingSession = $derived(currentProject?.dubbing ?? createDefaultDubbingSession());
+  let dubbingSourceMedia = $derived.by(() => {
+    const sourceId = dubbingSession.sourceMediaId;
+    if (!sourceId) return null;
+    return mediaLibrary.find((media) => media.id === sourceId) ?? null;
+  });
+  let needsDubbingSetup = $derived.by(() => {
+    if (!dubbingTools) return true;
+    return !dubbingTools.whisperAvailable || !dubbingTools.edgeTtsAvailable;
+  });
+  let readyDubSegments = $derived(dubbingSession.segments.filter((segment) => segment.audioPath).length);
+  let activeSpeakerCount = $derived(dubbingSession.speakers.length);
+
+  function createDefaultDubbingSession(partial: Partial<DubbingSession> = {}): DubbingSession {
+    return {
+      sourceMediaId: null,
+      sourceMediaPath: null,
+      sourceLanguage: "auto",
+      targetLanguage: "en",
+      ingestMode: "srt",
+      importedSrtPath: null,
+      outputDir: null,
+      notes: null,
+      segments: [],
+      speakers: [{
+        id: "speaker-narrator",
+        label: "Narrator",
+        voice: "en-US-AriaNeural",
+        rate: "+0%",
+        pitch: null,
+        volume: null,
+        rvc: {
+          enabled: false,
+          pythonPath: null,
+          cliPath: null,
+          modelPath: null,
+          indexPath: null,
+          pitchShift: 0,
+        },
+      }],
+      llm: {
+        enabled: false,
+        model: null,
+        mode: "translate",
+      },
+      updatedAt: null,
+      lastGeneratedAt: null,
+      ...partial,
+    };
+  }
+
+  function mergeDubbingSpeakers(current: DubbingSpeaker[], incoming: DubbingSpeaker[]): DubbingSpeaker[] {
+    const byId = new Map(current.map((speaker) => [speaker.id, speaker]));
+    for (const speaker of incoming) {
+      byId.set(speaker.id, {
+        ...speaker,
+        ...(byId.get(speaker.id) ?? {}),
+        rvc: {
+          enabled: false,
+          pythonPath: null,
+          cliPath: null,
+          modelPath: null,
+          indexPath: null,
+          pitchShift: 0,
+          ...(speaker.rvc ?? {}),
+          ...(byId.get(speaker.id)?.rvc ?? {}),
+        },
+      });
+    }
+    return [...byId.values()].sort((left, right) => left.label.localeCompare(right.label));
+  }
+
+  function updateCurrentProjectDubbing(updater: (session: DubbingSession) => DubbingSession) {
+    if (!currentProject) return;
+    const next = updater(currentProject.dubbing ?? createDefaultDubbingSession());
+    currentProject = { ...currentProject, dubbing: next };
+  }
+
+  function patchCurrentProjectDubbing(patch: Partial<DubbingSession>) {
+    updateCurrentProjectDubbing((session) => ({ ...session, ...patch }));
+  }
+
+  function updateDubbingSpeaker(speakerId: string, patch: Partial<DubbingSpeaker>) {
+    updateCurrentProjectDubbing((session) => ({
+      ...session,
+      speakers: session.speakers.map((speaker) =>
+        speaker.id === speakerId
+          ? { ...speaker, ...patch, rvc: { ...(speaker.rvc ?? {}), ...(patch.rvc ?? {}) } }
+          : speaker
+      ),
+    }));
+  }
+
+  function updateDubbingSegment(segmentId: string, patch: Partial<DubbingSegment>) {
+    updateCurrentProjectDubbing((session) => ({
+      ...session,
+      segments: session.segments.map((segment) =>
+        segment.id === segmentId ? { ...segment, ...patch } : segment
+      ),
+    }));
+  }
+
+  function addDubbingSpeaker() {
+    updateCurrentProjectDubbing((session) => ({
+      ...session,
+      speakers: [
+        ...session.speakers,
+        {
+          id: crypto.randomUUID(),
+          label: `Speaker ${session.speakers.length + 1}`,
+          voice: dubbingTools?.edgeVoices?.[0] ?? "en-US-AriaNeural",
+          rate: "+0%",
+          pitch: null,
+          volume: null,
+          rvc: {
+            enabled: false,
+            pythonPath: null,
+            cliPath: null,
+            modelPath: null,
+            indexPath: null,
+            pitchShift: 0,
+          },
+        },
+      ],
+    }));
+  }
+
+  function removeDubbingSpeaker(speakerId: string) {
+    updateCurrentProjectDubbing((session) => {
+      const remaining = session.speakers.filter((speaker) => speaker.id !== speakerId);
+      const fallback = remaining[0]?.id ?? "speaker-narrator";
+      return {
+        ...session,
+        speakers: remaining.length > 0 ? remaining : createDefaultDubbingSession().speakers,
+        segments: session.segments.map((segment) =>
+          segment.speakerId === speakerId ? { ...segment, speakerId: fallback } : segment
+        ),
+      };
+    });
+  }
+
+  function ensureSourceMediaSelection() {
+    if (!currentProject) return;
+    const media = mediaLibrary.find((item) => item.id === dubbingSession.sourceMediaId)
+      ?? mediaLibrary.find((item) => item.mediaType === "video")
+      ?? mediaLibrary.find((item) => item.mediaType === "audio")
+      ?? null;
+    if (!media) return;
+    patchCurrentProjectDubbing({
+      sourceMediaId: media.id,
+      sourceMediaPath: media.filePath,
+    });
+  }
 
   // ─── Lifecycle ────────────────────────────────────────────────────────
   let unlisten: Array<() => void> = [];
 
   onMount(async () => {
     await loadProjects();
+    detectDubbingTools().catch(() => {});
 
     unlisten.push(
       await listen("freecut://media-imported", (event: any) => {
@@ -158,6 +405,14 @@
         } else {
           exportError = event.payload.error ?? "Export failed";
         }
+      }),
+      await listen("freecut://dubbing-progress", (event: any) => {
+        dubbingProgress = event.payload;
+        dubbingStatus = event.payload?.message ?? null;
+      }),
+      await listen("freecut://dubbing-ready", (event: any) => {
+        dubbingProgress = null;
+        dubbingStatus = `Generated ${event.payload?.session?.segments?.length ?? 0} dub segments`;
       })
     );
   });
@@ -261,7 +516,7 @@
       const project: Project = await invoke("freecut_create_project", {
         args: { name: `Untitled Project ${projects.length + 1}`, width: 1920, height: 1080, fps: 30 },
       });
-      currentProject = project;
+      currentProject = { ...project, dubbing: project.dubbing ?? createDefaultDubbingSession() };
       itemsStore.getState().setFps(project.metadata.fps);
       historyStore.getState().clear();
       currentView = "editor";
@@ -274,13 +529,14 @@
       isLoading = true;
       const project: Project | null = await invoke("freecut_get_project", { id });
       if (project) {
-        currentProject = project;
+        currentProject = { ...project, dubbing: project.dubbing ?? createDefaultDubbingSession() };
         itemsStore.getState().setFps(project.metadata.fps);
         if (project.timeline) {
           itemsStore.getState().setItems(project.timeline.items ?? []);
           itemsStore.getState().setTracks(project.timeline.tracks ?? []);
         }
         mediaLibrary = await invoke("freecut_list_media", { projectId: id });
+        ensureSourceMediaSelection();
         historyStore.getState().clear();
         currentView = "editor";
       }
@@ -299,6 +555,7 @@
         ...currentProject,
         duration: state.maxItemEndFrame,
         timeline: { items: state.items, tracks: state.tracks },
+        dubbing: currentProject.dubbing ?? createDefaultDubbingSession(),
       };
       await invoke("freecut_save_project", { project });
     } catch (e) { console.error(e); }
@@ -320,6 +577,9 @@
           if (typeof filePath === "string") {
             const media: MediaItem = await invoke("freecut_import_media", { projectId: currentProject.id, filePath });
             mediaLibrary = [...mediaLibrary, media];
+            if (media.mediaType !== "image" && !dubbingSession.sourceMediaId) {
+              patchCurrentProjectDubbing({ sourceMediaId: media.id, sourceMediaPath: media.filePath });
+            }
             if (media.mediaType === "video" || media.mediaType === "image") {
               invoke("freecut_generate_thumbnails", {
                 mediaId: media.id, filePath: media.filePath, count: 8,
@@ -334,6 +594,158 @@
         }
       }
     } catch (e) { console.error(e); }
+  }
+
+  async function detectDubbingTools() {
+    try {
+      dubbingError = null;
+      dubbingTools = await invoke("freecut_detect_dubbing_tools");
+      dubbingStatus = "Refreshed local dubbing tools";
+      if ((dubbingTools?.edgeVoices?.length ?? 0) > 0 && currentProject?.dubbing?.speakers?.length) {
+        updateCurrentProjectDubbing((session) => ({
+          ...session,
+          speakers: session.speakers.map((speaker, index) => ({
+            ...speaker,
+            voice: speaker.voice?.trim() ? speaker.voice : dubbingTools!.edgeVoices[index % dubbingTools!.edgeVoices.length]!,
+          })),
+        }));
+      }
+    } catch (e: any) {
+      dubbingError = e?.toString?.() ?? "Failed to detect local dubbing tools";
+    }
+  }
+
+  async function installDubbingRuntime(runtime: "core" | "whisper" | "edge_tts") {
+    try {
+      runtimeInstallBusy = true;
+      dubbingError = null;
+      const result: DubbingRuntimeInstallResult = await invoke("freecut_install_dubbing_runtime", { runtime });
+      dubbingStatus = result.message;
+      setupCopyStatus = result.message;
+      await detectDubbingTools();
+    } catch (e: any) {
+      dubbingError = e?.toString?.() ?? "Failed to install dubbing runtime";
+    } finally {
+      runtimeInstallBusy = false;
+    }
+  }
+
+  async function importDubbingSrt() {
+    if (!currentProject) return;
+    try {
+      const selected = await open({
+        multiple: false,
+        filters: [{ name: "Subtitles", extensions: ["srt"] }],
+      });
+      if (!selected || Array.isArray(selected) || typeof selected !== "string") return;
+      const imported: DubbingImportResult = await invoke("freecut_import_dubbing_srt", { filePath: selected });
+      updateCurrentProjectDubbing((session) => ({
+        ...session,
+        ingestMode: "srt",
+        importedSrtPath: imported.importedSrtPath,
+        segments: imported.segments,
+        speakers: mergeDubbingSpeakers(session.speakers, imported.speakers),
+        updatedAt: new Date().toISOString(),
+      }));
+      dubbingStatus = `Loaded ${imported.segments.length} subtitle segments`;
+      await saveProject();
+    } catch (e: any) {
+      dubbingError = e?.toString?.() ?? "Failed to import SRT";
+    }
+  }
+
+  async function generateDubbingAssets() {
+    if (!currentProject) return;
+    try {
+      dubbingBusy = true;
+      dubbingError = null;
+      ensureSourceMediaSelection();
+      const sourceMedia = mediaLibrary.find((item) => item.id === dubbingSession.sourceMediaId) ?? null;
+      const nextSession: DubbingSession = {
+        ...dubbingSession,
+        sourceMediaId: sourceMedia?.id ?? dubbingSession.sourceMediaId,
+        sourceMediaPath: sourceMedia?.filePath ?? dubbingSession.sourceMediaPath,
+      };
+      const whisper: WhisperSettings = {
+        model: whisperModel,
+        language: whisperLanguage,
+        task: "transcribe",
+      };
+      const generated: DubbingSession = await invoke("freecut_generate_dub_assets", {
+        projectId: currentProject.id,
+        session: nextSession,
+        whisper,
+      });
+      patchCurrentProjectDubbing(generated);
+      dubbingStatus = `Generated ${generated.segments.filter((segment) => segment.audioPath).length} dub clips`;
+      await saveProject();
+    } catch (e: any) {
+      dubbingError = e?.toString?.() ?? "Failed to generate dubbing assets";
+    } finally {
+      dubbingBusy = false;
+    }
+  }
+
+  function ensureNamedTrack(kind: "video" | "audio", desiredName: string): string {
+    const existing = itemsStore.getState().tracks.find((track) => track.kind === kind && track.name === desiredName);
+    if (existing) return existing.id;
+    const trackId = createDefaultTrack(kind);
+    itemsStore.getState().updateTrack(trackId, { name: desiredName });
+    return trackId;
+  }
+
+  function placeDubbingOnTimeline() {
+    if (!currentProject || dubbingSession.segments.length === 0) return;
+    historyStore.getState().push();
+    const width = currentProject.metadata.width;
+    const height = currentProject.metadata.height;
+    const audioTrackId = ensureNamedTrack("audio", "Dub Voice");
+    const textTrackId = ensureNamedTrack("video", "Dub Captions");
+    const items: TimelineItem[] = [];
+
+    for (const [index, segment] of dubbingSession.segments.entries()) {
+      const from = Math.max(0, Math.round(segment.startSecs * fps));
+      const duration = Math.max(1, Math.round((segment.endSecs - segment.startSecs) * fps));
+      const speaker = dubbingSession.speakers.find((item) => item.id === segment.speakerId);
+      const clipText = segment.outputText ?? segment.text;
+
+      if (segment.audioPath) {
+        items.push({
+          id: crypto.randomUUID(),
+          trackId: audioTrackId,
+          from,
+          durationInFrames: duration,
+          label: `${speaker?.label ?? "Dub"} ${index + 1}`,
+          type: "audio",
+          src: segment.audioPath,
+          sourceStart: 0,
+          sourceEnd: duration,
+          sourceDuration: duration,
+          sourceFps: fps,
+          speed: 1,
+          volume: 1,
+        });
+      }
+
+      items.push({
+        id: crypto.randomUUID(),
+        trackId: textTrackId,
+        from,
+        durationInFrames: duration,
+        label: `Caption ${index + 1}`,
+        type: "text",
+        text: clipText,
+        fontSize: 42,
+        fontFamily: "Inter",
+        color: "#ffffff",
+        textAlign: "center",
+        fillColor: "#ffffff",
+        transform: { x: width / 2, y: height - 140, rotation: 0, opacity: 1 },
+      });
+    }
+
+    itemsStore.getState().addItems(items);
+    dubbingStatus = `Placed ${items.length} dubbing clips on the timeline`;
   }
 
   async function exportVideo() {
@@ -771,6 +1183,11 @@
     currentView = "projects";
     mediaLibrary = [];
     renderedFramePath = null;
+    dubbingTools = null;
+    dubbingBusy = false;
+    dubbingError = null;
+    dubbingStatus = null;
+    dubbingProgress = null;
     playbackStore.getState().setCurrentFrame(0);
     playbackStore.getState().pause();
     itemsStore.getState().setItems([]);
@@ -1180,6 +1597,32 @@
     window.addEventListener('mouseup', onUp);
   }
 
+  function startLeftSidebarResize(e: MouseEvent) {
+    e.preventDefault();
+    isResizingLeftSidebar = true;
+    leftSidebarResizeStartX = e.clientX;
+    leftSidebarResizeStartWidth = ed.sidebarWidth;
+    document.body.style.cursor = "ew-resize";
+    document.body.style.userSelect = "none";
+
+    const onMove = (ev: MouseEvent) => {
+      if (!isResizingLeftSidebar) return;
+      const dx = ev.clientX - leftSidebarResizeStartX;
+      const newWidth = Math.max(280, Math.min(560, leftSidebarResizeStartWidth + dx));
+      editorStore.getState().setSidebarWidth(newWidth);
+    };
+    const onUp = () => {
+      isResizingLeftSidebar = false;
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  }
+
   function toggleSnap() {
     itemsStore.getState().setSnapEnabled(!ti.snapEnabled);
   }
@@ -1210,7 +1653,7 @@
   }
 
   function formatDuration(secs?: number): string {
-    if (!secs) return "--:--";
+    if (secs === undefined || secs === null || Number.isNaN(secs)) return "--:--";
     const m = Math.floor(secs / 60);
     const s = Math.floor(secs % 60);
     return `${m}:${s.toString().padStart(2, "0")}`;
@@ -1225,8 +1668,15 @@
   };
 
   const tabIcons: Record<string, any> = {
-    media: FolderOpen, effects: Sparkles, transitions: ChevronRight, text: Type, audio: Music, shapes: RectangleHorizontal,
+    media: FolderOpen, effects: Sparkles, transitions: ChevronRight, text: Type, audio: Music, shapes: RectangleHorizontal, dubbing: Volume2,
   };
+  const sidebarTabs: Array<{ id: EditorTab; label: string }> = [
+    { id: "media", label: "Media" },
+    { id: "dubbing", label: "Dubbing" },
+    { id: "effects", label: "FX" },
+    { id: "transitions", label: "Cuts" },
+    { id: "text", label: "Text" },
+  ];
 
   function frameToPixel(frame: number): number {
     return (frame / fps) * zm.pixelsPerSecond;
@@ -1372,16 +1822,21 @@
 
       <!-- Left Panel -->
       {#if ed.leftSidebarOpen}
-        <aside class="flex flex-col border-r border-white/5 bg-zinc-900/40 shrink-0" style:width="{ed.sidebarWidth}px">
-          <div class="flex border-b border-white/5">
-            {#each (["media", "effects", "transitions", "text"] as EditorTab[]) as tab (tab)}
+        <aside class="flex min-w-0 flex-col border-r border-white/5 bg-zinc-900/50 shrink-0" style:width="{ed.sidebarWidth}px">
+          <div class="border-b border-white/5 px-2 py-2">
+            <div class="grid grid-cols-3 gap-1">
+            {#each sidebarTabs as tab (tab.id)}
+              {@const TabIcon = tabIcons[tab.id]}
               <button
-                class="flex-1 py-1.5 text-[10px] uppercase tracking-wider transition-colors {ed.activeTab === tab ? 'text-violet-400 border-b border-violet-400' : 'text-white/30 hover:text-white/50'}"
-                onclick={() => editorStore.getState().setActiveTab(tab)}
+                class="flex min-w-0 items-center justify-center gap-1 rounded-md px-1.5 py-2 text-[10px] font-medium tracking-wide transition-colors {ed.activeTab === tab.id ? 'bg-violet-500/12 text-violet-300 ring-1 ring-violet-400/25' : 'bg-white/[0.02] text-white/45 hover:bg-white/[0.05] hover:text-white/70'}"
+                onclick={() => editorStore.getState().setActiveTab(tab.id)}
+                title={tab.label}
               >
-                {tab}
+                <TabIcon class="h-3 w-3 shrink-0" />
+                <span class="truncate">{tab.label}</span>
               </button>
             {/each}
+            </div>
           </div>
 
           <div class="flex-1 overflow-y-auto">
@@ -1419,6 +1874,349 @@
                   </div>
                 {/each}
               </div>
+            {:else if ed.activeTab === "dubbing"}
+              <div class="p-3.5 space-y-3">
+                <div class="rounded-2xl border border-white/8 bg-linear-to-br from-white/[0.05] to-white/[0.015] p-3 space-y-3">
+                  <div class="flex items-start justify-between gap-3">
+                    <div class="min-w-0">
+                      <p class="text-xs font-semibold text-white/85">Dubbing Studio</p>
+                      <p class="text-[10px] text-white/40 mt-1">Import subtitles, map speakers, generate voices, then place the dubbed track back on the timeline.</p>
+                    </div>
+                    <button class="shrink-0 rounded-lg bg-white/5 px-2.5 py-1.5 text-[10px] text-white/70 transition-colors hover:bg-white/10" onclick={detectDubbingTools}>
+                      Refresh
+                    </button>
+                  </div>
+
+                  <div class="grid grid-cols-3 gap-2">
+                    <div class="rounded-xl border border-white/6 bg-black/20 px-2.5 py-2">
+                      <p class="text-[9px] uppercase tracking-wider text-white/30">Segments</p>
+                      <p class="mt-1 text-sm font-semibold text-white/85">{dubbingSession.segments.length}</p>
+                    </div>
+                    <div class="rounded-xl border border-white/6 bg-black/20 px-2.5 py-2">
+                      <p class="text-[9px] uppercase tracking-wider text-white/30">Ready</p>
+                      <p class="mt-1 text-sm font-semibold text-emerald-300">{readyDubSegments}</p>
+                    </div>
+                    <div class="rounded-xl border border-white/6 bg-black/20 px-2.5 py-2">
+                      <p class="text-[9px] uppercase tracking-wider text-white/30">Speakers</p>
+                      <p class="mt-1 text-sm font-semibold text-white/85">{activeSpeakerCount}</p>
+                    </div>
+                  </div>
+
+                  {#if needsDubbingSetup}
+                    <div class="rounded-2xl border border-amber-400/20 bg-amber-400/8 p-3 space-y-3">
+                      <div class="flex items-start justify-between gap-3">
+                        <div class="min-w-0">
+                          <p class="text-xs font-semibold text-amber-100">Quick Setup</p>
+                          <p class="text-[10px] text-amber-100/70 mt-1">Install the missing dubbing runtime inside NDE-OS. FreeCut uses its own sandboxed tool environment and should not rely on host package installs.</p>
+                        </div>
+                        <div class="px-2 py-1 rounded-full bg-black/20 text-[9px] uppercase tracking-wider text-amber-100/70">
+                          Onboarding
+                        </div>
+                      </div>
+
+                      <div class="grid grid-cols-1 gap-2">
+                        <div class="rounded-xl border border-white/8 bg-black/20 p-3 space-y-2">
+                          <div class="flex items-start justify-between gap-3">
+                            <div class="min-w-0">
+                              <p class="text-[11px] font-semibold text-white/85">1. Install Core Voice Runtime</p>
+                              <p class="mt-1 text-[10px] text-white/45">Installs Whisper + Edge TTS into FreeCut's own workspace using bundled `uv`.</p>
+                            </div>
+                            <span class="shrink-0 text-[9px] uppercase tracking-wider text-amber-200/70">Required</span>
+                          </div>
+                          <div class="grid grid-cols-1 gap-2">
+                            <button class="rounded-lg bg-violet-600 px-2 py-2 text-[10px] text-white transition-colors hover:bg-violet-500 disabled:opacity-50" onclick={() => installDubbingRuntime("core")} disabled={runtimeInstallBusy}>
+                              {runtimeInstallBusy ? "Installing..." : "Install in NDE-OS"}
+                            </button>
+                          </div>
+                        </div>
+
+                        <div class="rounded-xl border border-white/8 bg-black/20 p-3 space-y-2">
+                          <div class="flex items-start justify-between gap-3">
+                            <div class="min-w-0">
+                              <p class="text-[11px] font-semibold text-white/85">2. Optional LLM Lane</p>
+                              <p class="mt-1 text-[10px] text-white/45">Subtitle polish uses the active NDE model/provider. No separate host install is needed, but the NDE server and active model must already be available.</p>
+                            </div>
+                            <span class="shrink-0 text-[9px] uppercase tracking-wider text-cyan-200/70">Optional</span>
+                          </div>
+                          <div class="rounded-lg border border-white/6 bg-white/[0.02] px-2.5 py-2 text-[10px] text-white/55">
+                            Keep LLM polish disabled unless the NDE server is running and an active model is configured.
+                          </div>
+                        </div>
+
+                        <div class="rounded-xl border border-white/8 bg-black/20 p-3 space-y-2">
+                          <div class="flex items-start justify-between gap-3">
+                            <div class="min-w-0">
+                              <p class="text-[11px] font-semibold text-white/85">3. Optional RVC</p>
+                              <p class="mt-1 text-[10px] text-white/45">RVC stays an advanced post-process path after the core runtime is installed.</p>
+                            </div>
+                            <span class="shrink-0 text-[9px] uppercase tracking-wider text-white/40">Advanced</span>
+                          </div>
+                          <div class="rounded-lg border border-white/6 bg-white/[0.02] px-2.5 py-2 text-[10px] text-white/55">
+                            Configure model and index paths manually in the speaker section after the core runtime is ready.
+                          </div>
+                        </div>
+                      </div>
+
+                      <div class="flex items-center justify-between gap-3">
+                        <p class="text-[10px] text-amber-100/70">Install once inside NDE-OS, then press Refresh to re-scan the runtime.</p>
+                        {#if setupCopyStatus}
+                          <span class="text-[10px] text-emerald-200">{setupCopyStatus}</span>
+                        {/if}
+                      </div>
+                    </div>
+                  {/if}
+
+                  <div class="grid grid-cols-2 gap-2">
+                    <div class="rounded-xl border border-white/6 bg-black/20 px-2.5 py-2">
+                      <p class="text-[9px] uppercase tracking-wider text-white/30">Whisper</p>
+                      <p class="text-[11px] mt-1 {dubbingTools?.whisperAvailable ? 'text-emerald-300' : 'text-white/45'}">
+                        {dubbingTools?.whisperAvailable ? "Ready" : "Missing"}
+                      </p>
+                    </div>
+                    <div class="rounded-xl border border-white/6 bg-black/20 px-2.5 py-2">
+                      <p class="text-[9px] uppercase tracking-wider text-white/30">Edge TTS</p>
+                      <p class="text-[11px] mt-1 {dubbingTools?.edgeTtsAvailable ? 'text-emerald-300' : 'text-white/45'}">
+                        {dubbingTools?.edgeTtsAvailable ? "Ready" : "Missing"}
+                      </p>
+                    </div>
+                    <div class="rounded-xl border border-white/6 bg-black/20 px-2.5 py-2">
+                      <p class="text-[9px] uppercase tracking-wider text-white/30">NDE LLM</p>
+                      <p class="text-[11px] mt-1 {dubbingTools?.ndeLlmAvailable ? 'text-emerald-300' : 'text-white/45'}">
+                        {dubbingTools?.ndeLlmAvailable ? (dubbingTools?.ndeActiveModel ?? "Ready") : "Unavailable"}
+                      </p>
+                    </div>
+                    <div class="rounded-xl border border-white/6 bg-black/20 px-2.5 py-2">
+                      <p class="text-[9px] uppercase tracking-wider text-white/30">RVC Lane</p>
+                      <p class="text-[11px] mt-1 {dubbingTools?.rvcAvailable ? 'text-emerald-300' : 'text-white/45'}">
+                        {dubbingTools?.rvcAvailable ? "Python Ready" : "Needs Python"}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div class="grid grid-cols-2 gap-2">
+                    <label class="block">
+                      <span class="text-[9px] uppercase tracking-wider text-white/35">Source Media</span>
+                      <select
+                        class="mt-1 w-full rounded-lg border border-white/10 bg-white/5 px-2 py-2 text-[11px] text-white"
+                        value={dubbingSession.sourceMediaId ?? ""}
+                        onchange={(e) => {
+                          const media = mediaLibrary.find((item) => item.id === e.currentTarget.value) ?? null;
+                          patchCurrentProjectDubbing({
+                            sourceMediaId: media?.id ?? null,
+                            sourceMediaPath: media?.filePath ?? null,
+                          });
+                        }}
+                      >
+                        <option value="">Select media</option>
+                        {#each mediaLibrary.filter((item) => item.mediaType !== "image") as media (media.id)}
+                          <option value={media.id}>{media.fileName}</option>
+                        {/each}
+                      </select>
+                    </label>
+                    <label class="block">
+                      <span class="text-[9px] uppercase tracking-wider text-white/35">Ingest</span>
+                      <select
+                        class="mt-1 w-full rounded-lg border border-white/10 bg-white/5 px-2 py-2 text-[11px] text-white"
+                        value={dubbingSession.ingestMode}
+                        onchange={(e) => patchCurrentProjectDubbing({ ingestMode: e.currentTarget.value as "srt" | "whisper" })}
+                      >
+                        <option value="srt">Local SRT</option>
+                        <option value="whisper">Whisper Local</option>
+                      </select>
+                    </label>
+                    <label class="block">
+                      <span class="text-[9px] uppercase tracking-wider text-white/35">Source Lang</span>
+                      <input
+                        type="text"
+                        class="mt-1 w-full rounded-lg border border-white/10 bg-white/5 px-2 py-2 text-[11px] text-white"
+                        value={dubbingSession.sourceLanguage}
+                        onchange={(e) => patchCurrentProjectDubbing({ sourceLanguage: e.currentTarget.value })}
+                      />
+                    </label>
+                    <label class="block">
+                      <span class="text-[9px] uppercase tracking-wider text-white/35">Target Lang</span>
+                      <input
+                        type="text"
+                        class="mt-1 w-full rounded-lg border border-white/10 bg-white/5 px-2 py-2 text-[11px] text-white"
+                        value={dubbingSession.targetLanguage}
+                        onchange={(e) => patchCurrentProjectDubbing({ targetLanguage: e.currentTarget.value })}
+                      />
+                    </label>
+                  </div>
+
+                  {#if dubbingSession.ingestMode === "whisper"}
+                    <div class="grid grid-cols-2 gap-2">
+                      <label class="block">
+                        <span class="text-[9px] uppercase tracking-wider text-white/35">Whisper Model</span>
+                        <input type="text" class="mt-1 w-full rounded-lg border border-white/10 bg-white/5 px-2 py-2 text-[11px] text-white" bind:value={whisperModel} />
+                      </label>
+                      <label class="block">
+                        <span class="text-[9px] uppercase tracking-wider text-white/35">Whisper Language</span>
+                        <input type="text" class="mt-1 w-full rounded-lg border border-white/10 bg-white/5 px-2 py-2 text-[11px] text-white" bind:value={whisperLanguage} />
+                      </label>
+                    </div>
+                  {/if}
+
+                  <div class="grid grid-cols-3 gap-2">
+                    <button class="rounded-lg bg-white/5 px-3 py-2 text-[11px] text-white/75 transition-colors hover:bg-white/10" onclick={importDubbingSrt}>
+                      Import SRT
+                    </button>
+                    <button class="rounded-lg bg-violet-600 px-3 py-2 text-[11px] text-white transition-colors hover:bg-violet-500 disabled:opacity-50" onclick={generateDubbingAssets} disabled={dubbingBusy}>
+                      {dubbingBusy ? "Generating..." : "Generate"}
+                    </button>
+                    <button class="rounded-lg bg-cyan-500/15 px-3 py-2 text-[11px] text-cyan-200 transition-colors hover:bg-cyan-500/25 disabled:opacity-50" onclick={placeDubbingOnTimeline} disabled={!dubbingSession.segments.some((segment) => segment.audioPath)}>
+                      Timeline
+                    </button>
+                  </div>
+
+                  {#if dubbingProgress}
+                    <div class="rounded-lg border border-violet-500/20 bg-violet-500/5 px-3 py-2">
+                      <p class="text-[11px] text-violet-200">{dubbingProgress.message}</p>
+                      <p class="text-[10px] text-violet-200/60 mt-1">{dubbingProgress.phase} · {dubbingProgress.current}/{dubbingProgress.total}</p>
+                    </div>
+                  {/if}
+                  {#if dubbingStatus}
+                    <p class="text-[10px] text-emerald-300/80">{dubbingStatus}</p>
+                  {/if}
+                  {#if dubbingError}
+                    <p class="text-[10px] text-red-300">{dubbingError}</p>
+                  {/if}
+                </div>
+
+                <div class="rounded-2xl border border-white/8 bg-white/[0.02] p-3 space-y-3">
+                  <div class="flex items-center justify-between">
+                    <div>
+                      <p class="text-xs font-semibold text-white/80">Speakers</p>
+                      <p class="text-[10px] text-white/35 mt-1">Map each detected speaker to a voice and optional RVC profile.</p>
+                    </div>
+                    <button class="rounded-lg bg-white/5 px-2.5 py-1.5 text-[10px] text-white/70 transition-colors hover:bg-white/10" onclick={addDubbingSpeaker}>
+                      Add Speaker
+                    </button>
+                  </div>
+
+                  <div class="space-y-2">
+                    {#each dubbingSession.speakers as speaker (speaker.id)}
+                      <div class="rounded-xl border border-white/6 bg-black/20 p-2.5 space-y-2">
+                        <div class="flex items-center gap-2">
+                          <input
+                            type="text"
+                            class="flex-1 rounded-lg border border-white/10 bg-white/5 px-2 py-2 text-[11px] text-white"
+                            value={speaker.label}
+                            onchange={(e) => updateDubbingSpeaker(speaker.id, { label: e.currentTarget.value })}
+                          />
+                          <button class="rounded-lg bg-red-500/10 px-2 py-1.5 text-[10px] text-red-200 transition-colors hover:bg-red-500/20" onclick={() => removeDubbingSpeaker(speaker.id)}>
+                            Remove
+                          </button>
+                        </div>
+                        <div class="grid grid-cols-2 gap-2">
+                          <input type="text" class="rounded-lg border border-white/10 bg-white/5 px-2 py-2 text-[11px] text-white" value={speaker.voice} placeholder="Voice" onchange={(e) => updateDubbingSpeaker(speaker.id, { voice: e.currentTarget.value })} />
+                          <input type="text" class="rounded-lg border border-white/10 bg-white/5 px-2 py-2 text-[11px] text-white" value={speaker.rate ?? ""} placeholder="Rate" onchange={(e) => updateDubbingSpeaker(speaker.id, { rate: e.currentTarget.value })} />
+                          <input type="text" class="rounded-lg border border-white/10 bg-white/5 px-2 py-2 text-[11px] text-white" value={speaker.pitch ?? ""} placeholder="Pitch" onchange={(e) => updateDubbingSpeaker(speaker.id, { pitch: e.currentTarget.value })} />
+                          <input type="text" class="rounded-lg border border-white/10 bg-white/5 px-2 py-2 text-[11px] text-white" value={speaker.volume ?? ""} placeholder="Volume" onchange={(e) => updateDubbingSpeaker(speaker.id, { volume: e.currentTarget.value })} />
+                        </div>
+                        <label class="flex items-center gap-2 text-[10px] text-white/55">
+                          <input
+                            type="checkbox"
+                            checked={speaker.rvc?.enabled ?? false}
+                            onchange={(e) => updateDubbingSpeaker(speaker.id, { rvc: { ...(speaker.rvc ?? {}), enabled: e.currentTarget.checked } })}
+                          />
+                          Enable RVC post-process
+                        </label>
+                        {#if speaker.rvc?.enabled}
+                          <div class="grid grid-cols-1 gap-2">
+                            <input type="text" class="rounded-lg border border-white/10 bg-white/5 px-2 py-2 text-[11px] text-white" value={speaker.rvc?.cliPath ?? ""} placeholder="RVC CLI path (rvc.py)" onchange={(e) => updateDubbingSpeaker(speaker.id, { rvc: { ...(speaker.rvc ?? {}), cliPath: e.currentTarget.value } })} />
+                            <input type="text" class="rounded-lg border border-white/10 bg-white/5 px-2 py-2 text-[11px] text-white" value={speaker.rvc?.modelPath ?? ""} placeholder="RVC model path (.pth)" onchange={(e) => updateDubbingSpeaker(speaker.id, { rvc: { ...(speaker.rvc ?? {}), modelPath: e.currentTarget.value } })} />
+                            <input type="text" class="rounded-lg border border-white/10 bg-white/5 px-2 py-2 text-[11px] text-white" value={speaker.rvc?.indexPath ?? ""} placeholder="RVC index path (.index)" onchange={(e) => updateDubbingSpeaker(speaker.id, { rvc: { ...(speaker.rvc ?? {}), indexPath: e.currentTarget.value } })} />
+                          </div>
+                        {/if}
+                      </div>
+                    {/each}
+                  </div>
+                </div>
+
+                <div class="rounded-2xl border border-white/8 bg-white/[0.02] p-3 space-y-3">
+                  <div class="flex items-center justify-between">
+                    <div>
+                      <p class="text-xs font-semibold text-white/80">NDE LLM</p>
+                      <p class="text-[10px] text-white/35 mt-1">Use the active NDE model/provider to translate or polish subtitle lines before synthesis.</p>
+                    </div>
+                    <label class="flex items-center gap-2 text-[10px] text-white/55">
+                      <input
+                        type="checkbox"
+                        checked={dubbingSession.llm?.enabled ?? false}
+                        onchange={(e) => patchCurrentProjectDubbing({ llm: { ...(dubbingSession.llm ?? { enabled: false }), enabled: e.currentTarget.checked } })}
+                      />
+                      Enable
+                    </label>
+                  </div>
+                  <div class="grid grid-cols-2 gap-2">
+                    <div class="rounded-lg border border-white/10 bg-white/5 px-2 py-2 text-[11px] text-white/70">
+                      {#if dubbingTools?.ndeLlmAvailable}
+                        Active model: {dubbingTools?.ndeActiveModel ?? "configured"}
+                      {:else}
+                        NDE LLM not available on localhost:8080
+                      {/if}
+                    </div>
+                    <select class="rounded-lg border border-white/10 bg-white/5 px-2 py-2 text-[11px] text-white" value={dubbingSession.llm?.mode ?? "translate"} onchange={(e) => patchCurrentProjectDubbing({ llm: { ...(dubbingSession.llm ?? { enabled: false }), mode: e.currentTarget.value } })}>
+                      <option value="translate">Translate</option>
+                      <option value="polish">Polish</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div class="rounded-2xl border border-white/8 bg-white/[0.02] p-3">
+                  <div class="flex items-center justify-between mb-3">
+                    <div>
+                      <p class="text-xs font-semibold text-white/80">Segments</p>
+                      <p class="text-[10px] text-white/35 mt-1">{dubbingSession.segments.length} subtitle segments</p>
+                    </div>
+                    {#if dubbingSourceMedia}
+                      <p class="text-[10px] text-white/35 truncate max-w-[120px]">{dubbingSourceMedia.fileName}</p>
+                    {/if}
+                  </div>
+
+                  <div class="space-y-2 max-h-[360px] overflow-y-auto pr-1">
+                    {#if dubbingSession.segments.length === 0}
+                      <div class="rounded-lg border border-dashed border-white/10 p-4 text-center text-[11px] text-white/35">
+                        Import a local SRT or run Whisper to populate dubbing segments.
+                      </div>
+                    {:else}
+                      {#each dubbingSession.segments as segment (segment.id)}
+                        <div class="rounded-xl border border-white/6 bg-black/20 p-2.5 space-y-2">
+                          <div class="flex items-center justify-between gap-2">
+                            <p class="text-[10px] text-white/45 font-mono">{formatDuration(segment.startSecs)} → {formatDuration(segment.endSecs)}</p>
+                            <select
+                              class="rounded-lg border border-white/10 bg-white/5 px-2 py-1.5 text-[10px] text-white"
+                              value={segment.speakerId ?? dubbingSession.speakers[0]?.id ?? ""}
+                              onchange={(e) => updateDubbingSegment(segment.id, { speakerId: e.currentTarget.value })}
+                            >
+                              {#each dubbingSession.speakers as speaker (speaker.id)}
+                                <option value={speaker.id}>{speaker.label}</option>
+                              {/each}
+                            </select>
+                          </div>
+                          <textarea
+                            class="min-h-[52px] w-full rounded-lg border border-white/10 bg-white/5 px-2 py-2 text-[11px] text-white"
+                            rows="2"
+                            value={segment.text}
+                            oninput={(e) => updateDubbingSegment(segment.id, { text: e.currentTarget.value })}
+                          ></textarea>
+                          <textarea
+                            class="min-h-[52px] w-full rounded-lg border border-cyan-500/15 bg-cyan-500/5 px-2 py-2 text-[11px] text-cyan-100"
+                            rows="2"
+                            value={segment.outputText ?? segment.text}
+                            oninput={(e) => updateDubbingSegment(segment.id, { outputText: e.currentTarget.value })}
+                          ></textarea>
+                          <div class="flex items-center justify-between gap-2 text-[10px]">
+                            <span class="text-white/35">{segment.audioPath ? "Dub clip ready" : "No audio rendered yet"}</span>
+                            <span class="{segment.audioPath ? 'text-emerald-300/80' : 'text-white/35'}">{segment.status ?? "pending"}</span>
+                          </div>
+                        </div>
+                      {/each}
+                    {/if}
+                  </div>
+                </div>
+              </div>
             {:else if ed.activeTab === "text"}
               <div class="p-2 space-y-2">
                 <div 
@@ -1436,6 +2234,13 @@
             {/if}
           </div>
         </aside>
+        <div
+          class="w-1.5 shrink-0 cursor-ew-resize bg-zinc-900/70 transition-colors hover:bg-violet-500/40"
+          onmousedown={startLeftSidebarResize}
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize left sidebar"
+        ></div>
       {/if}
 
       <!-- Center: Preview + Timeline -->

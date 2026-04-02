@@ -24,6 +24,12 @@ test.describe('FreeCut Video Editor', () => {
     // 5. Check for Timeline
     await expect(page.locator('text=Timeline')).toBeVisible();
 
+    // 6. Open the new dubbing workspace and verify the panel renders
+    const dubbingTab = page.getByRole('button', { name: /dubbing/i });
+    await expect(dubbingTab).toBeVisible();
+    await dubbingTab.click();
+    await expect(page.locator('text=Dubbing Studio')).toBeVisible();
+
     // 7. Trigger a frame update to fire a render request
     await page.keyboard.press('ArrowRight');
     await page.waitForTimeout(500);

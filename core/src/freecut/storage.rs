@@ -207,6 +207,7 @@ mod tests {
             schema_version: 1,
             metadata: ProjectResolution::default(),
             timeline: None,
+            dubbing: None,
         }
     }
 

@@ -24,10 +24,20 @@ pub struct Project {
     pub metadata: ProjectResolution,
     #[serde(default)]
     pub timeline: Option<ProjectTimeline>,
+    #[serde(default)]
+    pub dubbing: Option<DubbingSession>,
 }
 
 fn default_schema_version() -> u32 {
     1
+}
+
+fn default_source_language() -> String {
+    "auto".to_string()
+}
+
+fn default_target_language() -> String {
+    "en".to_string()
 }
 
 /// Canvas resolution + FPS.
@@ -394,6 +404,109 @@ pub enum MediaType {
     Image,
 }
 
+// ─── Dubbing ───────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct DubbingSession {
+    #[serde(default)]
+    pub source_media_id: Option<String>,
+    #[serde(default)]
+    pub source_media_path: Option<String>,
+    #[serde(default = "default_source_language")]
+    pub source_language: String,
+    #[serde(default = "default_target_language")]
+    pub target_language: String,
+    #[serde(default)]
+    pub ingest_mode: DubbingIngestMode,
+    #[serde(default)]
+    pub imported_srt_path: Option<String>,
+    #[serde(default)]
+    pub output_dir: Option<String>,
+    #[serde(default)]
+    pub notes: Option<String>,
+    #[serde(default)]
+    pub segments: Vec<DubbingSegment>,
+    #[serde(default)]
+    pub speakers: Vec<DubbingSpeaker>,
+    #[serde(default)]
+    pub llm: Option<DubbingLlmConfig>,
+    #[serde(default)]
+    pub updated_at: Option<DateTime<Utc>>,
+    #[serde(default)]
+    pub last_generated_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum DubbingIngestMode {
+    #[default]
+    Srt,
+    Whisper,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct DubbingSegment {
+    pub id: String,
+    pub start_secs: f64,
+    pub end_secs: f64,
+    pub text: String,
+    #[serde(default)]
+    pub output_text: Option<String>,
+    #[serde(default)]
+    pub speaker_id: Option<String>,
+    #[serde(default)]
+    pub audio_path: Option<String>,
+    #[serde(default)]
+    pub status: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct DubbingSpeaker {
+    pub id: String,
+    pub label: String,
+    #[serde(default)]
+    pub voice: String,
+    #[serde(default)]
+    pub rate: Option<String>,
+    #[serde(default)]
+    pub pitch: Option<String>,
+    #[serde(default)]
+    pub volume: Option<String>,
+    #[serde(default)]
+    pub rvc: Option<DubbingRvcConfig>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct DubbingRvcConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default)]
+    pub python_path: Option<String>,
+    #[serde(default)]
+    pub cli_path: Option<String>,
+    #[serde(default)]
+    pub model_path: Option<String>,
+    #[serde(default)]
+    pub index_path: Option<String>,
+    #[serde(default)]
+    pub pitch_shift: Option<i32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct DubbingLlmConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default)]
+    pub model: Option<String>,
+    #[serde(default)]
+    pub mode: Option<String>,
+}
+
 // ─── Export config ──────────────────────────────────────────────────────────────
 
 /// Export job configuration.
@@ -472,6 +585,7 @@ mod tests {
             schema_version: 1,
             metadata: ProjectResolution::default(),
             timeline: None,
+            dubbing: None,
         };
 
         let json = serde_json::to_string(&project).expect("serialize");
@@ -479,6 +593,7 @@ mod tests {
         assert_eq!(back.id, "test-1");
         assert_eq!(back.metadata.width, 1920);
         assert_eq!(back.metadata.fps, 30);
+        assert!(back.dubbing.is_none());
     }
 
     #[test]
@@ -557,5 +672,60 @@ mod tests {
         let back: MediaMetadata = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(back.media_type, MediaType::Video);
         assert_eq!(back.width, Some(1920));
+    }
+
+    #[test]
+    fn dubbing_roundtrip() {
+        let project = Project {
+            id: "dub-1".to_string(),
+            name: "Dub Project".to_string(),
+            description: String::new(),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+            duration: 120,
+            schema_version: 1,
+            metadata: ProjectResolution::default(),
+            timeline: None,
+            dubbing: Some(DubbingSession {
+                source_media_id: Some("media-1".to_string()),
+                source_media_path: Some("C:/movie.mp4".to_string()),
+                source_language: "ja".to_string(),
+                target_language: "en".to_string(),
+                ingest_mode: DubbingIngestMode::Srt,
+                imported_srt_path: Some("C:/movie.srt".to_string()),
+                output_dir: Some("C:/render/dubbing".to_string()),
+                notes: None,
+                segments: vec![DubbingSegment {
+                    id: "seg-1".to_string(),
+                    start_secs: 0.0,
+                    end_secs: 1.5,
+                    text: "hello".to_string(),
+                    output_text: Some("hi".to_string()),
+                    speaker_id: Some("speaker-1".to_string()),
+                    audio_path: Some("C:/render/dubbing/seg-1.mp3".to_string()),
+                    status: Some("ready".to_string()),
+                }],
+                speakers: vec![DubbingSpeaker {
+                    id: "speaker-1".to_string(),
+                    label: "Speaker 1".to_string(),
+                    voice: "en-US-AriaNeural".to_string(),
+                    rate: Some("+0%".to_string()),
+                    pitch: None,
+                    volume: None,
+                    rvc: None,
+                }],
+                llm: Some(DubbingLlmConfig {
+                    enabled: true,
+                    model: Some("llama3".to_string()),
+                    mode: Some("translate".to_string()),
+                }),
+                updated_at: Some(Utc::now()),
+                last_generated_at: None,
+            }),
+        };
+
+        let json = serde_json::to_string(&project).expect("serialize");
+        let back: Project = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(back.dubbing.unwrap().segments.len(), 1);
     }
 }
