@@ -57,60 +57,67 @@ impl VikingProcess {
 
         // Try to install via uv (fast) first, then pip
         tracing::info!("Installing OpenViking via uv...");
-        let install_cmd = if cfg!(windows) {
+        let install_result = if cfg!(windows) {
             Command::new("cmd")
-                .args(["/C", "uv pip install openviking --upgrade"])
+                .args(["/C", "uv pip install --system openviking --upgrade"])
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped())
-                .status()
+                .output()
                 .await
         } else {
             Command::new("sh")
-                .args(["-c", "uv pip install openviking --upgrade"])
+                .args(["-c", "uv pip install --system openviking --upgrade"])
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped())
-                .status()
+                .output()
                 .await
         };
 
-        match install_cmd {
-            Ok(status) if status.success() => {
+        match install_result {
+            Ok(output) if output.status.success() => {
                 tracing::info!("OpenViking installed successfully via uv");
                 Ok(true)
             }
-            _ => {
+            Ok(output) => {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                tracing::warn!("uv install failed ({}): {}", output.status, stderr);
                 // Fallback to pip
-                tracing::warn!("uv install failed, trying pip...");
-                let pip_cmd = if cfg!(windows) {
+                tracing::info!("Trying pip fallback...");
+                let pip_result = if cfg!(windows) {
                     Command::new("cmd")
                         .args(["/C", "pip install openviking --upgrade"])
                         .stdout(Stdio::piped())
                         .stderr(Stdio::piped())
-                        .status()
+                        .output()
                         .await
                 } else {
                     Command::new("sh")
                         .args(["-c", "pip install openviking --upgrade"])
                         .stdout(Stdio::piped())
                         .stderr(Stdio::piped())
-                        .status()
+                        .output()
                         .await
                 };
 
-                match pip_cmd {
-                    Ok(status) if status.success() => {
+                match pip_result {
+                    Ok(output) if output.status.success() => {
                         tracing::info!("OpenViking installed successfully via pip");
                         Ok(true)
                     }
-                    Ok(status) => {
-                        tracing::warn!("pip install exited with {}", status);
+                    Ok(output) => {
+                        let stderr = String::from_utf8_lossy(&output.stderr);
+                        tracing::warn!("pip install failed ({}): {}", output.status, stderr);
                         Ok(false)
                     }
                     Err(e) => {
-                        tracing::warn!("Cannot install OpenViking: {}", e);
+                        tracing::warn!("Cannot run pip: {}", e);
                         Ok(false)
                     }
                 }
+            }
+            Err(e) => {
+                tracing::warn!("Cannot run uv: {}", e);
+                Ok(false)
             }
         }
     }
