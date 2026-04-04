@@ -47,6 +47,20 @@
   let fileContent = $state<string>("");
   let generatedCode = $state<string>("");
 
+  // Shared context files: populated by FileExplorer drag/right-click → AgentChat
+  interface ContextFile { path: string; name: string; content?: string; }
+  let contextFiles = $state<ContextFile[]>([]);
+
+  async function addContextFileFromExplorer(path: string, name: string) {
+    if (contextFiles.some(f => f.path === path)) return;
+    let content = "";
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      content = await invoke<string>("read_file_content", { path });
+    } catch {}
+    contextFiles = [...contextFiles, { path, name, content }];
+  }
+
   // Resizable panel widths
   let layerTreeWidth = $state(256);
   let propertiesWidth = $state(288);
@@ -349,7 +363,7 @@
         </div>
       {:else if activeTab === "ide"}
         <div class="absolute inset-0">
-          <IDE bind:activeFilePath bind:fileContent />
+          <IDE bind:activeFilePath bind:fileContent onAddToChat={addContextFileFromExplorer} />
         </div>
       {/if}
     </main>
@@ -389,6 +403,6 @@
       </div>
     </div>
     
-    <AgentChat {document} {chatMode} {activeFilePath} {fileContent} onApplyPatch={applyChatPatch} />
+    <AgentChat {document} {chatMode} {activeFilePath} {fileContent} bind:contextFiles onApplyPatch={applyChatPatch} />
   </div>
 </div>

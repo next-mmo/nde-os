@@ -2,11 +2,12 @@
   import { invoke } from '@tauri-apps/api/core';
   import { onMount } from 'svelte';
 
-  let { onSelectFile, currentFile, onProjectChange, basePath = "data" } = $props<{
+  let { onSelectFile, currentFile, onProjectChange, basePath = "data", onAddToChat } = $props<{
     onSelectFile: (path: string, name: string) => void;
     currentFile: string | null;
     onProjectChange?: (selected: boolean) => void;
     basePath?: string;
+    onAddToChat?: (path: string, name: string) => void;
   }>();
 
   type FileEntry = {
@@ -222,6 +223,13 @@
   function focusNoScroll(node: HTMLInputElement) {
     node.focus({ preventScroll: true });
   }
+
+  function handleDragStart(e: DragEvent, entry: FileEntry) {
+    if (!e.dataTransfer) return;
+    e.dataTransfer.setData("application/nde-file-path", entry.path);
+    e.dataTransfer.setData("application/nde-file-name", entry.name);
+    e.dataTransfer.effectAllowed = "copy";
+  }
 </script>
 
 <svelte:window onclick={closeContextMenu} oncontextmenu={(e) => { 
@@ -295,6 +303,8 @@
         <div 
           class="flex items-center py-1 cursor-pointer transition-colors group {currentFile === entry.path ? 'bg-indigo-500/20 text-indigo-200 border-l-2 border-indigo-400' : (selectedItem?.path === entry.path ? 'bg-white/10 text-white' : 'text-white/60 hover:bg-white/5 border-l-2 border-transparent')}"
           style="padding-left: {depth * 12 + 22}px; padding-right: 16px;"
+          draggable="true"
+          ondragstart={(e) => handleDragStart(e, entry)}
           onclick={(e) => { e.stopPropagation(); selectFile(entry); }}
           oncontextmenu={(e) => handleContextMenu(e, entry)}
         >
@@ -422,6 +432,18 @@
         New Folder
       </button>
 
+      {#if onAddToChat && !ctxMenu!.isDir}
+        <button 
+          onclick={() => { 
+            onAddToChat!(ctxMenu!.path, ctxMenu!.name);
+            closeContextMenu(); 
+          }} 
+          class="w-full text-left px-3 py-1.5 hover:bg-violet-500 hover:text-white transition-colors flex items-center gap-2"
+        >
+          <svg class="w-3.5 h-3.5 opacity-70" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path></svg>
+          Add to Chat
+        </button>
+      {/if}
       <button 
         onclick={() => { 
           navigator.clipboard.writeText(ctxMenu!.path);

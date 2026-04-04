@@ -6,11 +6,15 @@
   import { listen } from '@tauri-apps/api/event';
   import '@xterm/xterm/css/xterm.css';
 
+  let { projectPath = "" }: { projectPath?: string } = $props();
+
   let terminalElement: HTMLElement;
   let term: Terminal;
   let fitAddon: FitAddon;
   let unlisten: (() => void) | null = null;
   const terminalId = crypto.randomUUID();
+  let spawned = $state(false);
+  let resolvedCwd = $state("");
 
   export function fit() {
     if (fitAddon) {
@@ -20,9 +24,34 @@
 
   let resizeObserver: ResizeObserver | null = null;
 
+  // Resolve to an absolute filesystem path.
+  // selectedProjectPath may already be absolute (from list_directory which returns full paths)
+  // or relative like "data" / "data/my-project".
+  async function resolveAbsPath(relPath: string): Promise<string> {
+    if (!relPath) {
+      try { return await invoke<string>("get_home_dir"); } catch { return ""; }
+    }
+    // Already absolute — use as-is (Unix: starts with /, Windows: C:\...)
+    if (relPath.startsWith("/") || /^[A-Za-z]:[\\\/]/.test(relPath)) {
+      return relPath;
+    }
+    // Relative sandbox path — join with sandbox root
+    try {
+      const home = await invoke<string>("get_home_dir");
+      return `${home.replace(/\/$/, "")}/${relPath}`;
+    } catch {
+      return relPath;
+    }
+  }
+
   onMount(async () => {
     term = new Terminal({
-      theme: { background: '#1e1e1e', foreground: '#cccccc' },
+      theme: {
+        background: '#1e1e1e',
+        foreground: '#cccccc',
+        cursor: '#528bff',
+        selectionBackground: 'rgba(82, 139, 255, 0.3)',
+      },
       fontFamily: 'Consolas, "Courier New", monospace',
       fontSize: 14,
       cursorBlink: true,
@@ -33,9 +62,7 @@
     term.loadAddon(fitAddon);
     term.open(terminalElement);
 
-    setTimeout(() => {
-      fitAddon.fit();
-    }, 100);
+    setTimeout(() => { fitAddon.fit(); }, 100);
 
     term.onData(async (data) => {
       await invoke("write_pty", { id: terminalId, data });
@@ -45,17 +72,28 @@
       term.write(new Uint8Array(event.payload));
     });
 
-    let cwd = "";
-    try {
-      cwd = await invoke<string>("get_home_dir");
-    } catch {}
+    // Resolve the starting directory
+    const cwd = await resolveAbsPath(projectPath);
+    resolvedCwd = cwd;
 
     await invoke("spawn_pty", { id: terminalId, cwd });
+    spawned = true;
 
-    resizeObserver = new ResizeObserver(() => {
-      fitAddon.fit();
-    });
+    resizeObserver = new ResizeObserver(() => { fitAddon.fit(); });
     resizeObserver.observe(terminalElement);
+  });
+
+  // React to project changes while terminal is running — cd like VS Code does
+  const cdSent = new Set<string>();
+  $effect(() => {
+    const current = projectPath;   // reactive: re-runs when prop changes
+    if (!spawned || cdSent.has(current)) return;
+    cdSent.add(current);
+    resolveAbsPath(current).then((abs) => {
+      if (!abs) return;
+      resolvedCwd = abs;
+      invoke("write_pty", { id: terminalId, data: `cd "${abs}"\r` });
+    });
   });
 
   onDestroy(() => {
@@ -65,11 +103,20 @@
   });
 </script>
 
-<div class="absolute inset-0 bg-[#1e1e1e] pl-2 pt-2" bind:this={terminalElement}>
+<div class="absolute inset-0 flex flex-col bg-[#1e1e1e]">
+  <!-- Breadcrumb: shows resolved project path in terminal header -->
+  {#if resolvedCwd}
+    <div class="flex items-center gap-1.5 px-3 py-1 bg-[#252526] border-b border-white/5 text-[10px] text-white/30 font-mono shrink-0 select-none">
+      <svg class="w-3 h-3 text-white/20 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"></path>
+      </svg>
+      <span class="truncate">{resolvedCwd}</span>
+    </div>
+  {/if}
+  <div class="flex-1 relative pl-2 pt-1" bind:this={terminalElement}></div>
 </div>
 
 <style>
-  /* Force xterm viewport to respect standard DOM scroll behavior and show the native overlay scrollbar */
   :global(.xterm .xterm-viewport) {
     overflow-y: scroll !important;
     scrollbar-width: thin !important;

@@ -8,9 +8,10 @@
   import CodeEditor from './CodeEditor.svelte';
   import TerminalPanel from './TerminalPanel.svelte';
 
-  let { activeFilePath = $bindable(null), fileContent = $bindable("") } = $props<{
+  let { activeFilePath = $bindable(null), fileContent = $bindable(""), onAddToChat } = $props<{
     activeFilePath?: string | null;
     fileContent?: string;
+    onAddToChat?: (path: string, name: string) => void;
   }>();
 
   let activeSidebar = $state<"explorer" | "scm">("explorer");
@@ -29,6 +30,9 @@
 
   let activeFileName = $state<string>("");
   let isSaving = $state(false);
+  let savedContent = $state<string>(""); // tracks last persisted content
+
+  let isDirty = $derived(activeFilePath !== null && fileContent !== savedContent);
 
   // Auto-restore project and sidebars if a file is opened programmatically
   $effect(() => {
@@ -106,15 +110,51 @@
   }
 
   async function openFile(path: string, name: string) {
+    // If current file is dirty, ask before switching
+    if (isDirty) {
+      const choice = confirm(`Save changes to "${activeFileName}" before opening "${name}"?`);
+      if (choice) await saveFile();
+    }
     try {
       const content = await invoke<string>("read_file_content", { path });
       activeFilePath = path;
       activeFileName = name;
       fileContent = content;
+      savedContent = content;
     } catch (e) {
       console.error(e);
       alert("Failed to read file: " + e);
     }
+  }
+
+  async function discardChanges() {
+    if (!activeFilePath) return;
+    try {
+      const content = await invoke<string>("read_file_content", { path: activeFilePath });
+      fileContent = content;
+      savedContent = content;
+    } catch (e) {
+      console.error(e);
+    }
+  }
+
+  function closeTab() {
+    if (isDirty) {
+      const choice = confirm(`Save changes to "${activeFileName}" before closing?`);
+      if (choice) {
+        saveFile().then(() => {
+          activeFilePath = null;
+          activeFileName = "";
+          fileContent = "";
+          savedContent = "";
+        });
+        return;
+      }
+    }
+    activeFilePath = null;
+    activeFileName = "";
+    fileContent = "";
+    savedContent = "";
   }
 
   async function saveFile() {
@@ -122,6 +162,7 @@
     try {
       isSaving = true;
       await invoke("write_file_content", { path: activeFilePath, content: fileContent });
+      savedContent = fileContent; // mark clean
     } catch (e) {
       console.error(e);
       alert("Failed to save file: " + e);
@@ -152,87 +193,118 @@
 />
 
 <div class="absolute inset-0 flex h-full overflow-hidden text-left bg-black">
-  {#if projectSelected}
-    <!-- Activity Bar (only visible after project opened) -->
-    <div class="w-12 bg-[#181818] border-r border-white/5 shrink-0 flex flex-col items-center py-4 gap-4 z-20">
-      <!-- svelte-ignore a11y_click_events_have_key_events -->
-      <!-- svelte-ignore a11y_no_static_element_interactions -->
-      <div 
-        class="w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer transition-all {activeSidebar === 'explorer' && showSidebar ? 'bg-indigo-500/20 text-indigo-400' : 'text-white/40 hover:text-white'}"
-        onclick={() => { activeSidebar = 'explorer'; showSidebar = activeSidebar === 'explorer' ? !showSidebar : true; }}
-        title="Explorer"
-      >
-        <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"></path></svg>
-      </div>
-      <!-- svelte-ignore a11y_click_events_have_key_events -->
-      <!-- svelte-ignore a11y_no_static_element_interactions -->
-      <div 
-        class="w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer transition-all {activeSidebar === 'scm' && showSidebar ? 'bg-indigo-500/20 text-indigo-400' : 'text-white/40 hover:text-white'}"
-        onclick={() => { activeSidebar = 'scm'; showSidebar = activeSidebar === 'scm' ? !showSidebar : true; }}
-        title="Source Control"
-      >
-        <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2"></path></svg>
-      </div>
-      <div class="flex-1"></div>
-      <!-- svelte-ignore a11y_click_events_have_key_events -->
-      <!-- svelte-ignore a11y_no_static_element_interactions -->
-      <div 
-        class="w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer transition-all {showTerminal ? 'bg-indigo-500/20 text-indigo-400' : 'text-white/40 hover:text-white'}"
-        onclick={() => showTerminal = !showTerminal}
-        title="Toggle Terminal"
-      >
-        <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
-      </div>
-      <!-- Close project button at bottom -->
+  <!-- Activity Bar — always visible, like VS Code -->
+  <div class="w-12 bg-[#181818] border-r border-white/5 shrink-0 flex flex-col items-center py-4 gap-4 z-20">
+    <!-- Explorer -->
+    <!-- svelte-ignore a11y_click_events_have_key_events -->
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <div 
+      class="w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer transition-all {activeSidebar === 'explorer' && showSidebar && projectSelected ? 'bg-indigo-500/20 text-indigo-400' : 'text-white/40 hover:text-white'}"
+      onclick={() => {
+        if (!projectSelected) return;
+        activeSidebar = 'explorer';
+        showSidebar = activeSidebar === 'explorer' ? !showSidebar : true;
+      }}
+      title={projectSelected ? "Explorer" : "Open a project first"}
+    >
+      <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"></path></svg>
+    </div>
+    <!-- Source Control -->
+    <!-- svelte-ignore a11y_click_events_have_key_events -->
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <div 
+      class="w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer transition-all {activeSidebar === 'scm' && showSidebar && projectSelected ? 'bg-indigo-500/20 text-indigo-400' : 'text-white/40 hover:text-white'}"
+      onclick={() => {
+        if (!projectSelected) return;
+        activeSidebar = 'scm';
+        showSidebar = activeSidebar === 'scm' ? !showSidebar : true;
+      }}
+      title={projectSelected ? "Source Control" : "Open a project first"}
+    >
+      <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2"></path></svg>
+    </div>
+
+    <div class="flex-1"></div>
+
+    <!-- Terminal toggle — always available -->
+    <!-- svelte-ignore a11y_click_events_have_key_events -->
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <div 
+      class="w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer transition-all {showTerminal ? 'bg-indigo-500/20 text-indigo-400' : 'text-white/40 hover:text-white'}"
+      onclick={() => showTerminal = !showTerminal}
+      title="Toggle Terminal (⌘`)"
+    >
+      <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+    </div>
+    <!-- Close Project — only shown when project is open -->
+    {#if projectSelected}
       <!-- svelte-ignore a11y_click_events_have_key_events -->
       <!-- svelte-ignore a11y_no_static_element_interactions -->
       <div 
         class="w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer transition-all text-white/40 hover:text-rose-400"
-        onclick={() => { projectSelected = false; showSidebar = false; activeFilePath = null; fileContent = ''; }}
+        onclick={() => { projectSelected = false; showSidebar = false; activeFilePath = null; fileContent = ''; savedContent = ''; }}
         title="Close Project"
       >
         <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
       </div>
-    </div>
+    {/if}
+  </div>
 
-    <!-- Sidebar (collapsible) -->
-    {#if showSidebar}
-      {#if activeSidebar === 'explorer'}
-        <FileExplorer
-          onSelectFile={openFile}
-          currentFile={activeFilePath}
-          basePath={selectedProjectPath}
-          onProjectChange={(selected) => { if (!selected) { projectSelected = false; showSidebar = false; } }}
-        />
-      {:else}
-        <SourceControl onSelectFile={openFile} />
-      {/if}
+  <!-- Sidebar — only when project is open -->
+  {#if projectSelected && showSidebar}
+    {#if activeSidebar === 'explorer'}
+      <FileExplorer
+        onSelectFile={openFile}
+        currentFile={activeFilePath}
+        basePath={selectedProjectPath}
+        {onAddToChat}
+        onProjectChange={(selected) => { if (!selected) { projectSelected = false; showSidebar = false; } }}
+      />
+    {:else}
+      <SourceControl onSelectFile={openFile} />
     {/if}
   {/if}
+
 
   <!-- Editor Area -->
   <div class="flex-1 flex flex-col min-w-0 bg-[#1e1e1e]">
     {#if activeFilePath}
-      <!-- Editor Header -->
-      <div class="h-10 flex border-b border-white/5 bg-[#252526] shrink-0 items-center justify-between pr-4 select-none">
-        <div class="flex h-full">
-          <div class="px-4 flex items-center gap-2 border-x border-white/5 bg-[#1e1e1e] text-indigo-300 text-sm font-mono min-w-32 border-t-2 border-t-indigo-500 shadow-[0_-1px_0_0_rgba(255,255,255,0.05)_inset]">
-            <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"></path></svg>
-            {activeFileName}
+      <!-- VS Code-style Tab Bar -->
+      <div class="flex border-b border-white/5 bg-[#252526] shrink-0 items-stretch select-none">
+        <!-- Tab -->
+        <!-- svelte-ignore a11y_no_static_element_interactions -->
+        <!-- svelte-ignore a11y_click_events_have_key_events -->
+        <div class="flex items-center h-9 border-r border-white/5 bg-[#1e1e1e] border-t-2 border-t-indigo-500 px-3 gap-1.5 min-w-0 max-w-[220px] group relative">
+          <!-- File icon -->
+          <svg class="w-3.5 h-3.5 shrink-0 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"></path></svg>
+          <!-- Filename -->
+          <span class="text-indigo-200 text-xs font-mono truncate flex-1 mr-1">{activeFileName}</span>
+          <!-- Unsaved dot OR close button -->
+          <!-- svelte-ignore a11y_click_events_have_key_events -->
+          <!-- svelte-ignore a11y_no_static_element_interactions -->
+          <div class="w-4 h-4 flex items-center justify-center shrink-0 relative">
+            {#if isDirty}
+              <!-- Dot (unsaved): hover reveals × -->
+              <span
+                class="w-2 h-2 rounded-full bg-white/70 group-hover:opacity-0 transition-opacity absolute"
+                title="Unsaved changes"
+              ></span>
+              <span
+                onclick={closeTab}
+                class="text-white/50 hover:text-white text-[11px] leading-none opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer absolute select-none"
+                title="Close (unsaved)"
+              >✕</span>
+            {:else}
+              <!-- Clean: hover reveals × -->
+              <span
+                onclick={closeTab}
+                class="text-white/30 hover:text-white text-[11px] leading-none opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer select-none"
+                title="Close"
+              >✕</span>
+            {/if}
           </div>
         </div>
-        <button 
-          class="text-xs px-3 py-1.5 rounded bg-indigo-500/20 text-indigo-300 hover:bg-indigo-500/30 hover:text-indigo-200 transition-colors flex items-center gap-1.5 font-medium border border-indigo-500/30"
-          onclick={saveFile}
-          disabled={isSaving}
-        >
-          {#if isSaving}
-            ⏳ Saving...
-          {:else}
-            <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"></path></svg>
-            Save
-          {/if}
-        </button>
+
       </div>
 
       <!-- Monaco Editor -->
@@ -347,7 +419,7 @@
           </button>
         </div>
         <div class="flex-1 relative overflow-hidden">
-          <TerminalPanel />
+          <TerminalPanel projectPath={selectedProjectPath} />
         </div>
       </div>
     {/if}

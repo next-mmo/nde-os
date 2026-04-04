@@ -92,9 +92,11 @@
 
   $effect(() => {
     if (editor && !ignoreEvent && editor.getValue() !== content) {
+      ignoreEvent = true;
       const pos = editor.getPosition();
       editor.setValue(content);
       if (pos) editor.setPosition(pos);
+      ignoreEvent = false;
     }
   });
 
