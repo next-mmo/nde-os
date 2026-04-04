@@ -7,6 +7,7 @@
   import SourceControl from './SourceControl.svelte';
   import CodeEditor from './CodeEditor.svelte';
   import TerminalPanel from './TerminalPanel.svelte';
+  import MarkdownPreview from './MarkdownPreview.svelte';
 
   let { activeFilePath = $bindable(null), fileContent = $bindable(""), onAddToChat } = $props<{
     activeFilePath?: string | null;
@@ -33,6 +34,11 @@
   let savedContent = $state<string>(""); // tracks last persisted content
 
   let isDirty = $derived(activeFilePath !== null && fileContent !== savedContent);
+  let isMarkdown = $derived(activeFileName.toLowerCase().endsWith('.md'));
+
+  // md view mode: 'edit' | 'preview' | 'split' — resets when switching away from .md
+  let mdViewMode = $state<'edit' | 'preview' | 'split'>('edit');
+  $effect(() => { if (!isMarkdown) mdViewMode = 'edit'; });
 
   // Auto-restore project and sidebars if a file is opened programmatically
   $effect(() => {
@@ -305,15 +311,66 @@
           </div>
         </div>
 
+        <!-- Markdown view-mode toggle (only for .md files) -->
+        {#if isMarkdown}
+          <div class="flex items-center gap-0.5 ml-auto mr-2">
+            <button
+              onclick={() => mdViewMode = 'edit'}
+              title="Edit"
+              class="flex items-center gap-1 px-2 py-1 rounded text-[10px] transition-colors {mdViewMode === 'edit' ? 'bg-white/10 text-white' : 'text-white/40 hover:text-white hover:bg-white/5'}"
+            >
+              <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"></path></svg>
+              Edit
+            </button>
+            <button
+              onclick={() => mdViewMode = 'split'}
+              title="Split"
+              class="flex items-center gap-1 px-2 py-1 rounded text-[10px] transition-colors {mdViewMode === 'split' ? 'bg-white/10 text-white' : 'text-white/40 hover:text-white hover:bg-white/5'}"
+            >
+              <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 0v10"></path></svg>
+              Split
+            </button>
+            <button
+              onclick={() => mdViewMode = 'preview'}
+              title="Preview"
+              class="flex items-center gap-1 px-2 py-1 rounded text-[10px] transition-colors {mdViewMode === 'preview' ? 'bg-white/10 text-white' : 'text-white/40 hover:text-white hover:bg-white/5'}"
+            >
+              <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg>
+              Preview
+            </button>
+          </div>
+        {/if}
       </div>
 
-      <!-- Monaco Editor -->
-      <div class="flex-1 relative">
-        <CodeEditor 
-          content={fileContent} 
-          language={activeLanguage()} 
-          onChange={(val) => fileContent = val} 
-        />
+      <!-- Editor / Preview area: relative anchor, children are absolute -->
+      <div class="flex-1 relative min-h-0 overflow-hidden">
+        <!-- Edit pane -->
+        {#if mdViewMode === 'edit'}
+          <div class="absolute inset-0">
+            <CodeEditor
+              content={fileContent}
+              language={activeLanguage()}
+              onChange={(val) => fileContent = val}
+            />
+          </div>
+        {:else if mdViewMode === 'split'}
+          <!-- Left: editor -->
+          <div class="absolute top-0 bottom-0 left-0 w-1/2 border-r border-white/10">
+            <CodeEditor
+              content={fileContent}
+              language={activeLanguage()}
+              onChange={(val) => fileContent = val}
+            />
+          </div>
+          <!-- Right: preview -->
+          <div class="absolute top-0 bottom-0 right-0 w-1/2">
+            <MarkdownPreview content={fileContent} />
+          </div>
+        {:else if mdViewMode === 'preview'}
+          <div class="absolute inset-0">
+            <MarkdownPreview content={fileContent} />
+          </div>
+        {/if}
       </div>
     {:else}
       <div class="flex-1 flex flex-col items-center justify-center text-white/30 gap-6">
@@ -322,7 +379,7 @@
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"></path>
           </svg>
         </div>
-        <div class="text-3xl text-white/50 font-light tracking-wide">OpenCode IDE</div>
+        <div class="text-3xl text-white/50 font-light tracking-wide">NDE IDE</div>
         <div class="flex flex-col items-center gap-3 mt-4 text-sm text-white/40">
           {#if projectSelected}
             <p>Select a file from the explorer to start editing</p>

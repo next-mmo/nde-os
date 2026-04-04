@@ -5,19 +5,45 @@ import { join } from "node:path";
 declare const process: any;
 
 const testDataDir = join(process.cwd(), ".playwright-localappdata");
-const serverCommand =
-  process.platform === "win32"
-    ? `powershell -NoProfile -Command "Remove-Item -Recurse -Force '${testDataDir}' -ErrorAction SilentlyContinue; New-Item -ItemType Directory -Force '${testDataDir}' | Out-Null; cargo run -p ai-launcher-server"`
-    : `rm -rf '${testDataDir}' && mkdir -p '${testDataDir}' && cargo run -p ai-launcher-server`;
+const isMac = process.platform === "darwin";
+const isWin = process.platform === "win32";
+
+const serverCommand = isWin
+  ? `powershell -NoProfile -Command "Remove-Item -Recurse -Force '${testDataDir}' -ErrorAction SilentlyContinue; New-Item -ItemType Directory -Force '${testDataDir}' | Out-Null; cargo run -p ai-launcher-server"`
+  : `rm -rf '${testDataDir}' && mkdir -p '${testDataDir}' && cargo run -p ai-launcher-server`;
+
+// On macOS, WKWebView has no CDP endpoint.
+// We check port 5174 (Vite dev server) instead of 9222.
+// Fixtures.ts will fall back to localhost:5174 when 9222 is unavailable.
+const desktopWebServer = isMac
+  ? {
+      // macOS: just verify the Vite dev server is running
+      command: "pnpm dev",
+      port: 5174,
+      reuseExistingServer: true,
+      timeout: 120000,
+      cwd: ".",
+      env: { ...process.env },
+    }
+  : {
+      // Windows/Linux: Tauri exposes CDP via WebView2 remote debugging
+      command: "pnpm tauri dev",
+      port: 9222,
+      reuseExistingServer: true,
+      timeout: 300000,
+      env: {
+        ...process.env,
+        WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: "--remote-debugging-port=9222",
+        HOME: testDataDir,
+        LOCALAPPDATA: testDataDir,
+      },
+    };
 
 export default defineConfig({
   testDir: "./e2e",
   fullyParallel: false,
-  // Fail the build on CI if you accidentally left test.only in the source code.
   forbidOnly: !!process.env.CI,
-  // Retry on CI only
   retries: process.env.CI ? 2 : 0,
-  // Opt out of parallel tests on CI.
   workers: 1,
   reporter: [["html", { open: "never" }], ["list"]],
 
@@ -47,17 +73,6 @@ export default defineConfig({
         LOCALAPPDATA: testDataDir,
       },
     },
-    {
-      command: "pnpm tauri dev",
-      port: 9222,
-      reuseExistingServer: true,
-      timeout: 300000,
-      env: {
-        ...process.env,
-        WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: "--remote-debugging-port=9222",
-        HOME: testDataDir,
-        LOCALAPPDATA: testDataDir,
-      },
-    }
+    desktopWebServer,
   ],
 });
