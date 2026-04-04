@@ -34,18 +34,24 @@
   let { app_id, mouse_x }: Props = $props();
 
   let imageEl = $state<HTMLImageElement>();
+  let fallbackEl = $state<HTMLDivElement>();
   let distance = $state(distanceLimit + 1);
   let srcFallback = $state(false);
 
   const getWidth = interpolate(distanceInput, widthOutput);
   const width = $derived(getWidth(distance));
 
+  // Track whether mouse is actively over the dock (mouse_x !== null)
+  // Use a faster transition when mouse enters, slightly slower when leaving for smoothness
+  const isHovering = $derived(mouse_x !== null);
+
   $effect(() => {
-    if (!imageEl || mouse_x === null) {
+    const el = srcFallback ? fallbackEl : imageEl;
+    if (!el || mouse_x === null) {
       distance = distanceLimit + 1;
       return;
     }
-    const rect = imageEl.getBoundingClientRect();
+    const rect = el.getBoundingClientRect();
     distance = mouse_x - (rect.left + rect.width / 2);
   });
 
@@ -68,14 +74,32 @@
   }
 </script>
 
-<button class="relative flex flex-col items-center justify-end gap-1 group/dockitem p-0 bg-transparent border-none appearance-none outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded-2xl" aria-label={label} onclick={handleClick}>
+<button
+  class="relative flex flex-col items-center justify-end gap-1 group/dockitem p-0 bg-transparent border-none appearance-none outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded-2xl"
+  aria-label={label}
+  onclick={handleClick}
+>
   <p class="absolute bottom-[calc(100%+0.85rem)] whitespace-nowrap m-0 hidden group-hover/dockitem:block group-focus-visible/dockitem:block px-3 py-2 rounded-[0.7rem] bg-white/90 dark:bg-gray-800/90 backdrop-blur-md border border-black/10 dark:border-white/10 shadow-xl text-sm font-medium z-50 text-black dark:text-white">
     {label}
   </p>
   {#if !srcFallback}
-    <img class="w-[3.625rem] will-change-transform drop-shadow-md" bind:this={imageEl} src="/app-icons/{app_id}/256.webp" alt="" style:width={`${width / 16}rem`} onerror={() => srcFallback = true} />
+    <img
+      class="will-change-[width] drop-shadow-md"
+      bind:this={imageEl}
+      src="/app-icons/{app_id}/256.webp"
+      alt=""
+      style:width="{width / 16}rem"
+      style:transition="width {isHovering ? '0.15s' : '0.35s'} cubic-bezier(0.32, 0.72, 0, 1)"
+      onerror={() => srcFallback = true}
+    />
   {:else}
-    <div class="w-[3.625rem] h-[3.625rem] will-change-transform rounded-[20%] bg-gradient-to-br from-blue-500/80 to-blue-700/80 grid place-items-center text-white font-bold text-xl shadow-md border border-white/20" style:width={`${width / 16}rem`} style:height={`${width / 16}rem`}>
+    <div
+      class="will-change-[width,height] rounded-[20%] bg-gradient-to-br from-blue-500/80 to-blue-700/80 grid place-items-center text-white font-bold text-xl shadow-md border border-white/20"
+      bind:this={fallbackEl}
+      style:width="{width / 16}rem"
+      style:height="{width / 16}rem"
+      style:transition="width {isHovering ? '0.15s' : '0.35s'} cubic-bezier(0.32, 0.72, 0, 1), height {isHovering ? '0.15s' : '0.35s'} cubic-bezier(0.32, 0.72, 0, 1)"
+    >
       {label.slice(0, 2).toUpperCase()}
     </div>
   {/if}
