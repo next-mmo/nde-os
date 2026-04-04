@@ -103,10 +103,10 @@
   });
 </script>
 
-<div class="absolute inset-0 flex flex-col bg-[#1e1e1e]">
+<div class="absolute inset-0 flex flex-col bg-[#282c34]">
   <!-- Breadcrumb: shows resolved project path in terminal header -->
   {#if resolvedCwd}
-    <div class="flex items-center gap-1.5 px-3 py-1 bg-[#252526] border-b border-white/5 text-[10px] text-white/30 font-mono shrink-0 select-none">
+    <div class="flex items-center gap-1.5 px-3 py-1 bg-[#21252b] border-b border-[#181a1f] text-[10px] text-white/30 font-mono shrink-0 select-none">
       <svg class="w-3 h-3 text-white/20 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"></path>
       </svg>

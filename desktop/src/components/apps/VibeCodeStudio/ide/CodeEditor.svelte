@@ -1,11 +1,26 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   
-  let { content = "", language = "typescript", onChange, readOnly = false } = $props<{
+  let { 
+    content = "", 
+    language = "typescript", 
+    onChange, 
+    readOnly = false,
+    fontSize = 14,
+    wordWrap = "off",
+    minimap = false,
+    tabSize = 2,
+    theme = "one-dark-pro"
+  } = $props<{
     content?: string;
     language?: string;
     onChange?: (value: string) => void;
     readOnly?: boolean;
+    fontSize?: number;
+    wordWrap?: "on" | "off";
+    minimap?: boolean;
+    tabSize?: number;
+    theme?: string;
   }>();
 
   let container: HTMLDivElement | undefined = $state();
@@ -70,11 +85,15 @@
       { token: 'entity.name.function',    foreground: '61afef' },
       { token: 'support.function',        foreground: '61afef' },
       { token: 'meta.function-call',      foreground: '61afef' },
+      { token: 'function',                foreground: '61afef' },
+      { token: 'method',                  foreground: '61afef' },
       // Variables & parameters
       { token: 'variable',                foreground: 'e06c75' },
       { token: 'variable.other',          foreground: 'e06c75' },
       { token: 'variable.parameter',      foreground: 'abb2bf' },
       { token: 'variable.language',       foreground: 'e06c75' },
+      { token: 'identifier',              foreground: 'abb2bf' },
+      { token: 'property',                foreground: 'e06c75' },
       // Operators / delimiters
       { token: 'operator',                foreground: '56b6c2' },
       { token: 'keyword.operator.assignment', foreground: '56b6c2' },
@@ -93,6 +112,8 @@
       { token: 'string.md',               foreground: '98c379' },
       { token: 'emphasis',                foreground: 'abb2bf', fontStyle: 'italic' },
       { token: 'strong',                  foreground: 'e6edf3', fontStyle: 'bold' },
+      { token: 'variable.md',             foreground: 'e06c75' },
+      { token: 'variable.source.md',      foreground: 'e5c07b' },
       // Punctuation
       { token: 'punctuation',             foreground: 'abb2bf' },
     ];
@@ -141,10 +162,12 @@
       language,
       theme: 'one-dark-pro',
       automaticLayout: true,
-      minimap: { enabled: false },
+      minimap: { enabled: minimap },
       scrollBeyondLastLine: false,
       readOnly,
-      fontSize: 14,
+      fontSize: fontSize,
+      wordWrap: wordWrap,
+      tabSize: tabSize,
       fontFamily: '"Cascadia Code", "JetBrains Mono", "Fira Code", Consolas, monospace',
       fontLigatures: true,
       lineHeight: 22,
@@ -213,6 +236,23 @@
   $effect(() => {
     if (monaco && editor) {
       monaco.editor.setModelLanguage(editor.getModel(), language);
+    }
+  });
+
+  $effect(() => {
+    if (editor) {
+      editor.updateOptions({
+        wordWrap,
+        fontSize,
+        minimap: { enabled: minimap },
+        tabSize
+      });
+    }
+  });
+
+  $effect(() => {
+    if (monaco) {
+      monaco.editor.setTheme(theme);
     }
   });
 

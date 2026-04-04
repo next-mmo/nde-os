@@ -337,7 +337,7 @@
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div 
-  class="flex flex-col h-full bg-black/40 text-[13px] font-sans w-64 border-r border-white/10 shrink-0 select-none overflow-y-auto relative"
+  class="flex flex-col h-full bg-[#21252b] text-[13px] font-sans w-64 border-r border-[#181a1f] shrink-0 select-none overflow-y-auto relative"
   oncontextmenu={(e) => {
     if (!e.defaultPrevented && projectRoot) {
       handleContextMenu(e, null);
@@ -349,7 +349,7 @@
 >
   {#if projectRoot}
     <!-- Activity Top Bar -->
-    <div class="px-4 py-2 text-xs font-semibold text-white/50 tracking-wider sticky top-0 bg-black/60 backdrop-blur z-20 flex items-center justify-between border-b border-white/5">
+    <div class="px-4 py-2 text-xs font-semibold text-white/50 tracking-wider sticky top-0 bg-[#21252b] backdrop-blur z-20 flex items-center justify-between border-b border-[#181a1f]">
       <span class="truncate uppercase max-w-[100px]" title={projectRoot}>{projectRoot.split(/[/\\]/).pop() || 'Explorer'}</span>
       <div class="flex items-center gap-1.5 hover:text-white/60">
         <!-- New File -->

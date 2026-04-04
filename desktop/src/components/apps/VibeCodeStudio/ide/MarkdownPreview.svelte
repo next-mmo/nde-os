@@ -10,7 +10,7 @@
 </script>
 
 <!-- GitHub-dark markdown preview -->
-<div class="absolute inset-0 overflow-y-auto px-8 py-6 bg-[#1e1e1e]">
+<div class="absolute inset-0 overflow-y-auto px-8 py-6 bg-[#282c34]">
   <div class="max-w-3xl mx-auto markdown-body">
     {@html html}
   </div>
