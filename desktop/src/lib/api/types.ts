@@ -238,3 +238,33 @@ export interface MemoryEntry {
   value: string;
   created_at: string;
 }
+
+// ── Service Config types ────────────────────────────────────────────────────
+
+export type ConfigFieldType = "text" | "number" | "password" | "select" | "toggle" | "path";
+
+export interface ConfigField {
+  key: string;
+  label: string;
+  description: string;
+  fieldType: ConfigFieldType;
+  default: unknown;
+  options?: string[];
+  required?: boolean;
+}
+
+export interface ServiceConfig {
+  serviceId: string;
+  fields: ConfigField[];
+  values: Record<string, unknown>;
+}
+
+// ── OpenViking types ────────────────────────────────────────────────────────
+
+export interface VikingStatus {
+  connected: boolean;
+  process_managed: boolean;
+  port: number;
+  status?: Record<string, unknown>;
+  message?: string;
+}

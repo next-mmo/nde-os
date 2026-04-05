@@ -11,6 +11,7 @@ use tokio::process::{Child, Command};
 
 use super::client::VikingClient;
 use super::config::VikingConfig;
+use crate::uv_env;
 
 /// Manages the OpenViking server lifecycle.
 pub struct VikingProcess {
@@ -55,23 +56,27 @@ impl VikingProcess {
             }
         }
 
-        // Try to install via uv (fast) first, then pip
-        tracing::info!("Installing OpenViking via uv...");
-        let install_result = if cfg!(windows) {
-            Command::new("cmd")
-                .args(["/C", "uv pip install --system openviking --upgrade"])
-                .stdout(Stdio::piped())
-                .stderr(Stdio::piped())
-                .output()
-                .await
-        } else {
-            Command::new("sh")
-                .args(["-c", "uv pip install --system openviking --upgrade"])
-                .stdout(Stdio::piped())
-                .stderr(Stdio::piped())
-                .output()
-                .await
+        // Resolve uv binary via the existing bootstrapper (bundled → system → download)
+        let uv_bin = match uv_env::ensure_uv(&self.data_dir) {
+            Ok(path) => {
+                tracing::info!("Using uv at: {}", path.display());
+                path
+            }
+            Err(e) => {
+                tracing::warn!("Cannot find or download uv: {}", e);
+                // Fall through to pip-only fallback below
+                return self.pip_fallback_install().await;
+            }
         };
+
+        // Install via uv with the resolved binary path
+        tracing::info!("Installing OpenViking via uv...");
+        let install_result = Command::new(&uv_bin)
+            .args(["pip", "install", "--system", "openviking", "--upgrade"])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .await;
 
         match install_result {
             Ok(output) if output.status.success() => {
@@ -81,42 +86,46 @@ impl VikingProcess {
             Ok(output) => {
                 let stderr = String::from_utf8_lossy(&output.stderr);
                 tracing::warn!("uv install failed ({}): {}", output.status, stderr);
-                // Fallback to pip
-                tracing::info!("Trying pip fallback...");
-                let pip_result = if cfg!(windows) {
-                    Command::new("cmd")
-                        .args(["/C", "pip install openviking --upgrade"])
-                        .stdout(Stdio::piped())
-                        .stderr(Stdio::piped())
-                        .output()
-                        .await
-                } else {
-                    Command::new("sh")
-                        .args(["-c", "pip install openviking --upgrade"])
-                        .stdout(Stdio::piped())
-                        .stderr(Stdio::piped())
-                        .output()
-                        .await
-                };
-
-                match pip_result {
-                    Ok(output) if output.status.success() => {
-                        tracing::info!("OpenViking installed successfully via pip");
-                        Ok(true)
-                    }
-                    Ok(output) => {
-                        let stderr = String::from_utf8_lossy(&output.stderr);
-                        tracing::warn!("pip install failed ({}): {}", output.status, stderr);
-                        Ok(false)
-                    }
-                    Err(e) => {
-                        tracing::warn!("Cannot run pip: {}", e);
-                        Ok(false)
-                    }
-                }
+                self.pip_fallback_install().await
             }
             Err(e) => {
-                tracing::warn!("Cannot run uv: {}", e);
+                tracing::warn!("Cannot run uv binary: {}", e);
+                self.pip_fallback_install().await
+            }
+        }
+    }
+
+    /// Fallback: install via system pip.
+    async fn pip_fallback_install(&self) -> Result<bool> {
+        tracing::info!("Trying pip fallback...");
+        let pip_result = if cfg!(windows) {
+            Command::new("cmd")
+                .args(["/C", "pip install openviking --upgrade"])
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .output()
+                .await
+        } else {
+            Command::new("sh")
+                .args(["-c", "pip install openviking --upgrade"])
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .output()
+                .await
+        };
+
+        match pip_result {
+            Ok(output) if output.status.success() => {
+                tracing::info!("OpenViking installed successfully via pip");
+                Ok(true)
+            }
+            Ok(output) => {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                tracing::warn!("pip install failed ({}): {}", output.status, stderr);
+                Ok(false)
+            }
+            Err(e) => {
+                tracing::warn!("Cannot run pip: {}", e);
                 Ok(false)
             }
         }
@@ -140,33 +149,82 @@ impl VikingProcess {
 
         let conf_path = conf_dir.join("ov.conf");
 
-        // Start the server
-        let child = if cfg!(windows) {
-            Command::new("cmd")
-                .args(["/C", "openviking-server"])
-                .env("OPENVIKING_CONFIG_FILE", &conf_path)
-                .stdout(Stdio::piped())
-                .stderr(Stdio::piped())
-                .kill_on_drop(true)
-                .spawn()
-                .context("Failed to start openviking-server")?
-        } else {
-            Command::new("sh")
-                .args(["-c", "openviking-server"])
-                .env("OPENVIKING_CONFIG_FILE", &conf_path)
-                .stdout(Stdio::piped())
-                .stderr(Stdio::piped())
-                .kill_on_drop(true)
-                .spawn()
-                .context("Failed to start openviking-server")?
-        };
+        // Start the server — pass --config and --port as CLI args
+        let conf_str = conf_path.to_string_lossy().to_string();
+        let port_str = self.config.port.to_string();
+
+        tracing::info!(
+            "OpenViking launch: python -m openviking_cli.server_bootstrap --config {} --port {} --host 127.0.0.1",
+            conf_str, port_str
+        );
+
+        // First, do a quick test run to check the module is importable.
+        // Call python directly — avoids cmd /C quote-escaping issues on Windows.
+        let test_output = Command::new("python")
+            .args(["-c", "import openviking_cli.server_bootstrap; print('ok')"])
+            .output()
+            .await;
+
+        match &test_output {
+            Ok(out) => {
+                let stdout = String::from_utf8_lossy(&out.stdout);
+                let stderr = String::from_utf8_lossy(&out.stderr);
+                tracing::info!("OpenViking import test: status={}, stdout={}, stderr={}", out.status, stdout.trim(), stderr.trim());
+                if !out.status.success() {
+                    return Err(anyhow::anyhow!(
+                        "OpenViking module not importable: {}", stderr.trim()
+                    ));
+                }
+            }
+            Err(e) => {
+                return Err(anyhow::anyhow!("Cannot run python: {}", e));
+            }
+        }
+
+        // Spawn the server process directly — no shell wrapper needed.
+        let child = Command::new("python")
+            .args([
+                "-m", "openviking_cli.server_bootstrap",
+                "--config", &conf_str,
+                "--port", &port_str,
+                "--host", "127.0.0.1",
+            ])
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+            .kill_on_drop(true)
+            .spawn()
+            .context("Failed to spawn openviking server process")?;
 
         self.child = Some(child);
-        tracing::info!("OpenViking server started on port {}", self.config.port);
+        tracing::info!("OpenViking server spawned on port {} (waiting for health...)", self.config.port);
 
-        // Wait for health check (up to 15 seconds)
+        // Wait for health check (up to 30 seconds)
         let client = VikingClient::new(&self.config.base_url());
-        for i in 0..30 {
+        for i in 0..60 {
+            // Check if process exited prematurely
+            let mut crashed = false;
+            if let Some(child) = &mut self.child {
+                if let Ok(Some(_)) = child.try_wait() {
+                    crashed = true;
+                }
+            }
+            if crashed {
+                let mut stderr_msg = String::new();
+                if let Some(mut dead_child) = self.child.take() {
+                    if let Some(mut stderr) = dead_child.stderr.take() {
+                        use tokio::io::AsyncReadExt;
+                        let _ = stderr.read_to_string(&mut stderr_msg).await;
+                    }
+                    let status = dead_child.try_wait().ok().flatten();
+                    let code = status.map(|s| s.to_string()).unwrap_or_else(|| "unknown".into());
+                    tracing::error!("OpenViking crashed (status {}): {}", code, stderr_msg.trim());
+                    return Err(anyhow::anyhow!(
+                        "OpenViking server process exited with {}: {}",
+                        code, stderr_msg.trim()
+                    ));
+                }
+            }
+
             tokio::time::sleep(std::time::Duration::from_millis(500)).await;
             if client.health().await.unwrap_or(false) {
                 tracing::info!("OpenViking server healthy after {}ms", (i + 1) * 500);
@@ -174,7 +232,7 @@ impl VikingProcess {
             }
         }
 
-        tracing::warn!("OpenViking server started but health check timed out after 15s");
+        tracing::warn!("OpenViking server started but health check timed out after 30s");
         Ok(())
     }
 
@@ -204,6 +262,25 @@ impl VikingProcess {
     /// Get the config reference.
     pub fn config(&self) -> &VikingConfig {
         &self.config
+    }
+
+    /// Check synchronously if `openviking-server` is available on the system.
+    /// Used by the service registry for detection without an async runtime.
+    pub fn is_installed_sync(&self) -> bool {
+        let check = if cfg!(windows) {
+            std::process::Command::new("cmd")
+                .args(["/C", "where openviking-server"])
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status()
+        } else {
+            std::process::Command::new("sh")
+                .args(["-c", "which openviking-server"])
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status()
+        };
+        check.map(|s| s.success()).unwrap_or(false)
     }
 }
 

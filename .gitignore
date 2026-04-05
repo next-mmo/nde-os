@@ -28,3 +28,5 @@ target-codex-dub-check/
 target-codex-dub-check/debug/
 target-codex-dub-check
 .omx
+desktop/test_output.txt
+openviking_workspace

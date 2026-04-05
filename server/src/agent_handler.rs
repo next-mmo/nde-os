@@ -1,6 +1,6 @@
 use ai_launcher_core::agent;
 use ai_launcher_core::agent::config::AgentConfig;
-use ai_launcher_core::memory::{ConversationStore, MemoryManager};
+use ai_launcher_core::memory::MemoryManager;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;

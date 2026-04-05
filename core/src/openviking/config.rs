@@ -37,13 +37,79 @@ impl Default for VikingConfig {
         Self {
             port: 1933,
             workspace: PathBuf::from("openviking_workspace"),
-            embedding: None,
+            embedding: Some(EmbeddingConfig {
+                provider: "litellm".into(),
+                model: "qwen2.5-0.5b-instruct".into(),
+                api_key: None,
+                api_base: Some("http://127.0.0.1:8090/v1".into()),
+                dimension: 512,
+            }),
             vlm: None,
         }
     }
 }
 
 impl VikingConfig {
+    /// Build a VikingConfig from persisted service hub settings.
+    /// Falls back to `Default` for any missing values.
+    pub fn from_service_config(data_dir: &Path) -> Self {
+        let cfg = crate::services::config::get_service_config("openviking", data_dir)
+            .ok();
+        let vals = cfg.as_ref().map(|c| &c.values);
+
+        let defaults = Self::default();
+
+        let port = vals
+            .and_then(|v| v.get("port"))
+            .and_then(|v| v.as_u64())
+            .map(|v| v as u16)
+            .unwrap_or(defaults.port);
+
+        let provider = vals
+            .and_then(|v| v.get("embedding_provider"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("litellm")
+            .to_string();
+
+        let model = vals
+            .and_then(|v| v.get("embedding_model"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("qwen2.5-0.5b-instruct")
+            .to_string();
+
+        let dimension = vals
+            .and_then(|v| v.get("embedding_dimension"))
+            .and_then(|v| v.as_u64())
+            .map(|v| v as u32)
+            .unwrap_or(512);
+
+        let api_key = vals
+            .and_then(|v| v.get("embedding_api_key"))
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty())
+            .map(String::from);
+
+        let api_base = vals
+            .and_then(|v| v.get("embedding_api_base"))
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty())
+            .map(String::from)
+            .or_else(|| Some("http://127.0.0.1:8090/v1".into()));
+
+        Self {
+            port,
+            workspace: defaults.workspace,
+            embedding: Some(EmbeddingConfig {
+                provider,
+                model,
+                api_key,
+                api_base,
+                dimension,
+            }),
+            vlm: None,
+        }
+    }
+
     /// Base URL for the OpenViking HTTP API.
     pub fn base_url(&self) -> String {
         format!("http://localhost:{}", self.port)
@@ -55,6 +121,10 @@ impl VikingConfig {
         let conf_path = conf_dir.join("ov.conf");
 
         let mut conf = serde_json::json!({
+            "server": {
+                "host": "127.0.0.1",
+                "port": self.port
+            },
             "storage": {
                 "workspace": self.workspace.to_string_lossy()
             },
@@ -116,6 +186,19 @@ mod tests {
         let config = VikingConfig::default();
         assert_eq!(config.port, 1933);
         assert_eq!(config.base_url(), "http://localhost:1933");
+        assert!(config.embedding.is_some(), "default must include embedding config");
+    }
+
+    #[test]
+    fn test_default_conf_has_embedding() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut config = VikingConfig::default();
+        config.workspace = dir.path().join("viking_data");
+        let conf_path = config.write_server_conf(dir.path()).unwrap();
+        let content: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&conf_path).unwrap()).unwrap();
+        assert!(content.get("embedding").is_some(), "ov.conf must contain embedding section");
+        assert_eq!(content["embedding"]["dense"]["provider"], "litellm");
     }
 
     #[test]

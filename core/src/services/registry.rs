@@ -4,6 +4,7 @@ use anyhow::Result;
 use std::path::Path;
 
 use super::types::{ServiceGroup, ServiceStatus};
+use crate::openviking::VikingProcess;
 use crate::voice::runtime::VoiceRuntime;
 
 /// Detect the status of all known NDE-OS services.
@@ -17,6 +18,12 @@ pub fn detect_all(base_dir: &Path) -> Vec<ServiceStatus> {
     let uv_installed = crate::voice::runtime::resolve_system_command("uv").is_some()
         || base_dir.join("uv").exists()
         || base_dir.join("uv.exe").exists();
+
+    // OpenViking: detect if the package is installed in the workspace venv
+    let viking_config = crate::openviking::config::VikingConfig::from_service_config(base_dir);
+    let viking_port = viking_config.port;
+    let viking_process = VikingProcess::new(viking_config, base_dir);
+    let viking_installed = viking_process.is_installed_sync();
 
     vec![
         ServiceStatus {
@@ -111,6 +118,22 @@ pub fn detect_all(base_dir: &Path) -> Vec<ServiceStatus> {
                 Some("Will be auto-bootstrapped on first install".to_string())
             },
         },
+        ServiceStatus {
+            id: "openviking".to_string(),
+            name: "OpenViking".to_string(),
+            description: "Context database for agent memory, resources & skills (semantic search, virtual FS)".to_string(),
+            group: ServiceGroup::Ai,
+            installed: viking_installed,
+            version: None,
+            path: None,
+            used_by: vec!["Agent Chat".to_string(), "MCP Tools".to_string()],
+            optional: false,
+            details: if viking_installed {
+                Some(format!("Port {}", viking_port))
+            } else {
+                Some("Not installed — will auto-install on first boot".to_string())
+            },
+        },
     ]
 }
 
@@ -125,6 +148,25 @@ pub fn install_service(service_id: &str, base_dir: &Path) -> Result<String> {
         "uv" => {
             crate::uv_env::ensure_uv(base_dir)?;
             Ok("uv bootstrapped successfully".to_string())
+        }
+        "openviking" => {
+            let config = crate::openviking::config::VikingConfig::from_service_config(base_dir);
+            let vp = VikingProcess::new(config, base_dir);
+            let rt = tokio::runtime::Handle::try_current()
+                .map(|_| None)
+                .unwrap_or_else(|_| {
+                    Some(tokio::runtime::Runtime::new().expect("tokio runtime"))
+                });
+            let result = if let Some(ref rt) = rt {
+                rt.block_on(vp.ensure_installed())
+            } else {
+                // We're inside spawn_blocking called from an async runtime
+                tokio::task::block_in_place(|| {
+                    tokio::runtime::Handle::current().block_on(vp.ensure_installed())
+                })
+            };
+            result?;
+            Ok("OpenViking installed successfully".to_string())
         }
         "ffmpeg" => {
             anyhow::bail!("FFmpeg must be installed via your system package manager (brew install ffmpeg / apt install ffmpeg / winget install ffmpeg)")
@@ -186,5 +228,6 @@ mod tests {
         assert!(ids.contains(&"python"));
         assert!(ids.contains(&"uv"));
         assert!(ids.contains(&"rvc"));
+        assert!(ids.contains(&"openviking"));
     }
 }

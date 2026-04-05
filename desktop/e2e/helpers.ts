@@ -12,7 +12,7 @@ export async function ensureCleanApp() {
 }
 
 export async function openLauncher(page: Page) {
-  const win = page.locator('[data-window="ai-launcher"]');
+  const win = page.locator('[data-window="app-nexus"]');
 
   // If the launcher was closed by a previous test, reload to reset desktop state
   const visible = await win.isVisible().catch(() => false);

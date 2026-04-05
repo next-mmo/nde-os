@@ -5,14 +5,18 @@
 //! for onboarding.
 
 use crate::state::AppState;
-use ai_launcher_core::services::{registry, types::ServiceStatus};
+use ai_launcher_core::services::{config as svc_config, registry, types::ServiceStatus};
 use ai_launcher_core::voice::runtime::VoiceRuntime;
 use ai_launcher_core::voice::types::VoiceRuntimeStatus;
+use std::collections::HashMap;
 
 /// Managed state for the voice runtime (shared across all apps).
 pub struct VoiceRuntimeState {
     pub runtime: VoiceRuntime,
 }
+
+// Re-export VikingState so lib.rs can use it from a single module
+pub use crate::commands::viking::VikingState;
 
 // ─── Service Hub Commands ──────────────────────────────────────────────────────
 
@@ -65,3 +69,38 @@ pub async fn voice_runtime_install(
         .map_err(|e| e.to_string())?
         .map_err(|e| e.to_string())
 }
+
+// ─── Service Config Commands ─────────────────────────────────────────────────
+
+/// Get the config schema + current values for a service.
+#[tauri::command]
+pub async fn service_hub_get_config(
+    app_state: tauri::State<'_, AppState>,
+    service_id: String,
+) -> Result<svc_config::ServiceConfig, String> {
+    let base_dir = app_state.base_dir.clone();
+    tokio::task::spawn_blocking(move || {
+        svc_config::get_service_config(&service_id, &base_dir)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())
+}
+
+/// Save config values for a service.
+#[tauri::command]
+pub async fn service_hub_set_config(
+    app_state: tauri::State<'_, AppState>,
+    service_id: String,
+    values: HashMap<String, serde_json::Value>,
+) -> Result<String, String> {
+    let base_dir = app_state.base_dir.clone();
+    tokio::task::spawn_blocking(move || {
+        svc_config::set_service_config(&service_id, values, &base_dir)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())?;
+    Ok("Config saved".to_string())
+}
+

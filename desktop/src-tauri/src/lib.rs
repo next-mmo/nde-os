@@ -3,14 +3,17 @@ mod state;
 
 use ai_launcher_core::shield::launcher::BrowserLauncher;
 use ai_launcher_core::voice::runtime::VoiceRuntime;
+use ai_launcher_core::openviking::{VikingProcess, config::VikingConfig};
 use commands::freecut::FreeCutState;
-use commands::service_hub::VoiceRuntimeState;
+use commands::service_hub::{VoiceRuntimeState, VikingState};
 use commands::shield::ShieldLauncherState;
 use state::AppState;
 use std::path::PathBuf;
 use std::sync::Arc;
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 use tokio::sync::Mutex;
+
+
 
 /// Cross-platform base directory
 fn get_base_dir() -> PathBuf {
@@ -44,10 +47,16 @@ pub fn run() {
     let freecut_state =
         FreeCutState::new(&base_dir).expect("Failed to initialize FreeCut state");
 
+    // Viking context database process state
+    let viking_config = VikingConfig::from_service_config(&base_dir);
+    let viking_state = VikingState {
+        process: Arc::new(Mutex::new(VikingProcess::new(viking_config, &base_dir))),
+    };
+
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
-        .setup(|app| {
+        .setup(move |app| {
             if cfg!(debug_assertions) {
                 app.handle().plugin(
                     tauri_plugin_log::Builder::default()
@@ -61,12 +70,14 @@ pub fn run() {
                     let _ = win.set_always_on_top(false);
                 }
             }
+
             Ok(())
         })
         .manage(app_state)
         .manage(shield_launcher)
         .manage(voice_runtime_state)
         .manage(freecut_state)
+        .manage(viking_state)
         .manage(commands::pty::PtyState::new())
         .invoke_handler(tauri::generate_handler![
             // system
@@ -158,8 +169,15 @@ pub fn run() {
             // service hub
             commands::service_hub::service_hub_status,
             commands::service_hub::service_hub_install,
+            commands::service_hub::service_hub_get_config,
+            commands::service_hub::service_hub_set_config,
             commands::service_hub::voice_runtime_status,
             commands::service_hub::voice_runtime_install,
+            // openviking
+            commands::viking::viking_status,
+            commands::viking::viking_install,
+            commands::viking::viking_start,
+            commands::viking::viking_stop,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

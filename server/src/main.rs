@@ -356,7 +356,7 @@ fn main() {
 
     // Phase 2: LLM Manager
     let llm_config_path = base_dir.join("llm_providers.json");
-    let mut llm_mgr = LlmManager::load_from_disk(&llm_config_path).unwrap_or_else(|_| {
+    let llm_mgr = LlmManager::load_from_disk(&llm_config_path).unwrap_or_else(|_| {
         let mut new_mgr = LlmManager::new();
         new_mgr.set_persistence_path(llm_config_path);
         new_mgr
@@ -419,24 +419,17 @@ fn main() {
     }
 
     // OpenViking process manager
-    let viking_config = ai_launcher_core::openviking::VikingConfig::default();
+    let viking_config = ai_launcher_core::openviking::VikingConfig::from_service_config(&base_dir);
     let viking_process = ai_launcher_core::openviking::VikingProcess::new(
         viking_config,
         &base_dir,
     );
     let viking = Arc::new(Mutex::new(viking_process));
 
-    // Startup: check OpenViking availability
-    {
-        let client = ai_launcher_core::openviking::VikingClient::new("http://localhost:1933");
-        let healthy = rt.block_on(async { client.health().await.unwrap_or(false) });
-        if healthy {
-            println!("  OpenViking:  connected (port 1933)");
-        } else {
-            println!("  OpenViking:  not running (POST /api/viking/install + /api/viking/start to onboard)");
-        }
-    }
-
+    // Auto-onboard OpenViking in background (non-blocking)
+    // We no longer auto-onboard OpenViking in the server background thread.
+    // The NDE-OS Desktop (Tauri) handles the auto-install and startup on boot
+    // so it can emit UI progress events via IPC.
     let server = Server::http("0.0.0.0:8080").expect("Failed to bind :8080");
 
     let os = std::env::consts::OS;

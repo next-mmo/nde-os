@@ -16,16 +16,14 @@ test.describe("Settings window", () => {
 
     const settingsWindow = page.locator('[data-window="settings"]');
     await expect(settingsWindow).toBeVisible();
-    await expect(settingsWindow.getByText("Server and runtime")).toBeVisible();
-    await expect(settingsWindow.getByText("Host")).toBeVisible();
-    await expect(settingsWindow.getByRole("heading", { name: "uv" })).toBeVisible();
-    await expect(settingsWindow.getByRole("heading", { name: "Live resources" })).toBeVisible();
-    await expect(settingsWindow.locator('[data-resource-card="memory"]')).toContainText(/Memory/);
-    await expect(settingsWindow.locator('[data-resource-card="disk"]')).toContainText(/Disk/);
+    await expect(settingsWindow.getByText("Host Information")).toBeVisible();
+    await expect(settingsWindow.getByText("OS / Arch")).toBeVisible();
+    await expect(settingsWindow.getByText("Python")).toBeVisible();
+    await expect(settingsWindow.getByText("Live Resources")).toBeVisible();
 
-    const refreshButton = settingsWindow.getByRole("button", { name: "Refresh" });
+    const refreshButton = settingsWindow.getByRole("button", { name: "Refresh Status" });
     await refreshButton.click();
-    await expect(settingsWindow.locator('[data-resource-card="memory"]')).toContainText(/%/);
-    await expect(settingsWindow.locator('[data-resource-card="disk"]')).toContainText(/%/);
+    await expect(settingsWindow.getByText(/Memory Usage/i)).toBeVisible();
+    await expect(settingsWindow.getByText(/Disk \(/i)).toBeVisible();
   });
 });

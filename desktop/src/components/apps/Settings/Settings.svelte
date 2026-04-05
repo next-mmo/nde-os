@@ -8,6 +8,7 @@
     resourceUsage,
     systemInfo,
   } from "$lib/stores/state";
+  import { onDestroy } from "svelte";
   import { desktop, toggleDockAutoHide, toggleTheme, resetIconPositions, setWallpaper, toggleStartExpanded } from "🍎/state/desktop.svelte";
 
   const wallpapers = [
@@ -18,7 +19,20 @@
   ];
 
   let refreshing = $state(false);
+  
+  interface Props {
+    window?: any;
+  }
+  let { window }: Props = $props();
+
   let activeTab = $state("general");
+
+  $effect(() => {
+    if (window?.data?.tab && window.data.tab !== activeTab) {
+      activeTab = window.data.tab;
+    }
+  });
+
   let searchQuery = $state("");
 
   const displayVersion = (value: string | null | undefined) => value?.trim() || "Not detected";

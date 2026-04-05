@@ -1,18 +1,18 @@
 <script lang="ts">
   import { fade, fly } from "svelte/transition";
   import { cubicOut } from "svelte/easing";
-  import { desktop, toggleNotificationCenter } from "🍎/state/desktop.svelte";
+  import { desktop, toggleNotificationCenter, openServiceHub } from "🍎/state/desktop.svelte";
   import { click_outside } from "🍎/actions";
-
-  // Mock notifications
-  const notifications = [
-    { id: 1, app: 'Agent Core', title: 'Task Completed', message: 'The orchestrator agent successfully finished the data pipeline.', time: 'Just now', icon: '🤖' },
-    { id: 2, app: 'App Store', title: 'Updates Available', message: 'Vibe Code Studio and 2 other apps have updates.', time: '2m ago', icon: '📦' },
-    { id: 3, app: 'System', title: 'Low Memory', message: 'Consider closing background sessions to free up RAM.', time: '1h ago', icon: '⚠️' }
-  ];
 
   function hide() {
     toggleNotificationCenter(false);
+  }
+
+  function handleNotificationClick(notif: any) {
+    if (notif.action === "open-service-hub") {
+      openServiceHub();
+      hide();
+    }
   }
 </script>
 
@@ -31,8 +31,13 @@
     </div>
 
     <div class="flex-1 overflow-y-auto overflow-x-hidden flex flex-col gap-2 px-1 pb-4">
-      {#each notifications as notif (notif.id)}
-        <div class="bg-white/60 dark:bg-black/30 backdrop-blur-md rounded-xl p-3 shadow-sm border border-black/5 dark:border-white/5 flex flex-col gap-1.5 transition-transform hover:scale-[1.02] cursor-pointer" transition:fade={{ duration: 150 }}>
+      {#if desktop.notifications.length === 0}
+        <div class="text-center text-[12px] text-gray-500 mt-4">No new notifications.</div>
+      {/if}
+      {#each desktop.notifications as notif (notif.id)}
+        <!-- svelte-ignore a11y_click_events_have_key_events -->
+        <!-- svelte-ignore a11y_no_static_element_interactions -->
+        <div class="bg-white/60 dark:bg-black/30 backdrop-blur-md rounded-xl p-3 shadow-sm border border-black/5 dark:border-white/5 flex flex-col gap-1.5 transition-transform hover:scale-[1.02] cursor-pointer" transition:fade={{ duration: 150 }} onclick={() => handleNotificationClick(notif)}>
           <div class="flex justify-between items-center opacity-80 gap-2 text-[11px] font-medium text-black dark:text-white">
             <div class="flex items-center gap-1.5"><span class="text-sm">{notif.icon}</span> {notif.app}</div>
             <span class="opacity-50 font-normal">{notif.time}</span>

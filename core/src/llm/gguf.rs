@@ -635,8 +635,32 @@ impl GgufProvider {
         }
 
         let mut proc = self.server_process.lock().await;
-        if proc.is_some() {
-            return Ok(());
+
+        // If we have a child handle, check if it's still alive
+        if let Some(child) = proc.as_mut() {
+            match child.try_wait() {
+                Ok(Some(status)) => {
+                    // Process exited — clear it so we can restart
+                    tracing::warn!("llama-server exited with {}, restarting...", status);
+                    *proc = None;
+                }
+                Ok(None) => {
+                    // Still running — wait for health check below
+                    drop(proc);
+                    for _ in 0..20 {
+                        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                        if self.health_check().await {
+                            return Ok(());
+                        }
+                    }
+                    return Err(anyhow::anyhow!(
+                        "llama-server process running but not responding"
+                    ));
+                }
+                Err(_) => {
+                    *proc = None;
+                }
+            }
         }
 
         let server_bin = self.ensure_server_binary().await?;
