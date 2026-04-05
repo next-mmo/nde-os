@@ -2,7 +2,9 @@ mod commands;
 mod state;
 
 use ai_launcher_core::shield::launcher::BrowserLauncher;
+use ai_launcher_core::voice::runtime::VoiceRuntime;
 use commands::freecut::FreeCutState;
+use commands::service_hub::VoiceRuntimeState;
 use commands::shield::ShieldLauncherState;
 use state::AppState;
 use std::path::PathBuf;
@@ -33,6 +35,11 @@ pub fn run() {
         launcher: Arc::new(Mutex::new(BrowserLauncher::new(&base_dir))),
     };
 
+    // Global voice runtime state (shared across all apps)
+    let voice_runtime_state = VoiceRuntimeState {
+        runtime: VoiceRuntime::new(&base_dir),
+    };
+
     // FreeCut video editor state
     let freecut_state =
         FreeCutState::new(&base_dir).expect("Failed to initialize FreeCut state");
@@ -58,6 +65,7 @@ pub fn run() {
         })
         .manage(app_state)
         .manage(shield_launcher)
+        .manage(voice_runtime_state)
         .manage(freecut_state)
         .manage(commands::pty::PtyState::new())
         .invoke_handler(tauri::generate_handler![
@@ -147,6 +155,11 @@ pub fn run() {
             commands::freecut::freecut_import_dubbing_srt,
             commands::freecut::freecut_generate_dub_assets,
             commands::freecut::freecut_install_dubbing_runtime,
+            // service hub
+            commands::service_hub::service_hub_status,
+            commands::service_hub::service_hub_install,
+            commands::service_hub::voice_runtime_status,
+            commands::service_hub::voice_runtime_install,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
