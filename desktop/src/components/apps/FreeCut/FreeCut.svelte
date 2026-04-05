@@ -630,6 +630,12 @@
     }
   }
 
+  function openServiceHubForVoice() {
+    import("🍎/state/desktop.svelte").then(({ openServiceHub }) => {
+      openServiceHub({ require: ["voice-runtime"], returnTo: "freecut" });
+    });
+  }
+
   async function importDubbingSrt() {
     if (!currentProject) return;
     try {
@@ -1906,63 +1912,22 @@
                     <div class="rounded-2xl border border-amber-400/20 bg-amber-400/8 p-3 space-y-3">
                       <div class="flex items-start justify-between gap-3">
                         <div class="min-w-0">
-                          <p class="text-xs font-semibold text-amber-100">Quick Setup</p>
-                          <p class="text-[10px] text-amber-100/70 mt-1">Install the missing dubbing runtime inside NDE-OS. FreeCut uses its own sandboxed tool environment and should not rely on host package installs.</p>
+                          <p class="text-xs font-semibold text-amber-100">Setup Required</p>
+                          <p class="text-[10px] text-amber-100/70 mt-1">The dubbing pipeline requires Voice Runtime (Edge TTS + Whisper) to be installed via the global Service Hub.</p>
                         </div>
                         <div class="px-2 py-1 rounded-full bg-black/20 text-[9px] uppercase tracking-wider text-amber-100/70">
                           Onboarding
                         </div>
                       </div>
 
-                      <div class="grid grid-cols-1 gap-2">
-                        <div class="rounded-xl border border-white/8 bg-black/20 p-3 space-y-2">
-                          <div class="flex items-start justify-between gap-3">
-                            <div class="min-w-0">
-                              <p class="text-[11px] font-semibold text-white/85">1. Install Core Voice Runtime</p>
-                              <p class="mt-1 text-[10px] text-white/45">Installs Whisper + Edge TTS into FreeCut's own workspace using bundled `uv`.</p>
-                            </div>
-                            <span class="shrink-0 text-[9px] uppercase tracking-wider text-amber-200/70">Required</span>
-                          </div>
-                          <div class="grid grid-cols-1 gap-2">
-                            <button class="rounded-lg bg-violet-600 px-2 py-2 text-[10px] text-white transition-colors hover:bg-violet-500 disabled:opacity-50" onclick={() => installDubbingRuntime("core")} disabled={runtimeInstallBusy}>
-                              {runtimeInstallBusy ? "Installing..." : "Install in NDE-OS"}
-                            </button>
-                          </div>
-                        </div>
+                      <button
+                        class="w-full rounded-lg bg-violet-600 px-3 py-2.5 text-[11px] font-medium text-white transition-colors hover:bg-violet-500 flex items-center justify-center gap-2"
+                        onclick={openServiceHubForVoice}
+                      >
+                        🔧 Open Service Hub — Install Voice Runtime
+                      </button>
 
-                        <div class="rounded-xl border border-white/8 bg-black/20 p-3 space-y-2">
-                          <div class="flex items-start justify-between gap-3">
-                            <div class="min-w-0">
-                              <p class="text-[11px] font-semibold text-white/85">2. Optional LLM Lane</p>
-                              <p class="mt-1 text-[10px] text-white/45">Subtitle polish uses the active NDE model/provider. No separate host install is needed, but the NDE server and active model must already be available.</p>
-                            </div>
-                            <span class="shrink-0 text-[9px] uppercase tracking-wider text-cyan-200/70">Optional</span>
-                          </div>
-                          <div class="rounded-lg border border-white/6 bg-white/[0.02] px-2.5 py-2 text-[10px] text-white/55">
-                            Keep LLM polish disabled unless the NDE server is running and an active model is configured.
-                          </div>
-                        </div>
-
-                        <div class="rounded-xl border border-white/8 bg-black/20 p-3 space-y-2">
-                          <div class="flex items-start justify-between gap-3">
-                            <div class="min-w-0">
-                              <p class="text-[11px] font-semibold text-white/85">3. Optional RVC</p>
-                              <p class="mt-1 text-[10px] text-white/45">RVC stays an advanced post-process path after the core runtime is installed.</p>
-                            </div>
-                            <span class="shrink-0 text-[9px] uppercase tracking-wider text-white/40">Advanced</span>
-                          </div>
-                          <div class="rounded-lg border border-white/6 bg-white/[0.02] px-2.5 py-2 text-[10px] text-white/55">
-                            Configure model and index paths manually in the speaker section after the core runtime is ready.
-                          </div>
-                        </div>
-                      </div>
-
-                      <div class="flex items-center justify-between gap-3">
-                        <p class="text-[10px] text-amber-100/70">Install once inside NDE-OS, then press Refresh to re-scan the runtime.</p>
-                        {#if setupCopyStatus}
-                          <span class="text-[10px] text-emerald-200">{setupCopyStatus}</span>
-                        {/if}
-                      </div>
+                      <p class="text-[9px] text-amber-100/50 text-center">After installing, return here and press Refresh to re-detect tools.</p>
                     </div>
                   {/if}
 

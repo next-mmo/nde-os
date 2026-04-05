@@ -7,10 +7,12 @@
   import SourceControl from './SourceControl.svelte';
   import CodeEditor from './CodeEditor.svelte';
   import TerminalPanel from './TerminalPanel.svelte';
+  import MarkdownPreview from './MarkdownPreview.svelte';
 
-  let { activeFilePath = $bindable(null), fileContent = $bindable("") } = $props<{
+  let { activeFilePath = $bindable(null), fileContent = $bindable(""), onAddToChat } = $props<{
     activeFilePath?: string | null;
     fileContent?: string;
+    onAddToChat?: (path: string, name: string) => void;
   }>();
 
   let activeSidebar = $state<"explorer" | "scm">("explorer");
@@ -19,6 +21,14 @@
   let projectSelected = $state(false);
   let showSidebar = $state(false);
   let isDraggingTerminal = $state(false);
+  let showSettings = $state(false);
+  let ideSettings = $state({
+    theme: "one-dark-pro",
+    wordWrap: "off" as "on" | "off",
+    fontSize: 14,
+    minimap: false,
+    tabSize: 2
+  });
 
   type FileEntry = { name: string; path: string; is_dir: boolean; modified: string | null; };
   let recentProjects = $state<FileEntry[]>([]);
@@ -29,6 +39,14 @@
 
   let activeFileName = $state<string>("");
   let isSaving = $state(false);
+  let savedContent = $state<string>(""); // tracks last persisted content
+
+  let isDirty = $derived(activeFilePath !== null && fileContent !== savedContent);
+  let isMarkdown = $derived(activeFileName.toLowerCase().endsWith('.md'));
+
+  // md view mode: 'edit' | 'preview' | 'split' — resets when switching away from .md
+  let mdViewMode = $state<'edit' | 'preview' | 'split'>('edit');
+  $effect(() => { if (!isMarkdown) mdViewMode = 'edit'; });
 
   // Auto-restore project and sidebars if a file is opened programmatically
   $effect(() => {
@@ -106,15 +124,51 @@
   }
 
   async function openFile(path: string, name: string) {
+    // If current file is dirty, ask before switching
+    if (isDirty) {
+      const choice = confirm(`Save changes to "${activeFileName}" before opening "${name}"?`);
+      if (choice) await saveFile();
+    }
     try {
       const content = await invoke<string>("read_file_content", { path });
       activeFilePath = path;
       activeFileName = name;
       fileContent = content;
+      savedContent = content;
     } catch (e) {
       console.error(e);
       alert("Failed to read file: " + e);
     }
+  }
+
+  async function discardChanges() {
+    if (!activeFilePath) return;
+    try {
+      const content = await invoke<string>("read_file_content", { path: activeFilePath });
+      fileContent = content;
+      savedContent = content;
+    } catch (e) {
+      console.error(e);
+    }
+  }
+
+  function closeTab() {
+    if (isDirty) {
+      const choice = confirm(`Save changes to "${activeFileName}" before closing?`);
+      if (choice) {
+        saveFile().then(() => {
+          activeFilePath = null;
+          activeFileName = "";
+          fileContent = "";
+          savedContent = "";
+        });
+        return;
+      }
+    }
+    activeFilePath = null;
+    activeFileName = "";
+    fileContent = "";
+    savedContent = "";
   }
 
   async function saveFile() {
@@ -122,6 +176,7 @@
     try {
       isSaving = true;
       await invoke("write_file_content", { path: activeFilePath, content: fileContent });
+      savedContent = fileContent; // mark clean
     } catch (e) {
       console.error(e);
       alert("Failed to save file: " + e);
@@ -152,96 +207,199 @@
 />
 
 <div class="absolute inset-0 flex h-full overflow-hidden text-left bg-black">
-  {#if projectSelected}
-    <!-- Activity Bar (only visible after project opened) -->
-    <div class="w-12 bg-[#181818] border-r border-white/5 shrink-0 flex flex-col items-center py-4 gap-4 z-20">
-      <!-- svelte-ignore a11y_click_events_have_key_events -->
-      <!-- svelte-ignore a11y_no_static_element_interactions -->
-      <div 
-        class="w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer transition-all {activeSidebar === 'explorer' && showSidebar ? 'bg-indigo-500/20 text-indigo-400' : 'text-white/40 hover:text-white'}"
-        onclick={() => { activeSidebar = 'explorer'; showSidebar = activeSidebar === 'explorer' ? !showSidebar : true; }}
-        title="Explorer"
-      >
-        <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"></path></svg>
-      </div>
-      <!-- svelte-ignore a11y_click_events_have_key_events -->
-      <!-- svelte-ignore a11y_no_static_element_interactions -->
-      <div 
-        class="w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer transition-all {activeSidebar === 'scm' && showSidebar ? 'bg-indigo-500/20 text-indigo-400' : 'text-white/40 hover:text-white'}"
-        onclick={() => { activeSidebar = 'scm'; showSidebar = activeSidebar === 'scm' ? !showSidebar : true; }}
-        title="Source Control"
-      >
-        <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2"></path></svg>
-      </div>
-      <div class="flex-1"></div>
-      <!-- svelte-ignore a11y_click_events_have_key_events -->
-      <!-- svelte-ignore a11y_no_static_element_interactions -->
-      <div 
-        class="w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer transition-all {showTerminal ? 'bg-indigo-500/20 text-indigo-400' : 'text-white/40 hover:text-white'}"
-        onclick={() => showTerminal = !showTerminal}
-        title="Toggle Terminal"
-      >
-        <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
-      </div>
-      <!-- Close project button at bottom -->
+  <!-- Activity Bar — always visible, like VS Code -->
+  <div class="w-12 bg-[#181a1f] border-r border-[#181a1f] shrink-0 flex flex-col items-center py-4 gap-4 z-20">
+    <!-- Explorer -->
+    <!-- svelte-ignore a11y_click_events_have_key_events -->
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <div 
+      class="w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer transition-all {activeSidebar === 'explorer' && showSidebar && projectSelected ? 'bg-indigo-500/20 text-indigo-400' : 'text-white/40 hover:text-white'}"
+      onclick={() => {
+        if (!projectSelected) return;
+        activeSidebar = 'explorer';
+        showSidebar = activeSidebar === 'explorer' ? !showSidebar : true;
+      }}
+      title={projectSelected ? "Explorer" : "Open a project first"}
+    >
+      <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"></path></svg>
+    </div>
+    <!-- Source Control -->
+    <!-- svelte-ignore a11y_click_events_have_key_events -->
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <div 
+      class="w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer transition-all {activeSidebar === 'scm' && showSidebar && projectSelected ? 'bg-indigo-500/20 text-indigo-400' : 'text-white/40 hover:text-white'}"
+      onclick={() => {
+        if (!projectSelected) return;
+        activeSidebar = 'scm';
+        showSidebar = activeSidebar === 'scm' ? !showSidebar : true;
+      }}
+      title={projectSelected ? "Source Control" : "Open a project first"}
+    >
+      <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2"></path></svg>
+    </div>
+
+    <div class="flex-1"></div>
+
+    <!-- Terminal toggle — always available -->
+    <!-- svelte-ignore a11y_click_events_have_key_events -->
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <div 
+      class="w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer transition-all {showTerminal ? 'bg-indigo-500/20 text-indigo-400' : 'text-white/40 hover:text-white'}"
+      onclick={() => showTerminal = !showTerminal}
+      title="Toggle Terminal (⌘`)"
+    >
+      <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+    </div>
+
+    <!-- Settings toggle -->
+    <!-- svelte-ignore a11y_click_events_have_key_events -->
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <div 
+      class="w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer transition-all {showSettings ? 'bg-indigo-500/20 text-indigo-400' : 'text-white/40 hover:text-white'}"
+      onclick={() => showSettings = !showSettings}
+      title="Settings"
+    >
+      <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+    </div>
+    <!-- Close Project — only shown when project is open -->
+    {#if projectSelected}
       <!-- svelte-ignore a11y_click_events_have_key_events -->
       <!-- svelte-ignore a11y_no_static_element_interactions -->
       <div 
         class="w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer transition-all text-white/40 hover:text-rose-400"
-        onclick={() => { projectSelected = false; showSidebar = false; activeFilePath = null; fileContent = ''; }}
+        onclick={() => { projectSelected = false; showSidebar = false; activeFilePath = null; fileContent = ''; savedContent = ''; }}
         title="Close Project"
       >
         <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
       </div>
-    </div>
+    {/if}
+  </div>
 
-    <!-- Sidebar (collapsible) -->
-    {#if showSidebar}
-      {#if activeSidebar === 'explorer'}
-        <FileExplorer
-          onSelectFile={openFile}
-          currentFile={activeFilePath}
-          basePath={selectedProjectPath}
-          onProjectChange={(selected) => { if (!selected) { projectSelected = false; showSidebar = false; } }}
-        />
-      {:else}
-        <SourceControl onSelectFile={openFile} />
-      {/if}
+  <!-- Sidebar — only when project is open -->
+  {#if projectSelected && showSidebar}
+    {#if activeSidebar === 'explorer'}
+      <FileExplorer
+        onSelectFile={openFile}
+        currentFile={activeFilePath}
+        basePath={selectedProjectPath}
+        {onAddToChat}
+        onProjectChange={(selected) => { if (!selected) { projectSelected = false; showSidebar = false; } }}
+      />
+    {:else}
+      <SourceControl onSelectFile={openFile} />
     {/if}
   {/if}
 
+
   <!-- Editor Area -->
-  <div class="flex-1 flex flex-col min-w-0 bg-[#1e1e1e]">
+  <div class="flex-1 flex flex-col min-w-0 bg-[#282c34]">
     {#if activeFilePath}
-      <!-- Editor Header -->
-      <div class="h-10 flex border-b border-white/5 bg-[#252526] shrink-0 items-center justify-between pr-4 select-none">
-        <div class="flex h-full">
-          <div class="px-4 flex items-center gap-2 border-x border-white/5 bg-[#1e1e1e] text-indigo-300 text-sm font-mono min-w-32 border-t-2 border-t-indigo-500 shadow-[0_-1px_0_0_rgba(255,255,255,0.05)_inset]">
-            <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"></path></svg>
-            {activeFileName}
+      <!-- VS Code-style Tab Bar -->
+      <div class="flex border-b border-[#181a1f] bg-[#21252b] shrink-0 items-stretch select-none">
+        <!-- Tab -->
+        <!-- svelte-ignore a11y_no_static_element_interactions -->
+        <!-- svelte-ignore a11y_click_events_have_key_events -->
+        <div class="flex items-center h-9 border-r border-[#181a1f] bg-[#282c34] border-t-2 border-t-indigo-500 px-3 gap-1.5 min-w-0 max-w-[220px] group relative">
+          <!-- File icon -->
+          <svg class="w-3.5 h-3.5 shrink-0 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"></path></svg>
+          <!-- Filename -->
+          <span class="text-indigo-200 text-xs font-mono truncate flex-1 mr-1">{activeFileName}</span>
+          <!-- Unsaved dot OR close button -->
+          <!-- svelte-ignore a11y_click_events_have_key_events -->
+          <!-- svelte-ignore a11y_no_static_element_interactions -->
+          <div class="w-4 h-4 flex items-center justify-center shrink-0 relative">
+            {#if isDirty}
+              <!-- Dot (unsaved): hover reveals × -->
+              <span
+                class="w-2 h-2 rounded-full bg-white/70 group-hover:opacity-0 transition-opacity absolute"
+                title="Unsaved changes"
+              ></span>
+              <span
+                onclick={closeTab}
+                class="text-white/50 hover:text-white text-[11px] leading-none opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer absolute select-none"
+                title="Close (unsaved)"
+              >✕</span>
+            {:else}
+              <!-- Clean: hover reveals × -->
+              <span
+                onclick={closeTab}
+                class="text-white/30 hover:text-white text-[11px] leading-none opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer select-none"
+                title="Close"
+              >✕</span>
+            {/if}
           </div>
         </div>
-        <button 
-          class="text-xs px-3 py-1.5 rounded bg-indigo-500/20 text-indigo-300 hover:bg-indigo-500/30 hover:text-indigo-200 transition-colors flex items-center gap-1.5 font-medium border border-indigo-500/30"
-          onclick={saveFile}
-          disabled={isSaving}
-        >
-          {#if isSaving}
-            ⏳ Saving...
-          {:else}
-            <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"></path></svg>
-            Save
-          {/if}
-        </button>
+
+        <!-- Markdown view-mode toggle (only for .md files) -->
+        {#if isMarkdown}
+          <div class="flex items-center gap-0.5 ml-auto mr-2">
+            <button
+              onclick={() => mdViewMode = 'edit'}
+              title="Edit"
+              class="flex items-center gap-1 px-2 py-1 rounded text-[10px] transition-colors {mdViewMode === 'edit' ? 'bg-white/10 text-white' : 'text-white/40 hover:text-white hover:bg-white/5'}"
+            >
+              <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"></path></svg>
+              Edit
+            </button>
+            <button
+              onclick={() => mdViewMode = 'split'}
+              title="Split"
+              class="flex items-center gap-1 px-2 py-1 rounded text-[10px] transition-colors {mdViewMode === 'split' ? 'bg-white/10 text-white' : 'text-white/40 hover:text-white hover:bg-white/5'}"
+            >
+              <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 0v10"></path></svg>
+              Split
+            </button>
+            <button
+              onclick={() => mdViewMode = 'preview'}
+              title="Preview"
+              class="flex items-center gap-1 px-2 py-1 rounded text-[10px] transition-colors {mdViewMode === 'preview' ? 'bg-white/10 text-white' : 'text-white/40 hover:text-white hover:bg-white/5'}"
+            >
+              <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg>
+              Preview
+            </button>
+          </div>
+        {/if}
       </div>
 
-      <!-- Monaco Editor -->
-      <div class="flex-1 relative">
-        <CodeEditor 
-          content={fileContent} 
-          language={activeLanguage()} 
-          onChange={(val) => fileContent = val} 
-        />
+      <!-- Editor / Preview area: relative anchor, children are absolute -->
+      <div class="flex-1 relative min-h-0 overflow-hidden">
+        <!-- Edit pane -->
+        {#if mdViewMode === 'edit'}
+          <div class="absolute inset-0">
+            <CodeEditor
+              content={fileContent}
+              language={activeLanguage()}
+              onChange={(val) => fileContent = val}
+              theme={ideSettings.theme}
+              fontSize={ideSettings.fontSize}
+              wordWrap={ideSettings.wordWrap}
+              tabSize={ideSettings.tabSize}
+              minimap={ideSettings.minimap}
+            />
+          </div>
+        {:else if mdViewMode === 'split'}
+          <!-- Left: editor -->
+          <div class="absolute top-0 bottom-0 left-0 w-1/2 border-r border-white/10">
+            <CodeEditor
+              content={fileContent}
+              language={activeLanguage()}
+              onChange={(val) => fileContent = val}
+              theme={ideSettings.theme}
+              fontSize={ideSettings.fontSize}
+              wordWrap={ideSettings.wordWrap}
+              tabSize={ideSettings.tabSize}
+              minimap={ideSettings.minimap}
+            />
+          </div>
+          <!-- Right: preview -->
+          <div class="absolute top-0 bottom-0 right-0 w-1/2">
+            <MarkdownPreview content={fileContent} />
+          </div>
+        {:else if mdViewMode === 'preview'}
+          <div class="absolute inset-0">
+            <MarkdownPreview content={fileContent} />
+          </div>
+        {/if}
       </div>
     {:else}
       <div class="flex-1 flex flex-col items-center justify-center text-white/30 gap-6">
@@ -250,7 +408,7 @@
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"></path>
           </svg>
         </div>
-        <div class="text-3xl text-white/50 font-light tracking-wide">OpenCode IDE</div>
+        <div class="text-3xl text-white/50 font-light tracking-wide">NDE IDE</div>
         <div class="flex flex-col items-center gap-3 mt-4 text-sm text-white/40">
           {#if projectSelected}
             <p>Select a file from the explorer to start editing</p>
@@ -278,7 +436,7 @@
                   </button>
                 {/each}
                 {#if recentProjects.length === 0}
-                   <div class="text-white/30 italic text-[11px] text-center py-4 bg-black/20 rounded-lg border border-white/5">No projects found in workspace</div>
+                   <div class="text-white/30 italic text-[11px] text-center py-4 bg-black/20 rounded-lg border border-[#181a1f]">No projects found in workspace</div>
                 {/if}
               </div>
               
@@ -334,10 +492,10 @@
       </div>
       <!-- Terminal Panel -->
       <div 
-        class="bg-[#1e1e1e] flex flex-col shrink-0 overflow-hidden" 
+        class="bg-[#282c34] flex flex-col shrink-0 overflow-hidden" 
         style="height: {terminalHeight}px;"
       >
-        <div class="flex items-center justify-between px-4 py-1.5 border-b border-black/50 text-[11px] uppercase tracking-wider text-white/50 bg-[#252526]">
+        <div class="flex items-center justify-between px-4 py-1.5 border-b border-black/50 text-[11px] uppercase tracking-wider text-white/50 bg-[#21252b]">
           <span>Terminal</span>
           <button 
             onclick={() => showTerminal = false}
@@ -347,12 +505,55 @@
           </button>
         </div>
         <div class="flex-1 relative overflow-hidden">
-          <TerminalPanel />
+          <TerminalPanel projectPath={selectedProjectPath} />
         </div>
       </div>
     {/if}
   </div>
 </div>
+
+{#if showSettings}
+  <div class="absolute inset-0 bg-black/60 backdrop-blur-sm z-100 flex items-center justify-center p-4 select-none">
+    <div class="bg-[#21252b] border border-[#181a1f] rounded-xl w-full max-w-md shadow-2xl flex flex-col overflow-hidden">
+      <div class="px-5 py-4 border-b border-[#181a1f] flex items-center justify-between bg-[#1e2127]">
+        <h2 class="text-white font-medium flex items-center gap-2">
+          <svg class="w-5 h-5 text-white/50" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+          IDE Settings
+        </h2>
+        <button class="text-white/40 hover:text-white" onclick={() => showSettings = false}>✕</button>
+      </div>
+      <div class="p-6 flex flex-col gap-6 text-sm">
+        <label class="flex items-center justify-between text-white/80 cursor-pointer group">
+          <span>Theme</span>
+          <select bind:value={ideSettings.theme} class="bg-[#181a1f] border border-white/5 group-hover:border-white/20 rounded-md px-3 py-1 outline-none text-white appearance-none cursor-pointer w-32">
+            <option value="one-dark-pro">One Dark Pro</option>
+            <option value="vs-dark">VS Dark</option>
+            <option value="hc-black">High Contrast</option>
+          </select>
+        </label>
+        <label class="flex items-center justify-between text-white/80 cursor-pointer group">
+          <span>Word Wrap</span>
+          <select bind:value={ideSettings.wordWrap} class="bg-[#181a1f] border border-white/5 group-hover:border-white/20 rounded-md px-3 py-1 outline-none text-white appearance-none cursor-pointer w-24">
+            <option value="off">Off</option>
+            <option value="on">On</option>
+          </select>
+        </label>
+        <label class="flex items-center justify-between text-white/80 cursor-pointer group">
+          <span>Font Size</span>
+          <input type="number" min="8" max="32" bind:value={ideSettings.fontSize} class="bg-[#181a1f] border border-white/5 group-hover:border-white/20 rounded-md px-3 py-1 outline-none text-white w-24 text-center">
+        </label>
+        <label class="flex items-center justify-between text-white/80 cursor-pointer group">
+          <span>Tab Size</span>
+          <input type="number" min="2" max="8" step="2" bind:value={ideSettings.tabSize} class="bg-[#181a1f] border border-white/5 group-hover:border-white/20 rounded-md px-3 py-1 outline-none text-white w-24 text-center">
+        </label>
+        <label class="flex items-center justify-between text-white/80 cursor-pointer group">
+          <span>Show Minimap</span>
+          <input type="checkbox" bind:checked={ideSettings.minimap} class="accent-indigo-500 w-4 h-4 cursor-pointer">
+        </label>
+      </div>
+    </div>
+  </div>
+{/if}
 
 <FolderPicker bind:isOpen={showFolderPicker} onSelect={(path) => openProject(path)} />
 

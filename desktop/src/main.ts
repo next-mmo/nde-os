@@ -1,7 +1,7 @@
 import { mount } from "svelte";
 import Desktop from "🍎/components/Desktop/Desktop.svelte";
 import { initScreenshotHotkeys } from "🍎/lib/tauri/screenshot";
-import { openStaticApp } from "🍎/state/desktop.svelte";
+import { openStaticApp, openServiceHub } from "🍎/state/desktop.svelte";
 import { invoke } from "@tauri-apps/api/core";
 import { emit } from "@tauri-apps/api/event";
 import "🍎/css/global.css";
@@ -33,6 +33,7 @@ mount(Desktop, {
 if (!import.meta.env.PROD) {
   (window as any).__svelteDesktop = {
     openStaticApp,
+    openServiceHub,
     /** Force the Kanban board to re-read tasks from disk. */
     refreshKanban: async () => {
       await invoke("get_agent_tasks").catch(() => {});

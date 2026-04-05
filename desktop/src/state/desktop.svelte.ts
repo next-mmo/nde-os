@@ -884,4 +884,24 @@ export function showDesktopIcon(id: string) {
   } catch {}
 }
 
+/** Open the Service Hub with deep-link context (required services + return-to app). */
+export function openServiceHub(options: { require?: string[]; returnTo?: string } = {}) {
+  const existing = desktop.windows.find((item) => item.app_id === "service-hub");
+  if (existing) {
+    // Update context on re-open
+    existing.data = options;
+    focusWindow(existing.id);
+    return existing;
+  }
+  const config = apps_config["service-hub"];
+  const window = createWindow("service-hub" as WindowAppID, config.title, config.width!, config.height!);
+  window.resizable = config.resizable!;
+  window.expandable = config.expandable!;
+  window.data = options;
+  assignWindowFocus(window);
+  desktop.windows.push(window);
+  saveOpenWindows();
+  return window;
+}
+
 export type { StaticAppID };

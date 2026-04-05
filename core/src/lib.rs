@@ -32,6 +32,12 @@ pub mod shield;
 // FreeCut video editor engine
 pub mod freecut;
 
+// Global voice services (Edge TTS + RVC)
+pub mod voice;
+
+// Global service registry (onboarding)
+pub mod services;
+
 #[cfg(feature = "screenshot")]
 pub mod screenshot;
 

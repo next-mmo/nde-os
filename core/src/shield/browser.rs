@@ -98,42 +98,51 @@ pub fn find_executable(engine: &BrowserEngine, install_dir: &Path) -> Result<Pat
 }
 
 fn find_chromium_executable(install_dir: &Path) -> Result<PathBuf> {
-    let candidates = if cfg!(target_os = "windows") {
-        vec![
-            install_dir.join("chrome.exe"),
-            install_dir.join("chromium.exe"),
-            install_dir.join("wayfern.exe"),
-            install_dir.join("chrome-win").join("chrome.exe"),
-        ]
-    } else if cfg!(target_os = "macos") {
-        // On macOS, find .app bundle
-        if let Ok(entries) = std::fs::read_dir(install_dir) {
-            let app_dir = entries
-                .filter_map(|e| e.ok())
-                .find(|e| e.path().extension().is_some_and(|ext| ext == "app"))
-                .map(|e| e.path().join("Contents").join("MacOS"));
+    // Chrome for Testing extracts into a `chrome-{platform}/` subdirectory.
+    // We need to search both the install_dir and any chrome-* subdirectories.
+    let mut search_dirs = vec![install_dir.to_path_buf()];
 
-            if let Some(macos_dir) = app_dir {
-                vec![
-                    macos_dir.join("Chromium"),
-                    macos_dir.join("Wayfern"),
-                    macos_dir.join("chrome"),
-                ]
-            } else {
-                vec![]
+    // Add any chrome-* subdirectories (e.g., chrome-mac-arm64/, chrome-win64/, chrome-linux64/)
+    if let Ok(entries) = std::fs::read_dir(install_dir) {
+        for entry in entries.filter_map(|e| e.ok()) {
+            let path = entry.path();
+            if path.is_dir() {
+                let name = entry.file_name().to_string_lossy().to_string();
+                if name.starts_with("chrome-") {
+                    search_dirs.push(path);
+                }
+            }
+        }
+    }
+
+    let mut candidates = Vec::new();
+
+    for dir in &search_dirs {
+        if cfg!(target_os = "windows") {
+            candidates.push(dir.join("chrome.exe"));
+            candidates.push(dir.join("chromium.exe"));
+            candidates.push(dir.join("wayfern.exe"));
+        } else if cfg!(target_os = "macos") {
+            // On macOS, find .app bundle inside this directory
+            if let Ok(entries) = std::fs::read_dir(dir) {
+                for entry in entries.filter_map(|e| e.ok()) {
+                    if entry.path().extension().is_some_and(|ext| ext == "app") {
+                        let macos_dir = entry.path().join("Contents").join("MacOS");
+                        // Chrome for Testing uses "Google Chrome for Testing" as executable name
+                        candidates.push(macos_dir.join("Google Chrome for Testing"));
+                        candidates.push(macos_dir.join("Chromium"));
+                        candidates.push(macos_dir.join("Wayfern"));
+                        candidates.push(macos_dir.join("chrome"));
+                    }
+                }
             }
         } else {
-            vec![]
+            // Linux
+            candidates.push(dir.join("chrome"));
+            candidates.push(dir.join("chromium"));
+            candidates.push(dir.join("wayfern"));
         }
-    } else {
-        // Linux
-        vec![
-            install_dir.join("chromium"),
-            install_dir.join("chrome"),
-            install_dir.join("wayfern"),
-            install_dir.join("chrome-linux").join("chrome"),
-        ]
-    };
+    }
 
     candidates
         .into_iter()

@@ -2,15 +2,23 @@
   import { invoke } from "@tauri-apps/api/core";
   import type { FDocument, FNode } from "$lib/figma-json/types";
 
+  interface ContextFile {
+    path: string;
+    name: string;
+    content?: string;
+  }
+
   interface Props {
     document: FDocument;
     onApplyPatch?: (patch: any) => void;
     chatMode?: "figma" | "scrum" | "dev";
     activeFilePath?: string | null;
     fileContent?: string;
+    contextFiles?: ContextFile[];
+    onAddContextFile?: (path: string, name: string) => void;
   }
 
-  let { document, onApplyPatch, chatMode = "figma", activeFilePath = null, fileContent = "" }: Props = $props();
+  let { document, onApplyPatch, chatMode = "figma", activeFilePath = null, fileContent = "", contextFiles = $bindable([]), onAddContextFile }: Props = $props();
 
   let prompt = $state("");
   let isGenerating = $state(false);
@@ -322,6 +330,50 @@ Rules:
     return false;
   }
 
+  // ── Drag-and-drop onto chat panel ────────────────────────────────
+  let isDragOver = $state(false);
+
+  function handleDragOver(e: DragEvent) {
+    if (e.dataTransfer?.types.includes("application/nde-file-path")) {
+      e.preventDefault();
+      isDragOver = true;
+    }
+  }
+
+  function handleDragLeave() {
+    isDragOver = false;
+  }
+
+  async function handleDrop(e: DragEvent) {
+    e.preventDefault();
+    isDragOver = false;
+    const path = e.dataTransfer?.getData("application/nde-file-path");
+    const name = e.dataTransfer?.getData("application/nde-file-name");
+    if (path && name) {
+      addContextFile(path, name);
+    }
+  }
+
+  async function addContextFile(path: string, name: string) {
+    if (contextFiles.some(f => f.path === path)) return; // already added
+    let content = "";
+    try {
+      content = await invoke<string>("read_file_content", { path });
+    } catch {}
+    contextFiles = [...contextFiles, { path, name, content }];
+  }
+
+  function removeContextFile(path: string) {
+    contextFiles = contextFiles.filter(f => f.path !== path);
+  }
+
+  // expose addContextFile so parent can call it
+  $effect(() => {
+    if (onAddContextFile) {
+      // noop — parent uses addContextFile via contextFiles prop binding
+    }
+  });
+
   async function send() {
     if (!prompt.trim() || isGenerating) return;
     const text = prompt.trim();
@@ -335,11 +387,20 @@ Rules:
 
     isGenerating = true;
 
-    messages.push({ role: "user", content: text });
+    // Build context block from attached files
+    let contextBlock = "";
+    if (contextFiles.length > 0) {
+      const fileSnippets = contextFiles.map(f =>
+        `### File: ${f.name} (${f.path})\n\`\`\`\n${(f.content || "").slice(0, 8000)}\n\`\`\``
+      ).join("\n\n");
+      contextBlock = `\n\n--- Attached File Context ---\n${fileSnippets}\n--- End Context ---`;
+    }
+
+    messages.push({ role: "user", content: text + (contextFiles.length > 0 ? `\n\n📎 ${contextFiles.map(f => f.name).join(", ")}` : "") });
     messages.push({ role: "assistant", content: "", streaming: true });
     scrollToBottom();
 
-    let historyContext = activeSystemPrompt + "\n\nUser request: " + text;
+    let historyContext = activeSystemPrompt + contextBlock + "\n\nUser request: " + text;
     let turnCount = 0;
 
     try {
@@ -576,7 +637,41 @@ Rules:
   <div bind:this={chatBottom}></div>
 </div>
 
-<div class="p-3 border-t border-white/10 bg-black/40 shrink-0">
+<!-- Chat input panel: supports drop target for file context -->
+<!-- svelte-ignore a11y_no_static_element_interactions -->
+<div 
+  class="p-3 border-t border-white/10 bg-black/40 shrink-0 transition-colors {isDragOver ? 'bg-violet-500/10 border-t-violet-500/50' : ''}"
+  ondragover={handleDragOver}
+  ondragleave={handleDragLeave}
+  ondrop={handleDrop}
+>
+  <!-- Context file chips -->
+  {#if contextFiles.length > 0}
+    <div class="flex flex-wrap gap-1.5 mb-2">
+      {#each contextFiles as file}
+        <div class="flex items-center gap-1 px-2 py-0.5 rounded-full bg-violet-500/15 border border-violet-500/30 text-violet-300 text-[10px] max-w-[160px] group">
+          <svg class="w-3 h-3 shrink-0 text-violet-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"></path></svg>
+          <span class="truncate" title={file.path}>{file.name}</span>
+          <!-- svelte-ignore a11y_click_events_have_key_events -->
+          <!-- svelte-ignore a11y_no_static_element_interactions -->
+          <span 
+            class="ml-0.5 text-violet-400/60 hover:text-rose-400 cursor-pointer leading-none shrink-0" 
+            onclick={() => removeContextFile(file.path)}
+            title="Remove"
+          >✕</span>
+        </div>
+      {/each}
+    </div>
+  {/if}
+
+  <!-- Drag hint overlay -->
+  {#if isDragOver}
+    <div class="flex items-center justify-center gap-2 py-1 mb-2 rounded-lg border border-dashed border-violet-400/50 text-violet-300 text-xs">
+      <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg>
+      Drop file to add as context
+    </div>
+  {/if}
+
   <div class="relative flex gap-2">
     <!-- Auto Complete Popup -->
     {#if showAutocomplete && filteredSuggestions.length > 0}
@@ -602,7 +697,7 @@ Rules:
       oninput={handleInput}
       disabled={isGenerating}
       rows="1"
-      placeholder={chatMode === 'figma' ? "Ask AI to styling this... (Enter to send)" : chatMode === 'scrum' ? "Manage board tasks... (Type @ or / to search)" : "Ask about your code... (Enter to send)"}
+      placeholder={isDragOver ? "Drop file here..." : (contextFiles.length > 0 ? `Ask about ${contextFiles.map(f => f.name).join(", ")}... (Enter to send)` : (chatMode === 'figma' ? "Ask AI to styling this... (Enter to send)" : chatMode === 'scrum' ? "Manage board tasks... (Type @ or / to search)" : "Ask about your code... (Enter to send)"))}
       class="flex-1 bg-white/5 border border-white/10 rounded-lg py-2 pl-3 pr-10 text-sm text-white placeholder-white/30 focus:outline-none focus:ring-1 focus:ring-indigo-500/50 resize-none overflow-hidden"
     ></textarea>
     <button 

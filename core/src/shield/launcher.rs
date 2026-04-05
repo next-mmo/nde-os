@@ -98,8 +98,39 @@ impl BrowserLauncher {
         );
 
         // Build command
-        let mut cmd = TokioCommand::new(&executable);
-        cmd.args(&args);
+        // On macOS, Chromium .app bundles crash when fork'd from a multi-threaded
+        // process (Tokio runtime). We use `open -a /path/to/App.app --args <flags>`
+        // which internally uses posix_spawn and avoids the fork-safety crash.
+        #[cfg(target_os = "macos")]
+        let (mut cmd, is_open_launch) = {
+            // Walk up from the executable to find the .app bundle
+            let app_bundle = executable
+                .ancestors()
+                .find(|p| p.extension().is_some_and(|ext| ext == "app"));
+
+            if let Some(app_path) = app_bundle {
+                let mut c = TokioCommand::new("open");
+                c.arg("-a");
+                c.arg(app_path);
+                c.arg("-n"); // Open a new instance
+                c.arg("-W"); // Wait for the app to close (so we can detect exit)
+                c.arg("--args");
+                c.args(&args);
+                (c, true)
+            } else {
+                let mut c = TokioCommand::new(&executable);
+                c.args(&args);
+                (c, false)
+            }
+        };
+
+        #[cfg(not(target_os = "macos"))]
+        let (mut cmd, is_open_launch) = {
+            let mut c = TokioCommand::new(&executable);
+            c.args(&args);
+            (c, false)
+        };
+        let _ = is_open_launch; // suppress unused warning on non-macOS
 
         // Set environment for sandboxing
         cmd.env(
@@ -316,7 +347,31 @@ pub async fn resolve_latest_version(engine: &BrowserEngine) -> Result<String> {
             Ok(version.to_string())
         }
         BrowserEngine::Wayfern => {
-            anyhow::bail!("Wayfern engine is not yet available for download. Coming soon.")
+            let client = reqwest::Client::builder()
+                .user_agent("NDE-OS-Shield/1.0")
+                .build()
+                .context("Failed to build HTTP client")?;
+
+            let resp = client
+                .get("https://googlechromelabs.github.io/chrome-for-testing/last-known-good-versions-with-downloads.json")
+                .send()
+                .await
+                .context("Failed to fetch latest Chrome for Testing version")?;
+
+            if !resp.status().is_success() {
+                anyhow::bail!("Chrome for Testing API returned status {}", resp.status());
+            }
+
+            let json: serde_json::Value = resp
+                .json()
+                .await
+                .context("Failed to parse Chrome for Testing JSON")?;
+
+            let version = json["channels"]["Stable"]["version"]
+                .as_str()
+                .context("Missing Stable version in Chrome for Testing API")?;
+
+            Ok(version.to_string())
         }
     }
 }
@@ -348,7 +403,20 @@ pub fn get_download_url(engine: &BrowserEngine, version: &str) -> Result<String>
             ))
         }
         BrowserEngine::Wayfern => {
-            anyhow::bail!("Wayfern engine is not yet available for download. Coming soon.")
+            // Chrome for Testing download URL pattern:
+            // https://storage.googleapis.com/chrome-for-testing-public/{version}/{platform}/chrome-{platform}.zip
+            let platform = match (os.as_str(), arch.as_str()) {
+                ("windows", "x64") => "win64",
+                ("windows", _) => "win32",
+                ("macos", "arm64") => "mac-arm64",
+                ("macos", "x64") => "mac-x64",
+                ("linux", _) => "linux64",
+                _ => anyhow::bail!("Unsupported platform for Wayfern: {os}/{arch}"),
+            };
+
+            Ok(format!(
+                "https://storage.googleapis.com/chrome-for-testing-public/{version}/{platform}/chrome-{platform}.zip"
+            ))
         }
     }
 }
@@ -366,8 +434,8 @@ pub fn get_available_engines() -> Vec<AvailableEngine> {
         AvailableEngine {
             engine: "wayfern".into(),
             name: "Wayfern".into(),
-            description: "Chromium-based with patched canvas, WebGL, and navigator APIs at the C++ level. Coming soon.".into(),
-            available: false,
+            description: "Chromium-based with patched canvas, WebGL, and navigator APIs at the C++ level.".into(),
+            available: true,
             icon: "🌐".into(),
         },
     ]
@@ -418,9 +486,11 @@ mod tests {
     }
 
     #[test]
-    fn test_wayfern_download_not_available() {
-        let result = get_download_url(&BrowserEngine::Wayfern, "133.0");
-        assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Coming soon"));
+    fn test_wayfern_download_url() {
+        let url = get_download_url(&BrowserEngine::Wayfern, "147.0.7727.50").unwrap();
+        assert!(url.contains("chrome-for-testing-public"));
+        assert!(url.contains("147.0.7727.50"));
+        assert!(url.contains("storage.googleapis.com"));
+        assert!(url.ends_with(".zip"));
     }
 }

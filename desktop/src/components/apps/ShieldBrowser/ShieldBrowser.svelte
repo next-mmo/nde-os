@@ -57,6 +57,7 @@
   let downloadPercent = $state(0);
   let launching = $state(false);
   let settingsLatestVersion = $state("");
+  let settingsLatestVersions = $state<Record<string, string>>({});
   let resolvingLatest = $state(false);
 
   // Track listener cleanup
@@ -158,7 +159,7 @@
     setupError = "";
     downloading = true;
     downloadPercent = 0;
-    downloadProgress = "Downloading Camoufox binary…";
+    downloadProgress = `Downloading ${engineLabel(setupEngine)} binary…`;
 
     let unlisten: UnlistenFn | null = null;
     try {
@@ -311,10 +312,18 @@
   async function openSettings() {
     view = "settings";
     resolvingLatest = true;
-    settingsLatestVersion = "";
+    settingsLatestVersions = {};
     try {
-      settingsLatestVersion = await invoke<string>("resolve_engine_version", { engine: "camoufox" });
-    } catch { settingsLatestVersion = ""; }
+      // Resolve latest version per installed engine
+      const resolved: Record<string, string> = {};
+      for (const eng of status!.installed_engines) {
+        try {
+          const latest = await invoke<string>("resolve_engine_version", { engine: eng.engine });
+          resolved[eng.engine] = latest;
+        } catch { /* skip */ }
+      }
+      settingsLatestVersions = resolved;
+    } catch { /* skip */ }
     finally { resolvingLatest = false; }
   }
 </script>
@@ -372,7 +381,7 @@
           onclick={installEngine}
           disabled={!setupVersion || downloading}
         >
-          {setupVersion ? `Install Camoufox v${setupVersion}` : "Resolving latest version..."}
+          {setupVersion ? `Install ${setupEngine === "wayfern" ? "Wayfern" : "Camoufox"} v${setupVersion}` : "Resolving latest version..."}
         </button>
 
         <button class="skip-btn" onclick={() => { view = "profiles"; resolveCreateVersion(); }}>
@@ -452,18 +461,18 @@
                   <div class="engine-row-info">
                     <span class="engine-row-name">{engineLabel(eng.engine)}</span>
                     <span class="engine-row-version">v{eng.version}</span>
-                    {#if settingsLatestVersion && eng.version !== settingsLatestVersion}
-                      <span class="update-badge">Update available: v{settingsLatestVersion}</span>
-                    {:else if settingsLatestVersion && eng.version === settingsLatestVersion}
+                    {#if settingsLatestVersions[eng.engine] && eng.version !== settingsLatestVersions[eng.engine]}
+                      <span class="update-badge">Update available: v{settingsLatestVersions[eng.engine]}</span>
+                    {:else if settingsLatestVersions[eng.engine] && eng.version === settingsLatestVersions[eng.engine]}
                       <span class="up-to-date-badge">✓ Up to date</span>
                     {:else if resolvingLatest}
                       <span class="engine-row-version">Checking…</span>
                     {/if}
                   </div>
                   <div class="engine-row-actions">
-                    {#if settingsLatestVersion && eng.version !== settingsLatestVersion}
-                      <button class="action-btn primary" onclick={() => downloadEngine(eng.engine, settingsLatestVersion)} disabled={downloading}>
-                        {downloading ? downloadProgress : `⬆ Update to v${settingsLatestVersion}`}
+                    {#if settingsLatestVersions[eng.engine] && eng.version !== settingsLatestVersions[eng.engine]}
+                      <button class="action-btn primary" onclick={() => downloadEngine(eng.engine, settingsLatestVersions[eng.engine])} disabled={downloading}>
+                        {downloading ? downloadProgress : `⬆ Update to v${settingsLatestVersions[eng.engine]}`}
                       </button>
                     {/if}
                     <button class="action-btn" onclick={() => reinstallEngine(eng.engine, eng.version)} disabled={downloading}>

@@ -105,6 +105,11 @@ export const apps_config = {
     width: 800,
     height: 600,
   }),
+  "service-hub": create_app_config({
+    title: "Service Hub",
+    width: 780,
+    height: 640,
+  }),
   "freecut": create_app_config({
     title: "FreeCut",
     width: 1400,

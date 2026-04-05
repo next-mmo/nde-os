@@ -65,8 +65,8 @@
   });
 </script>
 
-<div class="flex flex-col h-full bg-black/40 text-sm font-sans w-64 border-r border-white/10 shrink-0 select-none overflow-y-auto">
-  <div class="px-4 py-2 text-xs font-semibold text-white/50 tracking-wider sticky top-0 bg-black/60 backdrop-blur z-10 flex items-center justify-between border-b border-white/5">
+<div class="flex flex-col h-full bg-[#21252b] text-sm font-sans w-64 border-r border-[#181a1f] shrink-0 select-none overflow-y-auto">
+  <div class="px-4 py-2 text-xs font-semibold text-white/50 tracking-wider sticky top-0 bg-[#21252b] backdrop-blur z-10 flex items-center justify-between border-b border-[#181a1f]">
     <span class="uppercase">Source Control</span>
     <button onclick={loadStatus} class="text-white/40 hover:text-white transition-colors" title="Refresh">↻</button>
   </div>

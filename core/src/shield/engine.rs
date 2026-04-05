@@ -16,8 +16,8 @@ pub struct EngineVersion {
 }
 
 /// Platform-specific download URL builder.
-/// Wayfern releases: https://github.com/nicksrandall/nickel-chromium/releases
-/// Camoufox releases: https://github.com/nicksrandall/nickel-chromium/releases
+/// Wayfern releases: Chrome for Testing (https://googlechromelabs.github.io/chrome-for-testing/)
+/// Camoufox releases: https://github.com/daijro/camoufox/releases
 fn get_platform_suffix() -> &'static str {
     if cfg!(target_os = "windows") {
         if cfg!(target_arch = "x86_64") {
@@ -208,6 +208,31 @@ impl EngineManager {
                 let mut perms = metadata.permissions();
                 perms.set_mode(perms.mode() | 0o755);
                 std::fs::set_permissions(&exe_path, perms)?;
+            }
+        }
+
+        // On macOS, remove quarantine attribute so Gatekeeper doesn't block the browser.
+        // Downloaded archives get com.apple.quarantine which prevents the extracted
+        // executable from launching.
+        #[cfg(target_os = "macos")]
+        {
+            let status = std::process::Command::new("xattr")
+                .args(["-r", "-d", "com.apple.quarantine"])
+                .arg(&install_dir)
+                .output();
+            match status {
+                Ok(output) if output.status.success() => {
+                    tracing::info!("Removed quarantine attribute from {}", install_dir.display());
+                }
+                Ok(output) => {
+                    tracing::warn!(
+                        "xattr quarantine removal returned non-zero: {}",
+                        String::from_utf8_lossy(&output.stderr)
+                    );
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to remove quarantine attribute: {}", e);
+                }
             }
         }
 

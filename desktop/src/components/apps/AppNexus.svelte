@@ -23,10 +23,11 @@
     "vibe-studio": () => import("🍎/components/apps/VibeCodeStudio/VibeCodeStudio.svelte"),
     "screenshot": () => import("🍎/components/apps/Screenshot/Screenshot.svelte"),
     "terminal": () => import("🍎/components/apps/Terminal/Terminal.svelte"),
-    "freecut": () => import("🍎/components/apps/FreeCut/FreeCut.svelte")
+    "freecut": () => import("🍎/components/apps/FreeCut/FreeCut.svelte"),
+    "service-hub": () => import("🍎/components/apps/ServiceHub/ServiceHub.svelte")
   };
 
-  const needsWindowProp = new Set(["browser", "vibe-studio", "screenshot", "terminal"]);
+  const needsWindowProp = new Set(["browser", "vibe-studio", "screenshot", "terminal", "service-hub"]);
 
   const getAppPromise = (app_id: string) => {
     if (app_id in apps) {

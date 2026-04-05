@@ -244,13 +244,16 @@ fn shield_download_url_camoufox() {
 }
 
 #[test]
-fn shield_download_url_wayfern_not_available() {
-    let result = launcher::get_download_url(&BrowserEngine::Wayfern, "133.0");
+fn shield_download_url_wayfern() {
+    let url = launcher::get_download_url(&BrowserEngine::Wayfern, "147.0.7727.50").unwrap();
+    assert!(url.starts_with("https://storage.googleapis.com/chrome-for-testing-public/"));
+    assert!(url.contains("147.0.7727.50"));
+    assert!(url.ends_with(".zip"));
+    // Should contain platform-specific identifiers
     assert!(
-        result.is_err(),
-        "Wayfern should not be available for download"
+        url.contains("win") || url.contains("linux") || url.contains("mac"),
+        "URL should contain platform: {url}"
     );
-    assert!(result.unwrap_err().to_string().contains("Coming soon"));
 }
 
 #[test]

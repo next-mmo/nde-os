@@ -47,9 +47,6 @@ test.describe("Shield Browser", () => {
       await expect(shieldWindow.getByText(/Camoufox/)).toBeVisible({ timeout: 10000 });
       await expect(shieldWindow.getByText(/Wayfern/)).toBeVisible({ timeout: 5000 });
 
-      // Wayfern should be marked as coming soon
-      await expect(shieldWindow.getByText("Coming Soon")).toBeVisible();
-
       // Should have an install button
       const installBtn = shieldWindow.locator(".install-btn");
       await expect(installBtn).toBeVisible({ timeout: 10000 });
@@ -101,7 +98,7 @@ test.describe("Shield Browser", () => {
     await expect(shieldWindow.locator("#profile-name")).toBeVisible();
     await expect(shieldWindow.locator("#engine-select")).toBeVisible();
 
-    // Only available engines shown (Camoufox only since Wayfern is coming soon)
+    // Both engines should be available (Camoufox and Wayfern)
     const options = shieldWindow.locator("#engine-select option");
     const count = await options.count();
     expect(count).toBeGreaterThanOrEqual(1);
