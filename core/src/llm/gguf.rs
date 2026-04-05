@@ -41,7 +41,7 @@ const DEFAULT_MODEL_URL: &str =
 const DEFAULT_MODEL_FILENAME: &str = "qwen2.5-0.5b-instruct-q4_k_m.gguf";
 
 /// llama.cpp release to auto-download.
-const LLAMA_CPP_VERSION: &str = "b4679";
+const LLAMA_CPP_VERSION: &str = "b5170";
 const DEFAULT_PORT: u16 = 8090;
 
 #[derive(Clone)]
