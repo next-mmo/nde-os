@@ -41,7 +41,7 @@ const DEFAULT_MODEL_URL: &str =
 const DEFAULT_MODEL_FILENAME: &str = "qwen2.5-0.5b-instruct-q4_k_m.gguf";
 
 /// llama.cpp release to auto-download.
-const LLAMA_CPP_VERSION: &str = "b5170";
+const LLAMA_CPP_VERSION: &str = "b8679";
 const DEFAULT_PORT: u16 = 8090;
 
 #[derive(Clone)]
@@ -698,8 +698,8 @@ impl GgufProvider {
             // Set working directory to bin/ so Windows can find companion DLLs
             // (ggml-cuda.dll, cudart64_*.dll, etc.)
             .current_dir(&bin_dir)
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped());
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null());
 
         // Enable flash attention for GPU — significantly faster inference
         if has_gpu {
@@ -896,11 +896,15 @@ impl LlmProvider for GgufProvider {
         // Auto-bootstrap: download binary + model + start server
         self.ensure_server().await?;
 
+        // NOTE: Native tool calling disabled for small GGUF models (sub-7B).
+        // The 0.5B model returns empty responses when given tool definitions.
+        // Slash commands in the Chat UI translate to detailed prompts instead.
+        // Re-enable with `tools: to_oai_tools(tools)` for 7B+ models.
+        let _ = tools; // suppress unused warning
+
         let body = ChatRequest {
             model: self.model_name.clone(),
             messages: to_oai_messages(messages),
-            // Skip tools for GGUF models — most small models don't support tool calling
-            // and sending tools causes llama-server to crash without --jinja flag
             tools: vec![],
             max_tokens: Some(2048),
         };

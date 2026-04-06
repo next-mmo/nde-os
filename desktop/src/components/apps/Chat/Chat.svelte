@@ -12,6 +12,19 @@
     streaming?: boolean;
   };
 
+  // ── Slash command definitions ──────────────────────────────────────────────
+  const SLASH_COMMANDS = [
+    { cmd: "/todo_add",     emoji: "✅", label: "Add a new todo task",          example: "/todo_add Buy groceries" },
+    { cmd: "/todo_list",    emoji: "📋", label: "List all kanban tasks",        example: "/todo_list" },
+    { cmd: "/todo_done",    emoji: "✔️", label: "Mark a task as done",          example: "/todo_done my-task.md" },
+    { cmd: "/openviking",   emoji: "🕹️", label: "OpenViking server control",    example: "/openviking status" },
+    { cmd: "/apps",         emoji: "🚀", label: "List or manage installed apps", example: "/apps" },
+    { cmd: "/system",       emoji: "💻", label: "Show system info & resources",  example: "/system" },
+    { cmd: "/files",        emoji: "📁", label: "List workspace files",         example: "/files" },
+    { cmd: "/shell",        emoji: "🖥️", label: "Run a sandbox shell command",  example: "/shell ls -la" },
+    { cmd: "/help",         emoji: "❓", label: "Show all available commands",   example: "/help" },
+  ] as const;
+
   let messages = $state<ChatMessage[]>([]);
   let input = $state("");
   let loading = $state(false);
@@ -22,6 +35,10 @@
   let messagesEl: HTMLDivElement | undefined = $state();
   let msgCounter = $state(0);
   let streamingContent = $state("");
+  let slashMenuOpen = $state(false);
+  let slashMenuIndex = $state(0);
+  let filteredCommands = $state(SLASH_COMMANDS.slice());
+
 
   // Load agent config on mount
   $effect(() => {
@@ -45,15 +62,59 @@
     }
   });
 
-  async function sendMessage() {
-    const text = input.trim();
+  /** Translate slash commands to full agent prompts */
+  function resolveSlashCommand(text: string): string {
+    if (text.startsWith("/todo_add ")) {
+      const task = text.slice("/todo_add ".length).trim();
+      return `Please create a kanban task ticket with the title: "${task}". Use the kanban_create_task tool.`;
+    }
+    if (text === "/todo_list" || text.startsWith("/todo_list ")) {
+      return `List all kanban board tasks. Use the kanban_get_tasks tool and format the results as a clear list.`;
+    }
+    if (text.startsWith("/todo_done ")) {
+      const filename = text.slice("/todo_done ".length).trim();
+      return `Mark the kanban task "${filename}" as done. Use the kanban_update_task tool with status "Done by AI".`;
+    }
+    if (text === "/openviking" || text.startsWith("/openviking ")) {
+      const sub = text.slice("/openviking".length).trim() || "status";
+      return `OpenViking action: ${sub}. Use the http_fetch tool to check http://127.0.0.1:3000/health for server status, or the shell_exec tool to check if the openviking-server process is running. Report the full status.`;
+    }
+    if (text === "/apps" || text.startsWith("/apps ")) {
+      return `List all installed NDE-OS apps and their status. Use the app_list tool with include_catalog=true.`;
+    }
+    if (text === "/system") {
+      return `Show NDE-OS system information — OS, memory, disk, GPU, and sandbox status. Use the system_info tool.`;
+    }
+    if (text === "/files" || text.startsWith("/files ")) {
+      const path = text.slice("/files".length).trim() || ".";
+      return `List the files in the sandbox workspace directory: "${path}". Use the file_list tool.`;
+    }
+    if (text.startsWith("/shell ")) {
+      const cmd = text.slice("/shell ".length).trim();
+      return `Run this shell command inside the NDE-OS sandbox: ${cmd}. Use the shell_exec tool. Show the full output.`;
+    }
+    if (text === "/help") {
+      const cmdList = SLASH_COMMANDS.map(c => "  " + c.emoji + " " + c.cmd + " — " + c.label + " (example: " + c.example + ")").join("\n");
+      return "The user asked for help. List all available slash commands:\n" + cmdList + "\n\nAlso mention the user can type any natural language question and the agent has 30+ built-in tools including file I/O, shell exec, web search, git, kanban, app management, and more.";
+    }
+    return text;
+  }
+
+  async function sendMessage(directText?: string) {
+    let text = (directText ?? input).trim();
     if (!text || loading) return;
+
+    // Close slash menu
+    slashMenuOpen = false;
+
+    // Resolve slash command to agent prompt
+    const agentPrompt = resolveSlashCommand(text);
 
     msgCounter++;
     messages.push({
       id: msgCounter,
       role: "user",
-      content: text,
+      content: text, // Show raw slash command to user
       timestamp: new Date().toISOString(),
     });
     input = "";
@@ -72,14 +133,14 @@
     });
 
     try {
-      // Try streaming first, fall back to regular
-      const success = await streamChat(text, assistantMsgId);
+      // Try streaming first, fall back to regular — send agentPrompt, not raw text
+      const success = await streamChat(agentPrompt, assistantMsgId);
       if (!success) {
         // Remove the streaming placeholder
         messages = messages.filter(m => m.id !== assistantMsgId);
         msgCounter--;
         // Fall back to non-streaming
-        await regularChat(text);
+        await regularChat(agentPrompt);
       }
     } catch (e: any) {
       // Update the streaming message with the error, or add error message
@@ -240,10 +301,55 @@
   }
 
   function handleKeyDown(e: KeyboardEvent) {
+    // Slash command autocomplete navigation
+    if (slashMenuOpen) {
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        slashMenuIndex = (slashMenuIndex + 1) % filteredCommands.length;
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        slashMenuIndex = (slashMenuIndex - 1 + filteredCommands.length) % filteredCommands.length;
+        return;
+      }
+      if (e.key === "Tab" || (e.key === "Enter" && !e.shiftKey)) {
+        e.preventDefault();
+        if (filteredCommands.length > 0) {
+          const selected = filteredCommands[slashMenuIndex];
+          input = selected.cmd + " ";
+          slashMenuOpen = false;
+        }
+        return;
+      }
+      if (e.key === "Escape") {
+        slashMenuOpen = false;
+        return;
+      }
+    }
+
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       sendMessage();
     }
+  }
+
+  function handleInput() {
+    const val = input;
+    if (val.startsWith("/") && !val.includes(" ")) {
+      // Filter commands matching partial input
+      const query = val.toLowerCase();
+      filteredCommands = SLASH_COMMANDS.filter(c => c.cmd.startsWith(query));
+      slashMenuOpen = filteredCommands.length > 0;
+      slashMenuIndex = 0;
+    } else {
+      slashMenuOpen = false;
+    }
+  }
+
+  function selectSlashCommand(cmd: string) {
+    input = cmd + " ";
+    slashMenuOpen = false;
   }
 
   /** Simple markdown-like rendering for assistant messages */
@@ -309,19 +415,25 @@
         <div class="empty-state">
           <div class="empty-icon">🤖</div>
           <h3>NDE-OS Agent</h3>
-          <p>Ask me anything. I can read/write files, run commands in the sandbox, search knowledge, and manage apps.</p>
+          <p>Ask anything, or type <code>/</code> for slash commands. I have 30+ tools for files, shell, apps, kanban, web, and more.</p>
           <div class="suggestions">
-            <button class="suggestion" onclick={() => { input = "What tools do you have?"; sendMessage(); }}>
-              🔧 What tools do you have?
+            <button class="suggestion" onclick={() => sendMessage("/todo_add Build a sample app")}>
+              ✅ /todo_add
             </button>
-            <button class="suggestion" onclick={() => { input = "List files in the workspace"; sendMessage(); }}>
-              📁 List files in workspace
+            <button class="suggestion" onclick={() => sendMessage("/todo_list")}>
+              📋 /todo_list
             </button>
-            <button class="suggestion" onclick={() => { input = "Hello! Tell me about NDE-OS."; sendMessage(); }}>
-              💡 Tell me about NDE-OS
+            <button class="suggestion" onclick={() => sendMessage("/openviking status")}>
+              🕹️ /openviking
             </button>
-            <button class="suggestion" onclick={() => { input = "What AI apps are available?"; sendMessage(); }}>
-              🚀 Available AI apps
+            <button class="suggestion" onclick={() => sendMessage("/apps")}>
+              🚀 /apps
+            </button>
+            <button class="suggestion" onclick={() => sendMessage("/system")}>
+              💻 /system
+            </button>
+            <button class="suggestion" onclick={() => sendMessage("/help")}>
+              ❓ /help
             </button>
           </div>
         </div>
@@ -363,15 +475,31 @@
 
     <!-- Input -->
     <div class="input-area">
+      {#if slashMenuOpen}
+        <div class="slash-menu">
+          {#each filteredCommands as cmd, i (cmd.cmd)}
+            <button
+              class="slash-item"
+              class:active={i === slashMenuIndex}
+              onclick={() => selectSlashCommand(cmd.cmd)}
+            >
+              <span class="slash-emoji">{cmd.emoji}</span>
+              <span class="slash-cmd">{cmd.cmd}</span>
+              <span class="slash-desc">{cmd.label}</span>
+            </button>
+          {/each}
+        </div>
+      {/if}
       <textarea
         class="chat-input"
-        placeholder="Send a message..."
+        placeholder="Type a message or / for commands..."
         bind:value={input}
         onkeydown={handleKeyDown}
+        oninput={handleInput}
         rows="1"
         disabled={loading}
       ></textarea>
-      <button class="send-btn" onclick={sendMessage} disabled={!input.trim() || loading}>
+      <button class="send-btn" onclick={() => sendMessage()} disabled={!input.trim() || loading}>
         {loading ? "..." : "↑"}
       </button>
     </div>
@@ -708,6 +836,73 @@
     align-items: flex-end;
     border-top: 1px solid var(--system-color-border, hsla(0 0% 100% / 0.08));
     background: hsla(220 14% 12% / 0.9);
+    position: relative;
+  }
+
+  /* ── Slash command autocomplete ─────────────────────────────────────────── */
+  .slash-menu {
+    position: absolute;
+    bottom: 100%;
+    left: 1rem;
+    right: 1rem;
+    background: hsl(220 20% 14%);
+    border: 1px solid hsla(0 0% 100% / 0.12);
+    border-radius: 12px;
+    box-shadow: 0 -8px 32px hsla(0 0% 0% / 0.5);
+    padding: 0.35rem;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    z-index: 10;
+    backdrop-filter: blur(20px);
+    max-height: 280px;
+    overflow-y: auto;
+    animation: slash-appear 0.12s ease-out;
+  }
+
+  @keyframes slash-appear {
+    from { opacity: 0; transform: translateY(6px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  .slash-item {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.55rem 0.75rem;
+    border: none;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--system-color-text, #c0c0cc);
+    cursor: pointer;
+    text-align: left;
+    width: 100%;
+    transition: background 0.1s;
+  }
+
+  .slash-item:hover,
+  .slash-item.active {
+    background: hsla(220 80% 55% / 0.18);
+  }
+
+  .slash-emoji {
+    font-size: 1rem;
+    width: 24px;
+    text-align: center;
+    flex-shrink: 0;
+  }
+
+  .slash-cmd {
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: hsl(220 80% 72%);
+    font-family: ui-monospace, 'SF Mono', monospace;
+    min-width: 100px;
+  }
+
+  .slash-desc {
+    font-size: 0.78rem;
+    color: hsla(0 0% 100% / 0.45);
   }
 
   .chat-input {
@@ -757,5 +952,10 @@
   .send-btn:disabled {
     opacity: 0.4;
     cursor: not-allowed;
+  }
+
+  /* Highlight slash commands in user messages */
+  .msg.user .msg-text {
+    font-family: inherit;
   }
 </style>

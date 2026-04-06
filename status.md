@@ -100,9 +100,9 @@
 
 | # | Feature | Status | Severity | Bug Description |
 |---|---------|--------|----------|-----------------|
-| 8.1 | Chat window opens | 🔲 | | |
-| 8.2 | Send message & get response | 🔲 | | |
-| 8.3 | Streaming response display | 🔲 | | |
+| 8.1 | Chat window opens | ✅ | | |
+| 8.2 | Send message & get response | ✅ | | |
+| 8.3 | Streaming response display | ✅ | | Fixed GGUF inference pipe deadlock |
 | 8.4 | Conversation history | 🔲 | | |
 | 8.5 | Model selection / switching | 🔲 | | |
 
