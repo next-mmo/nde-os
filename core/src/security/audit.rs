@@ -47,19 +47,22 @@ impl AuditTrail {
     }
 
     /// Log an event to the audit trail with hash chain integrity.
-    pub fn log(&mut self, event_type: &str, data: &str) -> Result<()> {
+    pub fn log(&mut self, event_type: &str, raw_data: &str) -> Result<()> {
         if !self.enabled {
             return Ok(());
         }
 
         let timestamp = chrono::Utc::now().to_rfc3339();
+        
+        // Scrub secrets from the data payload before storing/hashing
+        let data = crate::security::policy::scrub_output(raw_data);
 
         // Hash: SHA256(previous_hash + timestamp + event + data)
         let mut hasher = Sha256::new();
         hasher.update(&self.last_hash);
         hasher.update(&timestamp);
         hasher.update(event_type);
-        hasher.update(data);
+        hasher.update(&data);
         let hash = format!("{:x}", hasher.finalize());
 
         let entry = serde_json::json!({

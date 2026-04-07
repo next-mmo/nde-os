@@ -10,6 +10,7 @@
 use ai_launcher_core::agent::manager::AgentManager;
 use ai_launcher_core::agent::protocol::AgentEvent;
 use ai_launcher_core::shield::browser::BrowserEngine;
+use ai_launcher_core::shield::emulator::EmulatorManager;
 use ai_launcher_core::shield::profile::{ProfileManager, ShieldProfile};
 use serde::Deserialize;
 use std::path::{Path, PathBuf};
@@ -299,10 +300,12 @@ pub fn start_telegram_gateway(
                                         format!("{}: {}", sender, if text.len() > 80 { format!("{}...", &text[..80]) } else { text.clone() }),
                                     );
 
-                                    // Try direct command execution first (kanban, shield, research)
+                                    // Try direct command execution first (kanban, shield, emulator, research)
                                     let response = if let Some(result) = try_kanban_direct(&text) {
                                         result
                                     } else if let Some(result) = try_shield_command(&text, &data_dir) {
+                                        result
+                                    } else if let Some(result) = try_emulator_command(&text, &data_dir, &client, &token, chat_id).await {
                                         result
                                     } else if let Some(topic) = text.strip_prefix("/research ").map(str::trim) {
                                         if topic.is_empty() {
@@ -584,6 +587,45 @@ async fn send_telegram_message(
     Ok(())
 }
 
+/// Send a photo via Telegram Bot API using multipart/form-data.
+async fn send_telegram_photo(
+    client: &reqwest::Client,
+    token: &str,
+    chat_id: i64,
+    photo_path: &Path,
+    caption: &str,
+) -> Result<(), String> {
+    let url = format!("https://api.telegram.org/bot{}/sendPhoto", token);
+
+    let photo_bytes = std::fs::read(photo_path)
+        .map_err(|e| format!("Failed to read photo off disk: {}", e))?;
+
+    let filename = photo_path
+        .file_name()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .to_string();
+
+    let part = reqwest::multipart::Part::bytes(photo_bytes)
+        .file_name(filename)
+        .mime_str("image/png")
+        .unwrap_or_else(|_| reqwest::multipart::Part::bytes(vec![]));
+
+    let form = reqwest::multipart::Form::new()
+        .text("chat_id", chat_id.to_string())
+        .text("caption", caption.to_string())
+        .part("photo", part);
+
+    client
+        .post(&url)
+        .multipart(form)
+        .send()
+        .await
+        .map_err(|e| format!("Failed to send photo: {}", e))?;
+
+    Ok(())
+}
+
 // ── Shield Browser commands ──────────────────────────────────────────────────
 
 /// Try to handle Shield Browser slash commands directly without the LLM.
@@ -781,4 +823,136 @@ fn format_research_response(topic: &str, raw_response: &str) -> String {
     } else {
         full
     }
+}
+
+// ── Emulator commands ────────────────────────────────────────────────────────
+
+/// Try to handle Android Emulator commands directly without the LLM.
+async fn try_emulator_command(
+    text: &str,
+    data_dir: &Path,
+    client: &reqwest::Client,
+    token: &str,
+    chat_id: i64,
+) -> Option<String> {
+    let text_trimmed = text.trim();
+
+    if !text_trimmed.starts_with("/emulator") {
+        return None;
+    }
+
+    let emu_mgr = match EmulatorManager::new(data_dir) {
+        Ok(mgr) => mgr,
+        Err(e) => return Some(format!("❌ Emulator subsystem offline: {}", e)),
+    };
+
+    // /emulators — list available AVDs and running devices
+    if text_trimmed == "/emulators" {
+        let mut msg = String::new();
+
+        match emu_mgr.list_devices() {
+            Ok(devices) => {
+                let running: Vec<_> = devices.iter().filter(|d| d.is_emulator()).collect();
+                msg.push_str(&format!("📱 Running Devices ({})\n", running.len()));
+                for d in running {
+                    let status = match d.status {
+                        ai_launcher_core::shield::emulator::DeviceStatus::Online => "🟢 Online",
+                        ai_launcher_core::shield::emulator::DeviceStatus::Offline => "⚪ Offline",
+                        ai_launcher_core::shield::emulator::DeviceStatus::Booting => "🟡 Booting",
+                        ai_launcher_core::shield::emulator::DeviceStatus::Unauthorized => "⛔ Unauthorized",
+                    };
+                    msg.push_str(&format!("  • {} [{}]\n", d.display_name(), status));
+                }
+            }
+            Err(e) => msg.push_str(&format!("❌ Failed to list devices: {}\n", e)),
+        }
+
+        msg.push_str("\n");
+
+        match emu_mgr.list_avds() {
+            Ok(avds) => {
+                msg.push_str(&format!("📦 Available AVDs ({})\n", avds.len()));
+                for a in avds {
+                    msg.push_str(&format!("  • {}\n", a.name));
+                }
+            }
+            Err(e) => msg.push_str(&format!("❌ Failed to list AVDs: {}\n", e)),
+        }
+
+        if msg.trim().is_empty() {
+            msg = "No Android SDK components detected.".into();
+        }
+
+        return Some(msg);
+    }
+
+    // /emulator_launch <avd_name> — launch an emulator
+    if text_trimmed.starts_with("/emulator_launch ") {
+        let avd = text_trimmed["/emulator_launch ".len()..].trim();
+        if avd.is_empty() {
+            return Some("❌ Usage: /emulator_launch <avd_name>".into());
+        }
+
+        return Some(match emu_mgr.launch_avd(avd) {
+            Ok(()) => format!("✅ Launching AVD '{}'... This may take a minute.", avd),
+            Err(e) => format!("❌ Failed to launch emulator: {}", e),
+        });
+    }
+
+    // /emulator_stop <serial> — stop a running device
+    if text_trimmed.starts_with("/emulator_stop ") {
+        let serial = text_trimmed["/emulator_stop ".len()..].trim();
+        if serial.is_empty() {
+            return Some("❌ Usage: /emulator_stop <serial>\nExample: /emulator_stop emulator-5554".into());
+        }
+
+        return Some(match emu_mgr.stop_device(serial) {
+            Ok(()) => format!("✅ Stopped device '{}'", serial),
+            Err(e) => format!("❌ Failed to stop device: {}", e),
+        });
+    }
+
+    // /emulator_open <serial> <url> — open a URL in the emulator
+    if text_trimmed.starts_with("/emulator_open ") {
+        let parts: Vec<&str> = text_trimmed["/emulator_open ".len()..].splitn(2, ' ').collect();
+        if parts.len() < 2 {
+            return Some("❌ Usage: /emulator_open <serial> <url>".into());
+        }
+        let serial = parts[0].trim();
+        let url = parts[1].trim();
+
+        return Some(match emu_mgr.open_url(serial, url) {
+            Ok(()) => format!("✅ Opened URL on '{}'", serial),
+            Err(e) => format!("❌ Failed to open URL: {}", e),
+        });
+    }
+
+    // /emulator_screenshot <serial> — capture and send screenshot
+    if text_trimmed.starts_with("/emulator_screenshot ") {
+        let serial = text_trimmed["/emulator_screenshot ".len()..].trim();
+        if serial.is_empty() {
+            return Some("❌ Usage: /emulator_screenshot <serial>".into());
+        }
+
+        match emu_mgr.take_screenshot(serial) {
+            Ok(path) => {
+                let _ = send_telegram_message(
+                    client, token, chat_id,
+                    &format!("📸 Got screenshot for {}. Sending...", serial),
+                ).await;
+
+                if let Err(e) = send_telegram_photo(client, token, chat_id, &path, &format!("Screenshot: {}", serial)).await {
+                    return Some(format!("❌ Failed to send photo to Telegram: {}", e));
+                }
+
+                // Delete local temp file after sending
+                let _ = std::fs::remove_file(&path);
+
+                return Some("✅ Screenshot sent.".into());
+            }
+            Err(e) => return Some(format!("❌ Failed to take screenshot: {}", e)),
+        }
+    }
+
+    None
 }
