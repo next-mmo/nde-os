@@ -702,8 +702,9 @@ impl GgufProvider {
             .stderr(std::process::Stdio::null());
 
         // Enable flash attention for GPU — significantly faster inference
+        // llama.cpp b8679+ requires explicit value: on|off|auto
         if has_gpu {
-            cmd.arg("--flash-attn");
+            cmd.arg("--flash-attn").arg("on");
         }
 
         let child = cmd.spawn().context("Failed to spawn llama-server")?;
