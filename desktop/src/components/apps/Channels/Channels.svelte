@@ -10,6 +10,7 @@
   // Local state for configuration
   let tokens = $state<Record<string, string>>({});
   let configuring = $state<Record<string, boolean>>({});
+  let allowedUsersInput = $state<string>("");
 
   const TYPE_ICONS: Record<string, string> = {
     rest: "🌐", telegram: "✈️", discord: "💬", slack: "📱", web_chat: "🖥️", cli: "⌨️",
@@ -19,22 +20,48 @@
 
   async function refresh() {
     loading = true;
-    try { 
-      channels = await api.listChannels(); 
-    } catch { 
-      channels = getFallbackChannels(); 
-    } finally { 
-      loading = false; 
+    try {
+      channels = await api.listChannels();
+      // Populate allowed users input from server state
+      const tg = channels.find(c => c.channel_type === "telegram");
+      if (tg?.allowed_users?.length) {
+        allowedUsersInput = tg.allowed_users.join(", ");
+      }
+    } catch {
+      channels = getFallbackChannels();
+    } finally {
+      loading = false;
     }
+  }
+
+  function parseAllowedUsers(): number[] {
+    if (!allowedUsersInput.trim()) return [];
+    return allowedUsersInput
+      .split(",")
+      .map(s => parseInt(s.trim(), 10))
+      .filter(n => !isNaN(n));
   }
 
   async function connectChannel(ch: ChannelStatus) {
     configuring[ch.name] = true;
     try {
-      await api.configureChannel(ch.name, ch.channel_type, true, tokens[ch.name] || "");
+      const users = ch.channel_type === "telegram" ? parseAllowedUsers() : undefined;
+      await api.configureChannel(ch.name, ch.channel_type, true, tokens[ch.name] || "", users);
       await refresh();
     } catch (e) {
       alert("Failed to connect channel");
+    } finally {
+      configuring[ch.name] = false;
+    }
+  }
+
+  async function updateAllowedUsers(ch: ChannelStatus) {
+    configuring[ch.name] = true;
+    try {
+      await api.configureChannel(ch.name, ch.channel_type, true, "", parseAllowedUsers());
+      await refresh();
+    } catch (e) {
+      alert("Failed to update allowed users");
     } finally {
       configuring[ch.name] = false;
     }
@@ -104,20 +131,31 @@
           <div class="channel-config">
             {#if ch.channel_type !== "rest" && ch.channel_type !== "web_chat" && ch.channel_type !== "cli"}
               <div class="config-input-group">
-                <input 
-                  type="password" 
-                  placeholder="Bot Token..." 
-                  bind:value={tokens[ch.name]} 
-                  disabled={configuring[ch.name]} 
+                <input
+                  type="password"
+                  placeholder="Bot Token..."
+                  bind:value={tokens[ch.name]}
+                  disabled={configuring[ch.name]}
                 />
-                <button 
-                  class="action-btn-small" 
-                  disabled={configuring[ch.name] || !tokens[ch.name]} 
+                <button
+                  class="action-btn-small"
+                  disabled={configuring[ch.name] || !tokens[ch.name]}
                   onclick={() => connectChannel(ch)}
                 >
                   {configuring[ch.name] ? "..." : "Connect"}
                 </button>
               </div>
+              {#if ch.channel_type === "telegram"}
+                <div class="config-allowed-users">
+                  <input
+                    type="text"
+                    placeholder="Allowed User IDs (comma-separated)"
+                    bind:value={allowedUsersInput}
+                    disabled={configuring[ch.name]}
+                  />
+                  <span class="config-hint">Leave empty to allow all users. Find your ID via @userinfobot on Telegram.</span>
+                </div>
+              {/if}
             {:else}
               <span class="config-hint">Default built-in channel</span>
             {/if}
@@ -125,9 +163,29 @@
         {:else}
           {#if ch.channel_type !== "rest" && ch.channel_type !== "web_chat" && ch.channel_type !== "cli"}
             <div class="channel-config">
-              <button 
-                class="action-btn-small disconnect" 
-                disabled={configuring[ch.name]} 
+              {#if ch.channel_type === "telegram"}
+                <div class="config-allowed-users">
+                  <div class="config-input-group">
+                    <input
+                      type="text"
+                      placeholder="Allowed User IDs (comma-separated)"
+                      bind:value={allowedUsersInput}
+                      disabled={configuring[ch.name]}
+                    />
+                    <button
+                      class="action-btn-small"
+                      disabled={configuring[ch.name]}
+                      onclick={() => updateAllowedUsers(ch)}
+                    >
+                      {configuring[ch.name] ? "..." : "Save"}
+                    </button>
+                  </div>
+                  <span class="config-hint">Leave empty to allow all users.</span>
+                </div>
+              {/if}
+              <button
+                class="action-btn-small disconnect"
+                disabled={configuring[ch.name]}
                 onclick={() => disconnectChannel(ch)}
               >
                 {configuring[ch.name] ? "..." : "Disconnect"}
@@ -187,6 +245,13 @@
   .status-text.online { color: var(--system-color-success); }
   .channel-config { font-size: 0.78rem; color: var(--system-color-text-muted); padding-top: 0.5rem; border-top: 1px dashed var(--system-color-border); }
   .config-hint { font-size: 0.75rem; }
+  .config-allowed-users { display: flex; flex-direction: column; gap: 0.35rem; margin-top: 0.5rem; }
+  .config-allowed-users input {
+    width: 100%; padding: 0.4rem 0.6rem; border-radius: 0.5rem;
+    border: 1px solid var(--system-color-border); background: hsla(var(--system-color-dark-hsl) / 0.2);
+    color: var(--system-color-text); font-size: 0.78rem; outline: none;
+  }
+  .config-allowed-users input:focus { border-color: var(--system-color-primary); }
   .config-input-group { display: flex; gap: 0.5rem; }
   .config-input-group input { 
     flex: 1; min-width: 0; padding: 0.4rem 0.6rem; border-radius: 0.5rem; 

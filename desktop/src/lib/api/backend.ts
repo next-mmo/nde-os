@@ -352,8 +352,8 @@ export async function listChannels(): Promise<ChannelStatus[]> {
   return smartInvoke<ChannelStatus[]>("list_channels");
 }
 
-export async function configureChannel(name: string, channelType: string, enabled: boolean, token: string): Promise<{success: boolean}> {
-  return smartInvoke<{success: boolean}>("configure_channel", { name, channel_type: channelType, enabled, token });
+export async function configureChannel(name: string, channelType: string, enabled: boolean, token: string, allowedUsers?: number[]): Promise<{success: boolean}> {
+  return smartInvoke<{success: boolean}>("configure_channel", { name, channel_type: channelType, enabled, token, allowed_users: allowedUsers ?? [] });
 }
 
 // ── MCP ──

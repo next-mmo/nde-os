@@ -6,6 +6,7 @@ mod plugin_handler;
 mod response;
 mod stream_handler;
 mod subsystem_handler;
+mod telegram_gateway;
 
 use agent_handler::AgentState;
 use ai_launcher_core::agent::manager::{AgentManager, ManagerConfig};
@@ -70,6 +71,7 @@ fn route(
     data_dir: &std::path::Path,
     agent_manager: &Arc<tokio::sync::Mutex<AgentManager>>,
     viking: &Mutex<ai_launcher_core::openviking::VikingProcess>,
+    tg_state: &Arc<telegram_gateway::GatewayState>,
 ) -> tiny_http::Response<std::io::Cursor<Vec<u8>>> {
     let method = req.method().clone();
     let url = req.url().to_string();
@@ -161,7 +163,7 @@ fn route(
             return model_handler::codex_oauth_status(data_dir)
         }
         // Channels
-        (Method::Get, "/api/channels") => return subsystem_handler::list_channels(data_dir),
+        (Method::Get, "/api/channels") => return subsystem_handler::list_channels(data_dir, tg_state),
         // MCP
         (Method::Get, "/api/mcp/tools") => return subsystem_handler::list_mcp_tools(),
         (Method::Get, "/api/mcp/servers") => return subsystem_handler::list_mcp_servers(),
@@ -250,7 +252,23 @@ fn route(
         let parts: Vec<&str> = path.trim_start_matches('/').split('/').collect();
         return match (method.clone(), parts.as_slice()) {
             (Method::Post, ["api", "channels", _name, "configure"]) => {
-                subsystem_handler::configure_channel(req, data_dir)
+                let resp = subsystem_handler::configure_channel(req, data_dir);
+
+                // Check if Telegram should be started or stopped
+                if let Some(tg_config) = telegram_gateway::TelegramGatewayConfig::load(data_dir) {
+                    // Config is enabled — start gateway
+                    telegram_gateway::start_telegram_gateway(
+                        tg_config,
+                        agent_manager.clone(),
+                        rt.handle().clone(),
+                        tg_state.clone(),
+                    );
+                } else {
+                    // Config disabled or removed — stop gateway
+                    tg_state.shutdown();
+                }
+
+                resp
             }
             _ => err(404, &format!("Not found: {}", path)),
         };
@@ -507,6 +525,21 @@ fn main() {
         });
     }
 
+    // Telegram gateway shared state
+    let tg_state = Arc::new(telegram_gateway::GatewayState::new());
+
+    // Start Telegram gateway if configured
+    if let Some(tg_config) = telegram_gateway::TelegramGatewayConfig::load(&base_dir) {
+        telegram_gateway::start_telegram_gateway(
+            tg_config,
+            agent_manager.clone(),
+            rt.handle().clone(),
+            tg_state.clone(),
+        );
+    } else {
+        println!("  Telegram:    not configured (set via Channels settings)");
+    }
+
     // OpenViking process manager
     let viking_config = ai_launcher_core::openviking::VikingConfig::from_service_config(&base_dir);
     let viking_process = ai_launcher_core::openviking::VikingProcess::new(
@@ -634,6 +667,7 @@ fn main() {
                 let base_dir = base_dir.clone();
                 let agent_manager = agent_manager.clone();
                 let viking = viking.clone();
+                let tg_state = tg_state.clone();
 
                 std::thread::spawn(move || {
                     let response = route(
@@ -646,6 +680,7 @@ fn main() {
                         &base_dir,
                         &agent_manager,
                         &viking,
+                        &tg_state,
                     );
                     if let Err(e) = request.respond(response) {
                         eprintln!("Response error: {}", e);

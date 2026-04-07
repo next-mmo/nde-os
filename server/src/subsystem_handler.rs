@@ -13,22 +13,22 @@ use std::path::Path;
 // ── Channels ────────────────────────────────────────────────────────────────
 
 /// GET /api/channels — list registered channels + status.
-/// Reads from channels.json configuration or env vars.
-pub fn list_channels(data_dir: &Path) -> Response<Cursor<Vec<u8>>> {
-    let mut tg_running = false;
+/// Reads live state from the Telegram gateway and config for others.
+pub fn list_channels(
+    data_dir: &Path,
+    tg_state: &std::sync::Arc<crate::telegram_gateway::GatewayState>,
+) -> Response<Cursor<Vec<u8>>> {
+    let tg_running = tg_state.running.load(std::sync::atomic::Ordering::SeqCst);
+    let tg_received = tg_state.messages_received.load(std::sync::atomic::Ordering::Relaxed);
+    let tg_sent = tg_state.messages_sent.load(std::sync::atomic::Ordering::Relaxed);
+
     let mut dc_running = false;
     let mut sl_running = false;
+    let mut tg_allowed_users: Vec<i64> = Vec::new();
 
     let config_path = data_dir.join("channels.json");
     if let Ok(config_str) = fs::read_to_string(&config_path) {
         if let Ok(config) = serde_json::from_str::<serde_json::Value>(&config_str) {
-            if let Some(tg) = config.get("telegram") {
-                if tg.get("enabled").and_then(|e| e.as_bool()).unwrap_or(false)
-                    && tg.get("token").and_then(|t| t.as_str()).unwrap_or("") != ""
-                {
-                    tg_running = true;
-                }
-            }
             if let Some(dc) = config.get("discord") {
                 if dc.get("enabled").and_then(|e| e.as_bool()).unwrap_or(false)
                     && dc.get("token").and_then(|t| t.as_str()).unwrap_or("") != ""
@@ -43,9 +43,15 @@ pub fn list_channels(data_dir: &Path) -> Response<Cursor<Vec<u8>>> {
                     sl_running = true;
                 }
             }
+            if let Some(tg) = config.get("telegram") {
+                tg_allowed_users = tg
+                    .get("allowed_users")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| arr.iter().filter_map(|v| v.as_i64()).collect())
+                    .unwrap_or_default();
+            }
         }
     } else {
-        tg_running = std::env::var("TELEGRAM_BOT_TOKEN").is_ok();
         dc_running = std::env::var("DISCORD_BOT_TOKEN").is_ok();
         sl_running = std::env::var("SLACK_BOT_TOKEN").is_ok();
     }
@@ -62,8 +68,9 @@ pub fn list_channels(data_dir: &Path) -> Response<Cursor<Vec<u8>>> {
             "name": "telegram-bot",
             "channel_type": "telegram",
             "is_running": tg_running,
-            "messages_received": 0,
-            "messages_sent": 0
+            "messages_received": tg_received,
+            "messages_sent": tg_sent,
+            "allowed_users": tg_allowed_users
         },
         {
             "name": "discord-bot",
@@ -107,6 +114,11 @@ pub fn configure_channel(
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
     let token = payload.get("token").and_then(|v| v.as_str()).unwrap_or("");
+    let allowed_users: Vec<i64> = payload
+        .get("allowed_users")
+        .and_then(|v| v.as_array())
+        .map(|arr| arr.iter().filter_map(|v| v.as_i64()).collect())
+        .unwrap_or_default();
 
     if channel_type.is_empty() {
         return err(400, "Missing channel_type");
@@ -120,14 +132,34 @@ pub fn configure_channel(
         Err(_) => serde_json::json!({}),
     };
 
+    // Encrypt the token before persisting, or preserve existing if not provided
+    let encrypted_token = if !token.is_empty() && enabled {
+        match ai_launcher_core::secrets::encrypt_token(token, data_dir) {
+            Ok(enc) => enc,
+            Err(e) => return err(500, &format!("Failed to encrypt token: {}", e)),
+        }
+    } else if token.is_empty() && enabled {
+        // Preserve existing token when only updating other fields (e.g. allowed_users)
+        root_config
+            .get(channel_type)
+            .and_then(|ch| ch.get("token"))
+            .and_then(|t| t.as_str())
+            .unwrap_or("")
+            .to_string()
+    } else {
+        String::new()
+    };
+
     if let Some(obj) = root_config.as_object_mut() {
-        obj.insert(
-            channel_type.to_string(),
-            serde_json::json!({
-                "enabled": enabled,
-                "token": token
-            }),
-        );
+        let mut channel_obj = serde_json::json!({
+            "enabled": enabled,
+            "token": encrypted_token
+        });
+        // Persist allowed_users for telegram
+        if channel_type == "telegram" {
+            channel_obj["allowed_users"] = serde_json::json!(allowed_users);
+        }
+        obj.insert(channel_type.to_string(), channel_obj);
     }
 
     let _ = fs::write(
@@ -135,7 +167,7 @@ pub fn configure_channel(
         serde_json::to_string_pretty(&root_config).unwrap_or_default(),
     );
 
-    // Apply to current process env vars so they work immediately
+    // Apply decrypted token to env vars for immediate use
     if enabled && !token.is_empty() {
         match channel_type {
             "telegram" => std::env::set_var("TELEGRAM_BOT_TOKEN", token),

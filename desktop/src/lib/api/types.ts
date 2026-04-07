@@ -194,6 +194,7 @@ export interface ChannelStatus {
   is_running: boolean;
   messages_received: number;
   messages_sent: number;
+  allowed_users?: number[];
 }
 
 // ── MCP types ────────────────────────────────────────────────────────────────
