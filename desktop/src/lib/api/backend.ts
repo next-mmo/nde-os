@@ -115,6 +115,13 @@ async function httpFallback<T>(command: string, args?: Record<string, unknown>):
     viking_install:  { method: "POST",   url: `/api/viking/install` },
     viking_start:    { method: "POST",   url: `/api/viking/start` },
     viking_stop:     { method: "POST",   url: `/api/viking/stop` },
+    // Kanban
+    kanban_get_tasks:   { method: "GET",    url: `/api/kanban/tasks` },
+    kanban_create_task: { method: "POST",   url: `/api/kanban/tasks`, body: { title: args?.title, description: args?.description, checklist: args?.checklist } },
+    kanban_update_task: { method: "PUT",    url: `/api/kanban/tasks/${args?.filename}`, body: { status: args?.status } },
+    kanban_delete_task: { method: "DELETE", url: `/api/kanban/tasks/${args?.filename}` },
+    kanban_get_content: { method: "GET",    url: `/api/kanban/tasks/${args?.filename}/content` },
+    kanban_update_content: { method: "PUT", url: `/api/kanban/tasks/${args?.filename}/content`, body: { content: args?.content } },
   };
 
   const route = routeMap[command];
@@ -411,4 +418,37 @@ export async function getServiceConfig(serviceId: string): Promise<ServiceConfig
 
 export async function setServiceConfig(serviceId: string, values: Record<string, unknown>): Promise<string> {
   return smartInvoke<string>("service_hub_set_config", { serviceId, values });
+}
+
+// ── Kanban ──
+
+export interface KanbanTask {
+  filename: string;
+  title: string;
+  status: string;
+  locked: boolean;
+}
+
+export async function kanbanGetTasks(): Promise<KanbanTask[]> {
+  return smartInvoke<KanbanTask[]>("kanban_get_tasks");
+}
+
+export async function kanbanCreateTask(title: string, description?: string, checklist?: string[]): Promise<{ success: boolean; filename: string; title: string; message: string }> {
+  return smartInvoke("kanban_create_task", { title, description, checklist });
+}
+
+export async function kanbanUpdateTask(filename: string, status: string): Promise<{ result: string }> {
+  return smartInvoke("kanban_update_task", { filename, status });
+}
+
+export async function kanbanDeleteTask(filename: string): Promise<{ result: string }> {
+  return smartInvoke("kanban_delete_task", { filename });
+}
+
+export async function kanbanGetContent(filename: string): Promise<{ content: string }> {
+  return smartInvoke("kanban_get_content", { filename });
+}
+
+export async function kanbanUpdateContent(filename: string, content: string): Promise<{ result: string }> {
+  return smartInvoke("kanban_update_content", { filename, content });
 }

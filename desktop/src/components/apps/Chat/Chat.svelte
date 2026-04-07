@@ -62,19 +62,8 @@
     }
   });
 
-  /** Translate slash commands to full agent prompts */
+  /** Translate slash commands to full agent prompts (for LLM-dependent commands) */
   function resolveSlashCommand(text: string): string {
-    if (text.startsWith("/todo_add ")) {
-      const task = text.slice("/todo_add ".length).trim();
-      return `Please create a kanban task ticket with the title: "${task}". Use the kanban_create_task tool.`;
-    }
-    if (text === "/todo_list" || text.startsWith("/todo_list ")) {
-      return `List all kanban board tasks. Use the kanban_get_tasks tool and format the results as a clear list.`;
-    }
-    if (text.startsWith("/todo_done ")) {
-      const filename = text.slice("/todo_done ".length).trim();
-      return `Mark the kanban task "${filename}" as done. Use the kanban_update_task tool with status "Done by AI".`;
-    }
     if (text === "/openviking" || text.startsWith("/openviking ")) {
       const sub = text.slice("/openviking".length).trim() || "status";
       return `OpenViking action: ${sub}. Use the http_fetch tool to check http://127.0.0.1:3000/health for server status, or the shell_exec tool to check if the openviking-server process is running. Report the full status.`;
@@ -100,6 +89,56 @@
     return text;
   }
 
+  /** Try to handle a slash command directly via REST API (no LLM needed). Returns null if not a direct command. */
+  async function tryDirectExecution(text: string): Promise<string | null> {
+    // /todo_list — list all kanban tasks via REST
+    if (text === "/todo_list" || text.startsWith("/todo_list ")) {
+      try {
+        const tasks = await api.kanbanGetTasks();
+        if (tasks.length === 0) return "📋 **No tasks found.** Use `/todo_add <title>` to create one.";
+
+        const statusEmoji: Record<string, string> = {
+          "Plan": "🔴", "YOLO mode": "🟡", "Done by AI": "🟢",
+          "Verified": "✅", "Re-open": "🔴", "Waiting Approval": "🟠",
+        };
+        const lines = tasks.map(t => {
+          const emoji = statusEmoji[t.status] ?? "⚪";
+          return `${emoji} **${t.title}** — \`${t.status}\` (\`${t.filename}\`)`;
+        });
+        return `📋 **Kanban Board** (${tasks.length} task${tasks.length > 1 ? "s" : ""})\n\n${lines.join("\n")}`;
+      } catch (e: any) {
+        return `❌ Failed to list tasks: ${e.message || e}`;
+      }
+    }
+
+    // /todo_add <title> — create a new task
+    if (text.startsWith("/todo_add ")) {
+      const title = text.slice("/todo_add ".length).trim();
+      if (!title) return "❌ Usage: `/todo_add <task title>`";
+      try {
+        const result = await api.kanbanCreateTask(title);
+        return `✅ **Task created:** ${result.title}\n📄 File: \`${result.filename}\``;
+      } catch (e: any) {
+        return `❌ Failed to create task: ${e.message || e}`;
+      }
+    }
+
+    // /todo_done <filename> — mark task as done
+    if (text.startsWith("/todo_done ")) {
+      const filename = text.slice("/todo_done ".length).trim();
+      if (!filename) return "❌ Usage: `/todo_done <filename.md>`";
+      const fname = filename.endsWith(".md") ? filename : filename + ".md";
+      try {
+        await api.kanbanUpdateTask(fname, "Done by AI");
+        return `✔️ **Task marked as done:** \`${fname}\``;
+      } catch (e: any) {
+        return `❌ Failed to update task: ${e.message || e}`;
+      }
+    }
+
+    return null; // Not a direct command — fall through to LLM
+  }
+
   async function sendMessage(directText?: string) {
     let text = (directText ?? input).trim();
     if (!text || loading) return;
@@ -107,19 +146,33 @@
     // Close slash menu
     slashMenuOpen = false;
 
-    // Resolve slash command to agent prompt
-    const agentPrompt = resolveSlashCommand(text);
-
     msgCounter++;
     messages.push({
       id: msgCounter,
       role: "user",
-      content: text, // Show raw slash command to user
+      content: text,
       timestamp: new Date().toISOString(),
     });
     input = "";
     loading = true;
     streamingContent = "";
+
+    // Try direct execution first (no LLM needed)
+    const directResult = await tryDirectExecution(text);
+    if (directResult !== null) {
+      msgCounter++;
+      messages.push({
+        id: msgCounter,
+        role: "assistant",
+        content: directResult,
+        timestamp: new Date().toISOString(),
+      });
+      loading = false;
+      return;
+    }
+
+    // Resolve slash command to agent prompt (for LLM-dependent commands)
+    const agentPrompt = resolveSlashCommand(text);
 
     // Add a placeholder assistant message for streaming
     msgCounter++;

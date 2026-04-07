@@ -78,6 +78,13 @@ fn default_tools() -> Vec<String> {
         "http_fetch".into(),
         // Git (Phase 3)
         "git".into(),
+        // Kanban
+        "kanban_get_tasks".into(),
+        "kanban_create_task".into(),
+        "kanban_update_task".into(),
+        "kanban_delete_task".into(),
+        "kanban_get_task_content".into(),
+        "kanban_update_task_content".into(),
         // System
         "app_list".into(),
         "app_install".into(),
@@ -200,7 +207,7 @@ mod tests {
         let config = AgentConfig::default();
         assert_eq!(config.max_iterations, 25);
         assert_eq!(config.model_provider, "gguf");
-        assert_eq!(config.enabled_tools.len(), 27);
+        assert_eq!(config.enabled_tools.len(), 33);
     }
 
     #[test]

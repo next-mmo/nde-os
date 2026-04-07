@@ -171,6 +171,9 @@ fn route(
         (Method::Get, "/api/knowledge") => return subsystem_handler::list_knowledge(data_dir),
         // Memory
         (Method::Get, "/api/memory") => return subsystem_handler::list_memory(data_dir),
+        // Kanban REST API (direct execution, no LLM required)
+        (Method::Get, "/api/kanban/tasks") => return kanban_rest_handler("nde_kanban_get_tasks", None),
+        (Method::Post, "/api/kanban/tasks") => return kanban_rest_handler("nde_kanban_create_task", Some(req)),
         // OpenViking
         (Method::Get, "/api/viking/status") => return subsystem_handler::viking_status(rt, viking),
         (Method::Post, "/api/viking/install") => return subsystem_handler::viking_install(rt, viking),
@@ -271,6 +274,64 @@ fn route(
         return err(404, &format!("Not found: {}", path));
     }
 
+    // Kanban dynamic routes: /api/kanban/tasks/{filename}/...
+    if path.starts_with("/api/kanban/tasks/") {
+        let parts: Vec<&str> = path.trim_start_matches('/').split('/').collect();
+        return match (method.clone(), parts.as_slice()) {
+            (Method::Get, ["api", "kanban", "tasks", filename, "content"]) => {
+                let params = serde_json::json!({ "filename": filename });
+                match ai_launcher_core::mcp::kanban::execute("nde_kanban_get_task_content", &params) {
+                    Ok(content) => ok("Task content", serde_json::json!({ "content": content })),
+                    Err(e) => err(404, &format!("Task not found: {}", e)),
+                }
+            }
+            (Method::Put, ["api", "kanban", "tasks", filename, "content"]) => {
+                let body = match read_body(req) {
+                    Some(b) => b,
+                    None => return err(400, "Missing body"),
+                };
+                let body_json: serde_json::Value = match serde_json::from_str(&body) {
+                    Ok(v) => v,
+                    Err(e) => return err(400, &format!("Invalid JSON: {}", e)),
+                };
+                let params = serde_json::json!({
+                    "filename": filename,
+                    "content": body_json.get("content").and_then(|v| v.as_str()).unwrap_or("")
+                });
+                match ai_launcher_core::mcp::kanban::execute("nde_kanban_update_task_content", &params) {
+                    Ok(result) => ok("Task content updated", serde_json::json!({ "result": result })),
+                    Err(e) => err(500, &format!("Failed to update: {}", e)),
+                }
+            }
+            (Method::Put, ["api", "kanban", "tasks", filename]) => {
+                let body = match read_body(req) {
+                    Some(b) => b,
+                    None => return err(400, "Missing body"),
+                };
+                let body_json: serde_json::Value = match serde_json::from_str(&body) {
+                    Ok(v) => v,
+                    Err(e) => return err(400, &format!("Invalid JSON: {}", e)),
+                };
+                let params = serde_json::json!({
+                    "filename": filename,
+                    "status": body_json.get("status").and_then(|v| v.as_str()).unwrap_or("Plan")
+                });
+                match ai_launcher_core::mcp::kanban::execute("nde_kanban_update_task", &params) {
+                    Ok(result) => ok("Task updated", serde_json::json!({ "result": result })),
+                    Err(e) => err(500, &format!("Failed to update: {}", e)),
+                }
+            }
+            (Method::Delete, ["api", "kanban", "tasks", filename]) => {
+                let params = serde_json::json!({ "filename": filename });
+                match ai_launcher_core::mcp::kanban::execute("nde_kanban_delete_task", &params) {
+                    Ok(result) => ok("Task deleted", serde_json::json!({ "result": result })),
+                    Err(e) => err(404, &format!("Failed to delete: {}", e)),
+                }
+            }
+            _ => err(404, &format!("Not found: {}", path)),
+        };
+    }
+
     // Knowledge search: /api/knowledge/search?q=...
     if path.starts_with("/api/knowledge/search") {
         let query = url.split("q=").nth(1).unwrap_or("");
@@ -287,6 +348,34 @@ fn route(
     }
 
     err(404, &format!("Not found: {}", path))
+}
+
+/// Handle kanban REST API requests by calling core::mcp::kanban::execute directly.
+fn kanban_rest_handler(
+    tool_name: &str,
+    req: Option<&mut Request>,
+) -> tiny_http::Response<std::io::Cursor<Vec<u8>>> {
+    let params = if let Some(req) = req {
+        match read_body(req) {
+            Some(body) => match serde_json::from_str::<serde_json::Value>(&body) {
+                Ok(v) => v,
+                Err(e) => return err(400, &format!("Invalid JSON: {}", e)),
+            },
+            None => serde_json::json!({}),
+        }
+    } else {
+        serde_json::json!({})
+    };
+
+    match ai_launcher_core::mcp::kanban::execute(tool_name, &params) {
+        Ok(result) => {
+            // Parse the result string as JSON if possible, otherwise wrap it
+            let data = serde_json::from_str::<serde_json::Value>(&result)
+                .unwrap_or_else(|_| serde_json::json!({ "result": result }));
+            ok("Kanban operation successful", data)
+        }
+        Err(e) => err(500, &format!("Kanban error: {}", e)),
+    }
 }
 
 fn main() {
@@ -524,6 +613,14 @@ fn main() {
     println!("    POST   /api/viking/install             <- install via uv/pip");
     println!("    POST   /api/viking/start               <- start server");
     println!("    POST   /api/viking/stop                <- stop server");
+    println!();
+    println!("  Kanban:");
+    println!("    GET    /api/kanban/tasks                <- list all tasks");
+    println!("    POST   /api/kanban/tasks                <- create task");
+    println!("    PUT    /api/kanban/tasks/{{file}}         <- update status");
+    println!("    DELETE /api/kanban/tasks/{{file}}         <- delete task");
+    println!("    GET    /api/kanban/tasks/{{file}}/content <- read content");
+    println!("    PUT    /api/kanban/tasks/{{file}}/content <- write content");
     println!();
 
     loop {
