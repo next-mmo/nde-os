@@ -2,7 +2,7 @@
 use std::path::Path;
 
 use ai_launcher_core::actor::manifest::ActorManager;
-use ai_launcher_core::actor::runner::{ActorRun, ActorRunner};
+use ai_launcher_core::actor::runner::ActorRunner;
 use ai_launcher_core::actor::storage::RunStorage;
 use ai_launcher_core::actor::template::ActorTemplate;
 use tiny_http::Request;

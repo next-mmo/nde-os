@@ -26,6 +26,10 @@ pub fn created<T: serde::Serialize>(msg: &str, data: T) -> HttpResponse {
     json_resp(201, &json!({"success":true,"message":msg,"data":data}))
 }
 
+pub fn ok_msg(msg: &str) -> HttpResponse {
+    json_resp(200, &json!({"success":true,"message":msg,"data":null}))
+}
+
 pub fn err(status: u16, msg: &str) -> HttpResponse {
     json_resp(status, &json!({"success":false,"message":msg,"data":null}))
 }
