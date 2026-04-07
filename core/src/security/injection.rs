@@ -34,6 +34,7 @@ pub struct Finding {
 impl InjectionScanner {
     pub fn new(enabled: bool) -> Self {
         let patterns = vec![
+            // ── Prompt override attempts ──────────────────────────────────
             InjectionPattern {
                 pattern: "ignore previous instructions".into(),
                 severity: Severity::High,
@@ -45,14 +46,19 @@ impl InjectionScanner {
                 description: "Attempts to override system prompt".into(),
             },
             InjectionPattern {
+                pattern: "disregard your instructions".into(),
+                severity: Severity::High,
+                description: "Attempts to bypass instructions".into(),
+            },
+            InjectionPattern {
+                pattern: "disregard all prior".into(),
+                severity: Severity::High,
+                description: "Attempts to bypass instructions".into(),
+            },
+            InjectionPattern {
                 pattern: "you are now".into(),
                 severity: Severity::Medium,
                 description: "Attempts to change agent identity".into(),
-            },
-            InjectionPattern {
-                pattern: "act as if".into(),
-                severity: Severity::Low,
-                description: "Potential role manipulation".into(),
             },
             InjectionPattern {
                 pattern: "system prompt".into(),
@@ -65,14 +71,66 @@ impl InjectionScanner {
                 description: "Attempts to extract system prompt".into(),
             },
             InjectionPattern {
-                pattern: "disregard".into(),
-                severity: Severity::Medium,
-                description: "Attempts to bypass instructions".into(),
-            },
-            InjectionPattern {
                 pattern: "ADMIN OVERRIDE".into(),
                 severity: Severity::High,
                 description: "Fake admin escalation".into(),
+            },
+            InjectionPattern {
+                pattern: "new instructions follow".into(),
+                severity: Severity::High,
+                description: "Attempts to inject new instructions".into(),
+            },
+            InjectionPattern {
+                pattern: "forget everything".into(),
+                severity: Severity::High,
+                description: "Attempts to reset agent context".into(),
+            },
+            // ── Credential exfiltration ───────────────────────────────────
+            InjectionPattern {
+                pattern: "print your api key".into(),
+                severity: Severity::High,
+                description: "Attempts to extract API credentials".into(),
+            },
+            InjectionPattern {
+                pattern: "show me the token".into(),
+                severity: Severity::Medium,
+                description: "Attempts to extract tokens".into(),
+            },
+            InjectionPattern {
+                pattern: "show me env var".into(),
+                severity: Severity::High,
+                description: "Attempts to access environment variables".into(),
+            },
+            InjectionPattern {
+                pattern: "read the .env".into(),
+                severity: Severity::High,
+                description: "Attempts to access .env file".into(),
+            },
+            InjectionPattern {
+                pattern: "send data to".into(),
+                severity: Severity::Medium,
+                description: "Potential data exfiltration instruction".into(),
+            },
+            InjectionPattern {
+                pattern: "upload to".into(),
+                severity: Severity::Low,
+                description: "Potential data exfiltration instruction".into(),
+            },
+            InjectionPattern {
+                pattern: "exfiltrate".into(),
+                severity: Severity::High,
+                description: "Explicit data exfiltration attempt".into(),
+            },
+            // ── Tool abuse ───────────────────────────────────────────────
+            InjectionPattern {
+                pattern: "use shell_exec to curl".into(),
+                severity: Severity::High,
+                description: "Attempts to use shell for HTTP exfiltration".into(),
+            },
+            InjectionPattern {
+                pattern: "execute this command".into(),
+                severity: Severity::Low,
+                description: "Directive to execute commands".into(),
             },
         ];
 

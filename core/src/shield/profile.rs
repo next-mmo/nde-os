@@ -78,6 +78,11 @@ pub struct ShieldProfile {
     #[serde(default)]
     pub note: Option<String>,
 
+    /// Optional: linked Android emulator AVD name or ADB device serial.
+    /// When set, this profile's proxy config can be pushed to the device.
+    #[serde(default)]
+    pub emulator_device: Option<String>,
+
     /// PID of the running browser process (None if not running)
     #[serde(default)]
     pub process_id: Option<u32>,
@@ -107,6 +112,7 @@ impl ShieldProfile {
             fingerprint: FingerprintConfig::default(),
             tags: Vec::new(),
             note: None,
+            emulator_device: None,
             process_id: None,
             last_launch: None,
             created_at: now,

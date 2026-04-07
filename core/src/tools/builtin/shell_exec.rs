@@ -44,12 +44,21 @@ impl Tool for ShellExecTool {
 
         let env_vars = sandbox.env_vars();
 
+        // SECURITY: Use env_clear() to prevent the child from inheriting
+        // the parent process environment (which may contain gateway tokens
+        // like TELEGRAM_BOT_TOKEN, DISCORD_BOT_TOKEN, etc.).
+        // Only sandbox-scoped environment variables are passed through.
+
         // Platform-specific shell
         let mut child = if cfg!(windows) {
             Command::new("cmd")
                 .args(["/C", command])
                 .current_dir(sandbox.root())
+                .env_clear()
                 .envs(env_vars.iter().map(|(k, v)| (k.as_str(), v.as_str())))
+                // Preserve essential Windows paths for command resolution
+                .env("SYSTEMROOT", std::env::var("SYSTEMROOT").unwrap_or_default())
+                .env("PATH", std::env::var("PATH").unwrap_or_default())
                 .stdout(std::process::Stdio::piped())
                 .stderr(std::process::Stdio::piped())
                 .spawn()
@@ -58,7 +67,10 @@ impl Tool for ShellExecTool {
             Command::new("sh")
                 .args(["-c", command])
                 .current_dir(sandbox.root())
+                .env_clear()
                 .envs(env_vars.iter().map(|(k, v)| (k.as_str(), v.as_str())))
+                // Preserve essential Unix paths for command resolution
+                .env("PATH", std::env::var("PATH").unwrap_or_else(|_| "/usr/bin:/bin".into()))
                 .stdout(std::process::Stdio::piped())
                 .stderr(std::process::Stdio::piped())
                 .spawn()

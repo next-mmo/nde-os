@@ -98,7 +98,7 @@ async function httpFallback<T>(command: string, args?: Record<string, unknown>):
     clear_plugin_logs: { method: "DELETE", url: `/api/plugins/${args?.pluginId}/logs` },
     // Channels
     list_channels:   { method: "GET",    url: `/api/channels` },
-    configure_channel: { method: "POST", url: `/api/channels/${args?.name}/configure`, body: { channel_type: args?.channel_type, enabled: args?.enabled, token: args?.token } },
+    configure_channel: { method: "POST", url: `/api/channels/${args?.name}/configure`, body: { channel_type: args?.channel_type, enabled: args?.enabled, token: args?.token, allowed_users: args?.allowed_users } },
     // MCP
     list_mcp_tools:  { method: "GET",    url: `/api/mcp/tools` },
     list_mcp_servers:{ method: "GET",    url: `/api/mcp/servers` },
@@ -354,6 +354,27 @@ export async function listChannels(): Promise<ChannelStatus[]> {
 
 export async function configureChannel(name: string, channelType: string, enabled: boolean, token: string, allowedUsers?: number[]): Promise<{success: boolean}> {
   return smartInvoke<{success: boolean}>("configure_channel", { name, channel_type: channelType, enabled, token, allowed_users: allowedUsers ?? [] });
+}
+
+// ── Gateway Logs ──
+
+export interface GatewayLogEntry {
+  id: number;
+  timestamp: string;
+  level: "info" | "success" | "warning" | "error";
+  source: string;
+  message: string;
+  app_id?: string;
+}
+
+export async function fetchGatewayLogs(sinceId: number = 0): Promise<GatewayLogEntry[]> {
+  try {
+    const res = await fetch(`${API_BASE}/api/logs?since=${sinceId}`);
+    const json = await res.json();
+    return json.data ?? [];
+  } catch {
+    return [];
+  }
 }
 
 // ── MCP ──

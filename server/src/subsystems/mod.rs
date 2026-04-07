@@ -1,8 +1,6 @@
 /// Channel, MCP, Skills, Knowledge, Memory handlers.
 /// These expose core subsystem data to the desktop UI.
 /// Skills / Knowledge / Memory now use real core modules with OpenViking fallback.
-use std::io::Cursor;
-use tiny_http::Response;
 
 use crate::response::*;
 
@@ -10,14 +8,27 @@ use serde_json::Value;
 use std::fs;
 use std::path::Path;
 
+// ── Knowledge entity helper ─────────────────────────────────────────────────
+
+/// Convert a core Entity to a JSON value.
+/// Used by both list_knowledge and search_knowledge to avoid duplication.
+fn entity_to_json(e: &ai_launcher_core::knowledge::Entity) -> serde_json::Value {
+    serde_json::json!({
+        "id": e.id,
+        "key": e.name,
+        "value": e.metadata,
+        "category": e.entity_type,
+    })
+}
+
 // ── Channels ────────────────────────────────────────────────────────────────
 
 /// GET /api/channels — list registered channels + status.
 /// Reads live state from the Telegram gateway and config for others.
 pub fn list_channels(
     data_dir: &Path,
-    tg_state: &std::sync::Arc<crate::telegram_gateway::GatewayState>,
-) -> Response<Cursor<Vec<u8>>> {
+    tg_state: &std::sync::Arc<crate::gateway::telegram::GatewayState>,
+) -> HttpResponse {
     let tg_running = tg_state.running.load(std::sync::atomic::Ordering::SeqCst);
     let tg_received = tg_state.messages_received.load(std::sync::atomic::Ordering::Relaxed);
     let tg_sent = tg_state.messages_sent.load(std::sync::atomic::Ordering::Relaxed);
@@ -52,8 +63,9 @@ pub fn list_channels(
             }
         }
     } else {
-        dc_running = std::env::var("DISCORD_BOT_TOKEN").is_ok();
-        sl_running = std::env::var("SLACK_BOT_TOKEN").is_ok();
+        // No channels.json — no gateways configured
+        dc_running = false;
+        sl_running = false;
     }
 
     let default_channels = serde_json::json!([
@@ -94,15 +106,10 @@ pub fn list_channels(
 pub fn configure_channel(
     req: &mut tiny_http::Request,
     data_dir: &Path,
-) -> Response<Cursor<Vec<u8>>> {
-    let mut content = String::new();
-    if req.as_reader().read_to_string(&mut content).is_err() {
-        return err(400, "Invalid request body");
-    }
-
-    let payload: Value = match serde_json::from_str(&content) {
+) -> HttpResponse {
+    let payload: Value = match parse_body(req) {
         Ok(v) => v,
-        Err(e) => return err(400, &format!("Invalid JSON: {}", e)),
+        Err(resp) => return resp,
     };
 
     let channel_type = payload
@@ -139,7 +146,6 @@ pub fn configure_channel(
             Err(e) => return err(500, &format!("Failed to encrypt token: {}", e)),
         }
     } else if token.is_empty() && enabled {
-        // Preserve existing token when only updating other fields (e.g. allowed_users)
         root_config
             .get(channel_type)
             .and_then(|ch| ch.get("token"))
@@ -155,7 +161,6 @@ pub fn configure_channel(
             "enabled": enabled,
             "token": encrypted_token
         });
-        // Persist allowed_users for telegram
         if channel_type == "telegram" {
             channel_obj["allowed_users"] = serde_json::json!(allowed_users);
         }
@@ -167,21 +172,12 @@ pub fn configure_channel(
         serde_json::to_string_pretty(&root_config).unwrap_or_default(),
     );
 
-    // Apply decrypted token to env vars for immediate use
-    if enabled && !token.is_empty() {
-        match channel_type {
-            "telegram" => std::env::set_var("TELEGRAM_BOT_TOKEN", token),
-            "discord" => std::env::set_var("DISCORD_BOT_TOKEN", token),
-            "slack" => std::env::set_var("SLACK_BOT_TOKEN", token),
-            _ => {}
-        }
-    } else {
-        match channel_type {
-            "telegram" => std::env::remove_var("TELEGRAM_BOT_TOKEN"),
-            "discord" => std::env::remove_var("DISCORD_BOT_TOKEN"),
-            "slack" => std::env::remove_var("SLACK_BOT_TOKEN"),
-            _ => {}
-        }
+    // SECURITY: Do NOT set gateway tokens as process env vars.
+    // They would be inherit by LLM-spawned subprocesses (shell_exec) and
+    // could be exfiltrated via prompt injection. Each gateway reads its
+    // token directly from channels.json on startup instead.
+    if enabled {
+        tracing::info!(channel = channel_type, "Channel configured (token encrypted at rest)");
     }
 
     ok("Channel configured", serde_json::json!({ "success": true }))
@@ -190,13 +186,13 @@ pub fn configure_channel(
 // ── MCP ─────────────────────────────────────────────────────────────────────
 
 /// GET /api/mcp/tools — list all MCP-exposed tools from core builtin server.
-pub fn list_mcp_tools() -> Response<Cursor<Vec<u8>>> {
+pub fn list_mcp_tools() -> HttpResponse {
     let tools = ai_launcher_core::mcp::builtin::builtin_tool_definitions();
     ok(&format!("{} MCP tools", tools.len()), tools)
 }
 
 /// GET /api/mcp/servers — list MCP server connections.
-pub fn list_mcp_servers() -> Response<Cursor<Vec<u8>>> {
+pub fn list_mcp_servers() -> HttpResponse {
     let servers = ai_launcher_core::mcp::builtin::builtin_server_info();
     ok("MCP servers", servers)
 }
@@ -204,7 +200,7 @@ pub fn list_mcp_servers() -> Response<Cursor<Vec<u8>>> {
 // ── Agent Tools ─────────────────────────────────────────────────────────────
 
 /// GET /api/agent/tools — list all built-in agent tools from the tool registry.
-pub fn list_agent_tools() -> Response<Cursor<Vec<u8>>> {
+pub fn list_agent_tools() -> HttpResponse {
     let registry = ai_launcher_core::tools::builtin::default_registry();
     let defs: Vec<serde_json::Value> = registry
         .definitions()
@@ -223,8 +219,7 @@ pub fn list_agent_tools() -> Response<Cursor<Vec<u8>>> {
 // ── Skills ──────────────────────────────────────────────────────────────────
 
 /// GET /api/skills — list available skills from real SkillLoader.
-pub fn list_skills() -> Response<Cursor<Vec<u8>>> {
-    // Build search paths: CWD/.agents/skills, CWD/.agent/skills, and exe-relative
+pub fn list_skills() -> HttpResponse {
     let mut search_paths = Vec::new();
     if let Ok(cwd) = std::env::current_dir() {
         search_paths.push(cwd.join(".agents").join("skills"));
@@ -262,11 +257,10 @@ pub fn list_skills() -> Response<Cursor<Vec<u8>>> {
 // ── Knowledge ───────────────────────────────────────────────────────────────
 
 /// GET /api/knowledge — list all knowledge entries from real KnowledgeGraph.
-pub fn list_knowledge(data_dir: &Path) -> Response<Cursor<Vec<u8>>> {
+pub fn list_knowledge(data_dir: &Path) -> HttpResponse {
     let db_path = data_dir.join("knowledge.db");
     match ai_launcher_core::knowledge::KnowledgeGraph::new(&db_path) {
         Ok(kg) => {
-            // Get all entity types by searching broadly
             let mut all_entities = Vec::new();
             for entity_type in &[
                 "app",
@@ -282,7 +276,6 @@ pub fn list_knowledge(data_dir: &Path) -> Response<Cursor<Vec<u8>>> {
                     all_entities.extend(entities);
                 }
             }
-            // Also do a wildcard search to catch anything
             if let Ok(entities) = kg.search("%") {
                 for entity in entities {
                     if !all_entities
@@ -294,17 +287,7 @@ pub fn list_knowledge(data_dir: &Path) -> Response<Cursor<Vec<u8>>> {
                 }
             }
 
-            let entries: Vec<serde_json::Value> = all_entities
-                .iter()
-                .map(|e| {
-                    serde_json::json!({
-                        "id": e.id,
-                        "key": e.name,
-                        "value": e.metadata,
-                        "category": e.entity_type,
-                    })
-                })
-                .collect();
+            let entries: Vec<serde_json::Value> = all_entities.iter().map(entity_to_json).collect();
             ok(&format!("{} knowledge entries", entries.len()), entries)
         }
         Err(e) => {
@@ -315,22 +298,12 @@ pub fn list_knowledge(data_dir: &Path) -> Response<Cursor<Vec<u8>>> {
 }
 
 /// GET /api/knowledge/search?q=... — search knowledge.
-pub fn search_knowledge(query: &str, data_dir: &Path) -> Response<Cursor<Vec<u8>>> {
+pub fn search_knowledge(query: &str, data_dir: &Path) -> HttpResponse {
     let db_path = data_dir.join("knowledge.db");
     match ai_launcher_core::knowledge::KnowledgeGraph::new(&db_path) {
         Ok(kg) => match kg.search(query) {
             Ok(entities) => {
-                let entries: Vec<serde_json::Value> = entities
-                    .iter()
-                    .map(|e| {
-                        serde_json::json!({
-                            "id": e.id,
-                            "key": e.name,
-                            "value": e.metadata,
-                            "category": e.entity_type,
-                        })
-                    })
-                    .collect();
+                let entries: Vec<serde_json::Value> = entities.iter().map(entity_to_json).collect();
                 ok(
                     &format!("Knowledge search: {} ({} results)", query, entries.len()),
                     entries,
@@ -357,7 +330,7 @@ pub fn search_knowledge(query: &str, data_dir: &Path) -> Response<Cursor<Vec<u8>
 // ── Memory ──────────────────────────────────────────────────────────────────
 
 /// GET /api/memory — list all memory entries from real MemoryManager.
-pub fn list_memory(data_dir: &Path) -> Response<Cursor<Vec<u8>>> {
+pub fn list_memory(data_dir: &Path) -> HttpResponse {
     let db_path = data_dir.join("memory.db");
     match ai_launcher_core::memory::KvStore::new(&db_path) {
         Ok(kv) => match kv.list_keys("") {
@@ -385,7 +358,7 @@ pub fn list_memory(data_dir: &Path) -> Response<Cursor<Vec<u8>>> {
 }
 
 /// GET /api/memory/{key} — get a specific memory value.
-pub fn get_memory(key: &str, data_dir: &Path) -> Response<Cursor<Vec<u8>>> {
+pub fn get_memory(key: &str, data_dir: &Path) -> HttpResponse {
     let db_path = data_dir.join("memory.db");
     match ai_launcher_core::memory::KvStore::new(&db_path) {
         Ok(kv) => match kv.get(key) {
@@ -409,7 +382,7 @@ pub fn get_memory(key: &str, data_dir: &Path) -> Response<Cursor<Vec<u8>>> {
 pub fn viking_status(
     rt: &tokio::runtime::Runtime,
     viking: &std::sync::Mutex<ai_launcher_core::openviking::VikingProcess>,
-) -> Response<Cursor<Vec<u8>>> {
+) -> HttpResponse {
     let process_running = match viking.lock() {
         Ok(mut v) => v.is_running(),
         Err(_) => false,
@@ -444,7 +417,7 @@ pub fn viking_status(
 pub fn viking_install(
     rt: &tokio::runtime::Runtime,
     viking: &std::sync::Mutex<ai_launcher_core::openviking::VikingProcess>,
-) -> Response<Cursor<Vec<u8>>> {
+) -> HttpResponse {
     let v = match viking.lock() {
         Ok(v) => v,
         Err(_) => return err(500, "Viking process lock failed"),
@@ -464,7 +437,7 @@ pub fn viking_install(
 pub fn viking_start(
     rt: &tokio::runtime::Runtime,
     viking: &std::sync::Mutex<ai_launcher_core::openviking::VikingProcess>,
-) -> Response<Cursor<Vec<u8>>> {
+) -> HttpResponse {
     let mut v = match viking.lock() {
         Ok(v) => v,
         Err(_) => return err(500, "Viking process lock failed"),
@@ -490,7 +463,7 @@ pub fn viking_start(
 pub fn viking_stop(
     rt: &tokio::runtime::Runtime,
     viking: &std::sync::Mutex<ai_launcher_core::openviking::VikingProcess>,
-) -> Response<Cursor<Vec<u8>>> {
+) -> HttpResponse {
     let mut v = match viking.lock() {
         Ok(v) => v,
         Err(_) => return err(500, "Viking process lock failed"),

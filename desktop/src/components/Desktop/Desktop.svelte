@@ -13,7 +13,9 @@
   import LockScreen from "🍎/components/Desktop/LockScreen.svelte";
   import Spotlight from "🍎/components/Desktop/Spotlight.svelte";
   import NotificationCenter from "🍎/components/Desktop/NotificationCenter.svelte";
+  import GlobalLogDrawer from "🍎/components/Desktop/GlobalLogDrawer.svelte";
   import { refreshAll, refreshResourceUsage } from "$lib/stores/state";
+  import { startLogPolling, stopLogPolling } from "$lib/stores/logs";
   import {
     bootDesktop,
     desktop,
@@ -49,6 +51,7 @@
   onMount(() => {
     bootDesktop();
     refreshAll();
+    startLogPolling(3000);
 
     const refreshTimer = window.setInterval(() => {
       refreshAll();
@@ -61,6 +64,7 @@
     return () => {
       window.clearInterval(refreshTimer);
       window.clearInterval(resourceTimer);
+      stopLogPolling();
     };
   });
 
@@ -242,5 +246,7 @@
     {#if desktop.notification_center_open && !desktop.is_locked}
       <NotificationCenter />
     {/if}
+
+    <GlobalLogDrawer />
   </div>
 </QueryClientProvider>

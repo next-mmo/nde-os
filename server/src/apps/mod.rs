@@ -2,29 +2,28 @@ use ai_launcher_core::app_manager::AppManager;
 use ai_launcher_core::manifest::*;
 use ai_launcher_core::system_metrics::snapshot_resource_usage;
 use serde_json::json;
-use std::io::Cursor;
 use std::process::Command;
 use tiny_http::{Header, Request, Response};
 
 use crate::response::*;
 
 /// Handle CORS preflight
-pub fn cors_preflight() -> Response<Cursor<Vec<u8>>> {
+pub fn cors_preflight() -> Response<std::io::Cursor<Vec<u8>>> {
     Response::from_data(Vec::new())
         .with_header(Header::from_bytes("Access-Control-Allow-Origin", "*").unwrap())
         .with_header(
-            Header::from_bytes("Access-Control-Allow-Methods", "GET,POST,DELETE,OPTIONS").unwrap(),
+            Header::from_bytes("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS").unwrap(),
         )
         .with_header(Header::from_bytes("Access-Control-Allow-Headers", "Content-Type").unwrap())
 }
 
 /// GET /api/health
-pub fn health() -> Response<Cursor<Vec<u8>>> {
+pub fn health() -> HttpResponse {
     ok("AI Launcher is running", "ok")
 }
 
 /// GET /api/system
-pub fn system_info(mgr: &AppManager) -> Response<Cursor<Vec<u8>>> {
+pub fn system_info(mgr: &AppManager) -> HttpResponse {
     let py_cmd = AppManifest::python_cmd();
     let py = Command::new(py_cmd)
         .arg("--version")
@@ -52,7 +51,7 @@ pub fn system_info(mgr: &AppManager) -> Response<Cursor<Vec<u8>>> {
 }
 
 /// GET /api/system/resources
-pub fn system_resources(mgr: &AppManager) -> Response<Cursor<Vec<u8>>> {
+pub fn system_resources(mgr: &AppManager) -> HttpResponse {
     match snapshot_resource_usage(mgr.base_dir()) {
         Ok(usage) => ok("System resource usage", usage),
         Err(error) => err(500, &error.to_string()),
@@ -60,44 +59,41 @@ pub fn system_resources(mgr: &AppManager) -> Response<Cursor<Vec<u8>>> {
 }
 
 /// GET /api/catalog
-pub fn catalog(mgr: &AppManager) -> Response<Cursor<Vec<u8>>> {
+pub fn catalog(mgr: &AppManager) -> HttpResponse {
     let cat = mgr.catalog();
     ok(&format!("{} app(s) available", cat.len()), cat)
 }
 
 /// GET /api/apps
-pub fn list_apps(mgr: &AppManager) -> Response<Cursor<Vec<u8>>> {
+pub fn list_apps(mgr: &AppManager) -> HttpResponse {
     let apps = mgr.list_apps();
     ok(&format!("{} app(s) installed", apps.len()), apps)
 }
 
 /// POST /api/apps
-pub fn install_app(req: &mut Request, mgr: &AppManager) -> Response<Cursor<Vec<u8>>> {
-    let body = match read_body(req) {
-        Some(b) => b,
-        None => return err(400, "Missing request body"),
+pub fn install_app(req: &mut Request, mgr: &AppManager) -> HttpResponse {
+    let ir: InstallRequest = match parse_body(req) {
+        Ok(r) => r,
+        Err(resp) => return resp,
     };
-    match serde_json::from_str::<InstallRequest>(&body) {
-        Ok(ir) => match mgr.install(&ir.manifest) {
-            Ok(()) => created(
-                &format!("'{}' installed", ir.manifest.name),
-                mgr.get_app(&ir.manifest.id),
-            ),
-            Err(e) => {
-                let msg = e.to_string();
-                if msg.contains("already installed") {
-                    err(409, &msg)
-                } else {
-                    err(400, &msg)
-                }
+    match mgr.install(&ir.manifest) {
+        Ok(()) => created(
+            &format!("'{}' installed", ir.manifest.name),
+            mgr.get_app(&ir.manifest.id),
+        ),
+        Err(e) => {
+            let msg = e.to_string();
+            if msg.contains("already installed") {
+                err(409, &msg)
+            } else {
+                err(400, &msg)
             }
-        },
-        Err(e) => err(400, &format!("Invalid JSON: {}", e)),
+        }
     }
 }
 
 /// GET /api/apps/{id}
-pub fn get_app(id: &str, mgr: &AppManager) -> Response<Cursor<Vec<u8>>> {
+pub fn get_app(id: &str, mgr: &AppManager) -> HttpResponse {
     match mgr.get_app(id) {
         Some(app) => ok(&format!("App '{}'", id), app),
         None => err(404, &format!("App '{}' not found", id)),
@@ -105,7 +101,7 @@ pub fn get_app(id: &str, mgr: &AppManager) -> Response<Cursor<Vec<u8>>> {
 }
 
 /// DELETE /api/apps/{id}
-pub fn uninstall_app(id: &str, mgr: &AppManager) -> Response<Cursor<Vec<u8>>> {
+pub fn uninstall_app(id: &str, mgr: &AppManager) -> HttpResponse {
     match mgr.uninstall(id) {
         Ok(()) => ok(&format!("'{}' uninstalled", id), "uninstalled"),
         Err(e) => err(404, &e.to_string()),
@@ -113,7 +109,7 @@ pub fn uninstall_app(id: &str, mgr: &AppManager) -> Response<Cursor<Vec<u8>>> {
 }
 
 /// POST /api/apps/{id}/launch
-pub fn launch_app(id: &str, mgr: &AppManager) -> Response<Cursor<Vec<u8>>> {
+pub fn launch_app(id: &str, mgr: &AppManager) -> HttpResponse {
     match mgr.launch(id) {
         Ok((pid, port)) => ok(
             &format!("Launched PID:{} port:{}", pid, port),
@@ -156,7 +152,10 @@ mod tests {
             description: "Regression fixture for HTTP launch payloads".into(),
             author: "tests".into(),
             repo: None,
+            runtime: ai_launcher_core::manifest::AppRuntime::Python,
             python_version: "3".into(),
+            node_version: None,
+            package_manager: None,
             needs_gpu: false,
             pip_deps: vec![],
             launch_cmd: if cfg!(windows) {
@@ -171,7 +170,7 @@ mod tests {
         }
     }
 
-    fn response_json(response: Response<Cursor<Vec<u8>>>) -> serde_json::Value {
+    fn response_json(response: Response<std::io::Cursor<Vec<u8>>>) -> serde_json::Value {
         let mut body = String::new();
         response.into_reader().read_to_string(&mut body).unwrap();
         serde_json::from_str(&body).unwrap()
@@ -216,7 +215,7 @@ mod tests {
 }
 
 /// POST /api/apps/{id}/stop
-pub fn stop_app(id: &str, mgr: &AppManager) -> Response<Cursor<Vec<u8>>> {
+pub fn stop_app(id: &str, mgr: &AppManager) -> HttpResponse {
     match mgr.stop(id) {
         Ok(()) => ok(&format!("'{}' stopped", id), "stopped"),
         Err(e) => err(404, &e.to_string()),
@@ -224,7 +223,7 @@ pub fn stop_app(id: &str, mgr: &AppManager) -> Response<Cursor<Vec<u8>>> {
 }
 
 /// GET /api/sandbox/{id}/verify
-pub fn verify_sandbox(id: &str, mgr: &AppManager) -> Response<Cursor<Vec<u8>>> {
+pub fn verify_sandbox(id: &str, mgr: &AppManager) -> HttpResponse {
     match mgr.verify_sandbox(id) {
         Ok(r) => ok("Sandbox verified", r),
         Err(e) => err(500, &e.to_string()),
@@ -232,7 +231,7 @@ pub fn verify_sandbox(id: &str, mgr: &AppManager) -> Response<Cursor<Vec<u8>>> {
 }
 
 /// GET /api/sandbox/{id}/disk
-pub fn disk_usage(id: &str, mgr: &AppManager) -> Response<Cursor<Vec<u8>>> {
+pub fn disk_usage(id: &str, mgr: &AppManager) -> HttpResponse {
     match mgr.disk_usage(id) {
         Ok(bytes) => {
             let human = if bytes > 1_073_741_824 {
@@ -253,15 +252,10 @@ pub fn disk_usage(id: &str, mgr: &AppManager) -> Response<Cursor<Vec<u8>>> {
 
 /// POST /api/store/upload
 /// Accept folder, zip, or git url uploads with validation and trial install
-pub fn store_upload(req: &mut Request, mgr: &AppManager) -> Response<Cursor<Vec<u8>>> {
-    let body = match read_body(req) {
-        Some(b) => b,
-        None => return err(400, "Missing request body"),
-    };
-
-    let upload_req: StoreUploadRequest = match serde_json::from_str(&body) {
+pub fn store_upload(req: &mut Request, mgr: &AppManager) -> HttpResponse {
+    let upload_req: StoreUploadRequest = match parse_body(req) {
         Ok(r) => r,
-        Err(e) => return err(400, &format!("Invalid JSON: {}", e)),
+        Err(resp) => return resp,
     };
 
     match mgr.upload_to_store(&upload_req) {

@@ -267,6 +267,7 @@ export const desktop = $state({
   is_locked: getSavedIsLocked(),
   spotlight_open: false,
   notification_center_open: false,
+  log_drawer_open: false,
   wallpaper: getSavedWallpaper(),
   notifications: [] as DesktopNotification[],
   viking_onboard_state: null as { stage: "installing" | "starting" | "ready" | "error"; message: string } | null,
@@ -516,6 +517,10 @@ export function toggleSpotlight(force?: boolean) {
 
 export function toggleNotificationCenter(force?: boolean) {
   desktop.notification_center_open = force ?? !desktop.notification_center_open;
+}
+
+export function toggleLogDrawer(force?: boolean) {
+  desktop.log_drawer_open = force ?? !desktop.log_drawer_open;
 }
 
 export function focusWindow(window_id: string) {

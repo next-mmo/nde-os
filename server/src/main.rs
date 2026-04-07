@@ -1,403 +1,127 @@
-mod agent_handler;
-mod handlers;
-mod model_handler;
+mod actors;
+mod agent;
+mod apps;
+mod config;
+mod gateway;
+mod kanban;
+mod models;
 mod openapi;
-mod plugin_handler;
+mod plugins;
 mod response;
-mod stream_handler;
-mod subsystem_handler;
-mod telegram_gateway;
+mod router;
+mod subsystems;
 
-use agent_handler::AgentState;
+use agent::AgentState;
+use ai_launcher_core::actor::runner::ActorRunner;
 use ai_launcher_core::agent::manager::{AgentManager, ManagerConfig};
 use ai_launcher_core::app_manager::AppManager;
 use ai_launcher_core::llm::manager::LlmManager;
 use ai_launcher_core::plugins::PluginEngine;
-use std::path::PathBuf;
+use router::AppState;
 use std::sync::{Arc, Mutex};
-use tiny_http::{Method, Request, Server};
+use tiny_http::Server;
 
-use response::*;
+/// Fixed-size worker count for the request thread pool.
+const WORKER_THREADS: usize = 8;
 
-/// Cross-platform base directory
-fn get_base_dir() -> PathBuf {
-    if cfg!(windows) {
-        std::env::var("LOCALAPPDATA")
-            .map(|p| PathBuf::from(p).join("ai-launcher"))
-            .unwrap_or_else(|_| PathBuf::from("C:\\ai-launcher-data"))
-    } else {
-        std::env::var("HOME")
-            .map(PathBuf::from)
-            .unwrap_or_else(|_| PathBuf::from("/tmp"))
-            .join(".ai-launcher")
-    }
-}
+// ── Banner ──────────────────────────────────────────────────────────────────
 
-/// Sync the AgentManager's internal LLM provider with the current active model.
-/// Called after any model switch/add/OAuth so chat streaming uses the right provider.
-fn sync_agent_provider(
-    llm_manager: &Arc<Mutex<LlmManager>>,
-    agent_manager: &Arc<tokio::sync::Mutex<AgentManager>>,
-    agent_state: &Mutex<AgentState>,
-    rt: &tokio::runtime::Runtime,
-) {
-    let mut config = {
-        let state = agent_state.lock().unwrap();
-        state.config.clone()
-    };
-    agent_handler::sync_model_config(&mut config, llm_manager);
-    rt.block_on(async {
-        let mut mgr = agent_manager.lock().await;
-        if let Err(e) = mgr.update_provider(&config) {
-            tracing::warn!("Failed to sync AgentManager provider: {}", e);
-        } else {
-            tracing::info!(
-                provider = %config.model_provider,
-                model = %config.model_name,
-                "AgentManager provider synced"
-            );
-        }
-    });
-}
+const BANNER: &str = "\
+  +=============================================+
+  |  NDE-OS AI Operating System v0.2.0          |
+  |  Phase 2 — Gateway + LLM + Plugins + MCP   |
+  +=============================================+";
 
-/// Route a request to the appropriate handler
-fn route(
-    req: &mut Request,
-    mgr: &AppManager,
-    agent: &Mutex<AgentState>,
-    rt: &tokio::runtime::Runtime,
-    plugin_engine: &Mutex<PluginEngine>,
-    llm_manager: Arc<Mutex<LlmManager>>,
-    data_dir: &std::path::Path,
-    agent_manager: &Arc<tokio::sync::Mutex<AgentManager>>,
-    viking: &Mutex<ai_launcher_core::openviking::VikingProcess>,
-    tg_state: &Arc<telegram_gateway::GatewayState>,
-) -> tiny_http::Response<std::io::Cursor<Vec<u8>>> {
-    let method = req.method().clone();
-    let url = req.url().to_string();
-    let path = url.split('?').next().unwrap_or(&url);
+const ROUTES: &str = "\
+  Core:
+    GET    /api/health
+    GET    /api/system
+    GET    /api/system/resources
+    GET    /api/catalog
+    GET    /api/apps
+    POST   /api/apps
+    GET    /api/apps/{id}
+    DELETE /api/apps/{id}
+    POST   /api/apps/{id}/launch
+    POST   /api/apps/{id}/stop
+    GET    /api/sandbox/{id}/verify
+    GET    /api/sandbox/{id}/disk
+    POST   /api/store/upload
 
-    // CORS preflight
-    if matches!(method, Method::Options) {
-        return handlers::cors_preflight();
-    }
+  Agent:
+    POST   /api/agent/chat
+    POST   /api/agent/chat/stream          <- real SSE streaming
+    GET    /api/agent/conversations
+    GET    /api/agent/conversations/{id}/messages
+    GET    /api/agent/config
+    GET    /api/agent/tools
 
-    // Static routes
-    match (method.clone(), path) {
-        (Method::Get, "/swagger-ui" | "/swagger-ui/" | "/docs" | "/docs/") => {
-            return html(openapi::SWAGGER_HTML);
-        }
-        (Method::Get, "/api-docs/openapi.json") => {
-            return json_resp(200, &openapi::openapi_spec());
-        }
-        (Method::Get, "/" | "") => {
-            return html("<html><meta http-equiv='refresh' content='0;url=/swagger-ui/'></html>");
-        }
-        (Method::Get, "/api/health") => return handlers::health(),
-        (Method::Get, "/api/system") => return handlers::system_info(mgr),
-        (Method::Get, "/api/system/resources") => return handlers::system_resources(mgr),
-        (Method::Get, "/api/catalog") => return handlers::catalog(mgr),
-        (Method::Get, "/api/apps") => return handlers::list_apps(mgr),
-        (Method::Post, "/api/apps") => return handlers::install_app(req, mgr),
-        (Method::Post, "/api/store/upload") => return handlers::store_upload(req, mgr),
-        // Agent chat API
-        (Method::Post, "/api/agent/chat") => {
-            return agent_handler::agent_chat(req, agent, &llm_manager)
-        }
-        (Method::Post, "/api/agent/chat/stream") => {
-            return stream_handler::handle_stream_chat(
-                req,
-                rt,
-                agent,
-                &llm_manager,
-                Some(agent_manager),
-            );
-        }
-        (Method::Post, "/api/agent/autocomplete") => {
-            return agent_handler::agent_autocomplete(req, &llm_manager, rt)
-        }
-        // Task-based agent API (Phase 3)
-        (Method::Post, "/api/agent/tasks") => {
-            return stream_handler::spawn_task(req, rt, agent_manager);
-        }
-        (Method::Get, "/api/agent/tasks") => {
-            return stream_handler::list_tasks(agent_manager, rt);
-        }
-        (Method::Get, "/api/agent/conversations") => {
-            return agent_handler::list_conversations(agent)
-        }
-        (Method::Get, "/api/agent/config") => {
-            return agent_handler::agent_config(agent, &llm_manager)
-        }
-        (Method::Get, "/api/agent/tools") => return subsystem_handler::list_agent_tools(),
-        // Plugin API
-        (Method::Get, "/api/plugins") => return plugin_handler::list_plugins(plugin_engine),
-        (Method::Post, "/api/plugins/discover") => {
-            return plugin_handler::discover_plugins(rt, plugin_engine)
-        }
-        // Model/Provider API
-        (Method::Get, "/api/models") => return model_handler::list_models(&llm_manager),
-        (Method::Get, "/api/models/active") => return model_handler::active_model(&llm_manager),
-        (Method::Get, "/api/models/recommendations") => {
-            return model_handler::recommend_gguf_models(mgr)
-        }
-        (Method::Get, "/api/models/local") => return model_handler::list_local_models(),
-        (Method::Post, "/api/models/switch") => {
-            let resp = model_handler::switch_model(req, &llm_manager);
-            sync_agent_provider(&llm_manager, agent_manager, agent, rt);
-            return resp;
-        }
-        (Method::Post, "/api/models/providers") => {
-            let resp = model_handler::add_provider(req, &llm_manager, rt);
-            sync_agent_provider(&llm_manager, agent_manager, agent, rt);
-            return resp;
-        }
-        (Method::Post, "/api/models/verify") => return model_handler::verify_provider(req, rt),
-        // Codex OAuth
-        (Method::Post, "/api/codex/oauth/start") => {
-            let resp = model_handler::codex_oauth_start(req, llm_manager.clone(), rt, data_dir);
-            sync_agent_provider(&llm_manager, agent_manager, agent, rt);
-            return resp;
-        }
-        (Method::Get, "/api/codex/oauth/status") => {
-            return model_handler::codex_oauth_status(data_dir)
-        }
-        // Channels
-        (Method::Get, "/api/channels") => return subsystem_handler::list_channels(data_dir, tg_state),
-        // MCP
-        (Method::Get, "/api/mcp/tools") => return subsystem_handler::list_mcp_tools(),
-        (Method::Get, "/api/mcp/servers") => return subsystem_handler::list_mcp_servers(),
-        // Skills
-        (Method::Get, "/api/skills") => return subsystem_handler::list_skills(),
-        // Knowledge
-        (Method::Get, "/api/knowledge") => return subsystem_handler::list_knowledge(data_dir),
-        // Memory
-        (Method::Get, "/api/memory") => return subsystem_handler::list_memory(data_dir),
-        // Kanban REST API (direct execution, no LLM required)
-        (Method::Get, "/api/kanban/tasks") => return kanban_rest_handler("nde_kanban_get_tasks", None),
-        (Method::Post, "/api/kanban/tasks") => return kanban_rest_handler("nde_kanban_create_task", Some(req)),
-        // OpenViking
-        (Method::Get, "/api/viking/status") => return subsystem_handler::viking_status(rt, viking),
-        (Method::Post, "/api/viking/install") => return subsystem_handler::viking_install(rt, viking),
-        (Method::Post, "/api/viking/start") => return subsystem_handler::viking_start(rt, viking),
-        (Method::Post, "/api/viking/stop") => return subsystem_handler::viking_stop(rt, viking),
-        _ => {}
-    }
+  Agent Tasks (Phase 3):
+    POST   /api/agent/tasks                <- spawn task
+    GET    /api/agent/tasks                <- list tasks
+    GET    /api/agent/tasks/{id}           <- task status
+    GET    /api/agent/tasks/{id}/stream    <- real SSE stream
+    POST   /api/agent/tasks/{id}/cancel    <- cancel task
 
-    // Agent task routes: /api/agent/tasks/{id}/...
-    if path.starts_with("/api/agent/tasks/") {
-        let parts: Vec<&str> = path.trim_start_matches('/').split('/').collect();
-        return match (method.clone(), parts.as_slice()) {
-            (Method::Get, ["api", "agent", "tasks", id]) => {
-                stream_handler::get_task(id, agent_manager, rt)
-            }
-            (Method::Get, ["api", "agent", "tasks", id, "stream"]) => {
-                stream_handler::stream_task(id, rt, agent_manager)
-            }
-            (Method::Post, ["api", "agent", "tasks", id, "cancel"]) => {
-                stream_handler::cancel_task(id, rt, agent_manager)
-            }
-            _ => err(404, &format!("Not found: {}", path)),
-        };
-    }
+  Plugins:
+    GET    /api/plugins
+    GET    /api/plugins/{id}
+    POST   /api/plugins/discover
+    POST   /api/plugins/{id}/install
+    POST   /api/plugins/{id}/start
+    POST   /api/plugins/{id}/stop
+    GET    /api/plugins/{id}/logs
+    DELETE /api/plugins/{id}/logs
 
-    // Agent conversation messages: /api/agent/conversations/{id}/messages
-    if path.starts_with("/api/agent/conversations/") {
-        let parts: Vec<&str> = path.trim_start_matches('/').split('/').collect();
-        return match (method.clone(), parts.as_slice()) {
-            (Method::Get, ["api", "agent", "conversations", id, "messages"]) => {
-                agent_handler::get_conversation_messages(id, agent)
-            }
-            _ => err(404, &format!("Not found: {}", path)),
-        };
-    }
+  Models:
+    GET    /api/models
+    GET    /api/models/active
+    GET    /api/models/recommendations
+    GET    /api/models/local
+    POST   /api/models/switch
+    POST   /api/models/providers
+    POST   /api/models/verify
+    DELETE /api/models/providers/{name}
 
-    // Plugin dynamic routes: /api/plugins/{id}/...
-    if path.starts_with("/api/plugins/") {
-        let parts: Vec<&str> = path.trim_start_matches('/').split('/').collect();
-        return match (method.clone(), parts.as_slice()) {
-            (Method::Get, ["api", "plugins", id]) => plugin_handler::get_plugin(id, plugin_engine),
-            (Method::Post, ["api", "plugins", id, "install"]) => {
-                plugin_handler::install_plugin(id, rt, plugin_engine)
-            }
-            (Method::Post, ["api", "plugins", id, "start"]) => {
-                plugin_handler::start_plugin(id, rt, plugin_engine)
-            }
-            (Method::Post, ["api", "plugins", id, "stop"]) => {
-                plugin_handler::stop_plugin(id, rt, plugin_engine)
-            }
-            (Method::Get, ["api", "plugins", id, "logs"]) => {
-                plugin_handler::get_plugin_logs(id, plugin_engine)
-            }
-            (Method::Delete, ["api", "plugins", id, "logs"]) => {
-                plugin_handler::clear_plugin_logs(id, plugin_engine)
-            }
-            _ => err(404, &format!("Not found: {}", path)),
-        };
-    }
+  Codex OAuth:
+    POST   /api/codex/oauth/start
+    GET    /api/codex/oauth/status
 
-    // Dynamic provider routes: /api/models/providers/{name}
-    if path.starts_with("/api/models/providers/") {
-        let parts: Vec<&str> = path.trim_start_matches('/').split('/').collect();
-        return match (method.clone(), parts.as_slice()) {
-            (Method::Delete, ["api", "models", "providers", name]) => {
-                model_handler::remove_provider(name, &llm_manager)
-            }
-            _ => err(404, &format!("Not found: {}", path)),
-        };
-    }
+  Channels:
+    GET    /api/channels
 
-    // Dynamic channel routes: /api/channels/{name}/configure
-    if path.starts_with("/api/channels/") {
-        let parts: Vec<&str> = path.trim_start_matches('/').split('/').collect();
-        return match (method.clone(), parts.as_slice()) {
-            (Method::Post, ["api", "channels", _name, "configure"]) => {
-                let resp = subsystem_handler::configure_channel(req, data_dir);
+  MCP:
+    GET    /api/mcp/tools
+    GET    /api/mcp/servers
 
-                // Check if Telegram should be started or stopped
-                if let Some(tg_config) = telegram_gateway::TelegramGatewayConfig::load(data_dir) {
-                    // Config is enabled — start gateway
-                    telegram_gateway::start_telegram_gateway(
-                        tg_config,
-                        agent_manager.clone(),
-                        rt.handle().clone(),
-                        tg_state.clone(),
-                    );
-                } else {
-                    // Config disabled or removed — stop gateway
-                    tg_state.shutdown();
-                }
+  Skills:
+    GET    /api/skills                    <- real SkillLoader
 
-                resp
-            }
-            _ => err(404, &format!("Not found: {}", path)),
-        };
-    }
+  Knowledge:
+    GET    /api/knowledge                 <- real KnowledgeGraph
+    GET    /api/knowledge/search?q={query}
 
-    // Dynamic routes: /api/apps/{id}/... and /api/sandbox/{id}/...
-    if path.starts_with("/api/apps/") || path.starts_with("/api/sandbox/") {
-        let parts: Vec<&str> = path.trim_start_matches('/').split('/').collect();
-        return match (method, parts.as_slice()) {
-            (Method::Get, ["api", "apps", id]) => handlers::get_app(id, mgr),
-            (Method::Delete, ["api", "apps", id]) => handlers::uninstall_app(id, mgr),
-            (Method::Post, ["api", "apps", id, "launch"]) => handlers::launch_app(id, mgr),
-            (Method::Post, ["api", "apps", id, "stop"]) => handlers::stop_app(id, mgr),
-            (Method::Get, ["api", "sandbox", id, "verify"]) => handlers::verify_sandbox(id, mgr),
-            (Method::Get, ["api", "sandbox", id, "disk"]) => handlers::disk_usage(id, mgr),
-            _ => err(404, &format!("Not found: {}", path)),
-        };
-    }
+  Memory:
+    GET    /api/memory                    <- real KvStore
+    GET    /api/memory/{key}
 
-    if path.starts_with("/api/store/") {
-        return err(404, &format!("Not found: {}", path));
-    }
+  OpenViking:
+    GET    /api/viking/status              <- context database
+    POST   /api/viking/install             <- install via uv/pip
+    POST   /api/viking/start               <- start server
+    POST   /api/viking/stop                <- stop server
 
-    // Kanban dynamic routes: /api/kanban/tasks/{filename}/...
-    if path.starts_with("/api/kanban/tasks/") {
-        let parts: Vec<&str> = path.trim_start_matches('/').split('/').collect();
-        return match (method.clone(), parts.as_slice()) {
-            (Method::Get, ["api", "kanban", "tasks", filename, "content"]) => {
-                let params = serde_json::json!({ "filename": filename });
-                match ai_launcher_core::mcp::kanban::execute("nde_kanban_get_task_content", &params) {
-                    Ok(content) => ok("Task content", serde_json::json!({ "content": content })),
-                    Err(e) => err(404, &format!("Task not found: {}", e)),
-                }
-            }
-            (Method::Put, ["api", "kanban", "tasks", filename, "content"]) => {
-                let body = match read_body(req) {
-                    Some(b) => b,
-                    None => return err(400, "Missing body"),
-                };
-                let body_json: serde_json::Value = match serde_json::from_str(&body) {
-                    Ok(v) => v,
-                    Err(e) => return err(400, &format!("Invalid JSON: {}", e)),
-                };
-                let params = serde_json::json!({
-                    "filename": filename,
-                    "content": body_json.get("content").and_then(|v| v.as_str()).unwrap_or("")
-                });
-                match ai_launcher_core::mcp::kanban::execute("nde_kanban_update_task_content", &params) {
-                    Ok(result) => ok("Task content updated", serde_json::json!({ "result": result })),
-                    Err(e) => err(500, &format!("Failed to update: {}", e)),
-                }
-            }
-            (Method::Put, ["api", "kanban", "tasks", filename]) => {
-                let body = match read_body(req) {
-                    Some(b) => b,
-                    None => return err(400, "Missing body"),
-                };
-                let body_json: serde_json::Value = match serde_json::from_str(&body) {
-                    Ok(v) => v,
-                    Err(e) => return err(400, &format!("Invalid JSON: {}", e)),
-                };
-                let params = serde_json::json!({
-                    "filename": filename,
-                    "status": body_json.get("status").and_then(|v| v.as_str()).unwrap_or("Plan")
-                });
-                match ai_launcher_core::mcp::kanban::execute("nde_kanban_update_task", &params) {
-                    Ok(result) => ok("Task updated", serde_json::json!({ "result": result })),
-                    Err(e) => err(500, &format!("Failed to update: {}", e)),
-                }
-            }
-            (Method::Delete, ["api", "kanban", "tasks", filename]) => {
-                let params = serde_json::json!({ "filename": filename });
-                match ai_launcher_core::mcp::kanban::execute("nde_kanban_delete_task", &params) {
-                    Ok(result) => ok("Task deleted", serde_json::json!({ "result": result })),
-                    Err(e) => err(404, &format!("Failed to delete: {}", e)),
-                }
-            }
-            _ => err(404, &format!("Not found: {}", path)),
-        };
-    }
-
-    // Knowledge search: /api/knowledge/search?q=...
-    if path.starts_with("/api/knowledge/search") {
-        let query = url.split("q=").nth(1).unwrap_or("");
-        let decoded = urlencoding::decode(query).unwrap_or_default();
-        return subsystem_handler::search_knowledge(&decoded, data_dir);
-    }
-
-    // Memory by key: /api/memory/{key}
-    if path.starts_with("/api/memory/") {
-        let parts: Vec<&str> = path.trim_start_matches('/').split('/').collect();
-        if let ["api", "memory", key] = parts.as_slice() {
-            return subsystem_handler::get_memory(key, data_dir);
-        }
-    }
-
-    err(404, &format!("Not found: {}", path))
-}
-
-/// Handle kanban REST API requests by calling core::mcp::kanban::execute directly.
-fn kanban_rest_handler(
-    tool_name: &str,
-    req: Option<&mut Request>,
-) -> tiny_http::Response<std::io::Cursor<Vec<u8>>> {
-    let params = if let Some(req) = req {
-        match read_body(req) {
-            Some(body) => match serde_json::from_str::<serde_json::Value>(&body) {
-                Ok(v) => v,
-                Err(e) => return err(400, &format!("Invalid JSON: {}", e)),
-            },
-            None => serde_json::json!({}),
-        }
-    } else {
-        serde_json::json!({})
-    };
-
-    match ai_launcher_core::mcp::kanban::execute(tool_name, &params) {
-        Ok(result) => {
-            // Parse the result string as JSON if possible, otherwise wrap it
-            let data = serde_json::from_str::<serde_json::Value>(&result)
-                .unwrap_or_else(|_| serde_json::json!({ "result": result }));
-            ok("Kanban operation successful", data)
-        }
-        Err(e) => err(500, &format!("Kanban error: {}", e)),
-    }
-}
+  Kanban:
+    GET    /api/kanban/tasks                <- list all tasks
+    POST   /api/kanban/tasks                <- create task
+    PUT    /api/kanban/tasks/{file}         <- update status
+    DELETE /api/kanban/tasks/{file}         <- delete task
+    GET    /api/kanban/tasks/{file}/content <- read content
+    PUT    /api/kanban/tasks/{file}/content <- write content
+";
 
 fn main() {
-    let base_dir = get_base_dir();
+    let base_dir = config::base_dir();
     std::fs::create_dir_all(&base_dir).ok();
 
     let mgr = Arc::new(AppManager::new(&base_dir).expect("Failed to init AppManager"));
@@ -405,12 +129,10 @@ fn main() {
         AgentState::new(&base_dir).expect("Failed to init AgentState"),
     ));
 
-    // Phase 2: Tokio runtime for async operations
+    // Tokio runtime for async operations
     let rt = Arc::new(tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime"));
 
-    // Phase 2: Plugin engine
-    // In dev mode (running from repo root), use repo plugins/ directly for hot reload.
-    // In production, fall back to base_dir/plugins.
+    // Plugin engine
     let plugins_dir = {
         let repo_plugins = std::env::current_dir().unwrap_or_default().join("plugins");
         if repo_plugins.exists() && repo_plugins.is_dir() {
@@ -426,10 +148,7 @@ fn main() {
     std::fs::create_dir_all(&plugins_dir).ok();
     let mut engine = PluginEngine::new(&plugins_dir);
 
-    // Register bundled plugins directory (shipped with the repo).
-    // In dev mode the server runs from the repo root via dev.sh,
-    // so `./plugins` relative to CWD contains built-in plugins.
-    // In production, look relative to the executable.
+    // Register bundled plugins directory
     let cwd_plugins = std::env::current_dir()
         .map(|d| d.join("plugins"))
         .unwrap_or_default();
@@ -437,7 +156,6 @@ fn main() {
         engine.add_search_dir(cwd_plugins);
     }
 
-    // Also check next to the executable (for release builds)
     if let Ok(exe) = std::env::current_exe() {
         if let Some(exe_dir) = exe.parent() {
             let exe_plugins = exe_dir.join("plugins");
@@ -461,26 +179,21 @@ fn main() {
         }
     }
 
-    // Phase 2: LLM Manager
+    // LLM Manager
     let llm_config_path = base_dir.join("llm_providers.json");
     let llm_mgr = LlmManager::load_from_disk(&llm_config_path).unwrap_or_else(|_| {
         let mut new_mgr = LlmManager::new();
         new_mgr.set_persistence_path(llm_config_path);
         new_mgr
     });
-
-    // No auto-add: users configure providers manually via the ModelSettings UI.
-    // Default form values (model name, base URL) are pre-filled in the frontend.
-
     let llm_manager = Arc::new(Mutex::new(llm_mgr));
 
-    // Phase 3: Agent Manager (24/7 task runtime)
+    // Agent Manager (24/7 task runtime)
     let agent_manager = {
         let agent_state_ref = agent.lock().unwrap();
         let mut agent_config = agent_state_ref.config.clone();
         drop(agent_state_ref);
-        // Sync with active LLM provider
-        agent_handler::sync_model_config(&mut agent_config, &llm_manager);
+        agent::handler::sync_model_config(&mut agent_config, &llm_manager);
 
         let mut mgr_config = ManagerConfig::default();
         mgr_config.executor.audit_dir = base_dir.join("audit");
@@ -494,10 +207,8 @@ fn main() {
             Err(e) => {
                 eprintln!("  Agent Mgr:   FAILED — {}", e);
                 eprintln!("               (falling back to legacy per-request runtime)");
-                // Create a dummy config to avoid crash — manager will error on spawn
                 let fallback_config = ai_launcher_core::agent::config::AgentConfig::default();
                 let mgr_config = ManagerConfig::default();
-                // Try with absolute workspace path
                 let mut fb_config = fallback_config;
                 fb_config.workspace = base_dir.join("workspace").to_string_lossy().into();
                 let mut fb_mgr_config = mgr_config;
@@ -505,7 +216,6 @@ fn main() {
                 match AgentManager::new(fb_mgr_config, fb_config, &base_dir) {
                     Ok(mgr) => Arc::new(tokio::sync::Mutex::new(mgr)),
                     Err(_) => {
-                        // Last resort: we need to provide something
                         panic!("Cannot initialize AgentManager even with defaults: {}", e);
                     }
                 }
@@ -513,7 +223,7 @@ fn main() {
         }
     };
 
-    // Boot the agent manager (recover crashed tasks, start heartbeat)
+    // Boot agent manager (recover crashed tasks, start heartbeat)
     {
         let mgr = agent_manager.clone();
         let rt_ref = rt.clone();
@@ -525,167 +235,107 @@ fn main() {
         });
     }
 
-    // Telegram gateway shared state
-    let tg_state = Arc::new(telegram_gateway::GatewayState::new());
+    // Shared gateway log buffer
+    let log_buffer = gateway::new_shared();
 
-    // Start Telegram gateway if configured
-    if let Some(tg_config) = telegram_gateway::TelegramGatewayConfig::load(&base_dir) {
-        telegram_gateway::start_telegram_gateway(
+    // Telegram gateway
+    let tg_state = Arc::new(gateway::GatewayState::new());
+
+    if let Some(tg_config) = gateway::TelegramGatewayConfig::load(&base_dir) {
+        gateway::start_telegram_gateway(
             tg_config,
             agent_manager.clone(),
             rt.handle().clone(),
             tg_state.clone(),
+            log_buffer.clone(),
         );
     } else {
         println!("  Telegram:    not configured (set via Channels settings)");
     }
 
-    // OpenViking process manager
+    gateway::log_info(&log_buffer, "system", "NDE-OS server started");
+
+    // OpenViking
     let viking_config = ai_launcher_core::openviking::VikingConfig::from_service_config(&base_dir);
-    let viking_process = ai_launcher_core::openviking::VikingProcess::new(
-        viking_config,
-        &base_dir,
-    );
+    let viking_process = ai_launcher_core::openviking::VikingProcess::new(viking_config, &base_dir);
     let viking = Arc::new(Mutex::new(viking_process));
 
-    // Auto-onboard OpenViking in background (non-blocking)
-    // We no longer auto-onboard OpenViking in the server background thread.
-    // The NDE-OS Desktop (Tauri) handles the auto-install and startup on boot
-    // so it can emit UI progress events via IPC.
+    // Actor Runner (Shield Actor system)
+    let actor_runner = Arc::new(tokio::sync::Mutex::new(ActorRunner::new(&base_dir)));
+    println!("  Actors:      initialized (Shield Actor system)");
+
+    // Build shared AppState
+    let state = Arc::new(AppState {
+        mgr,
+        agent,
+        rt,
+        plugin_engine,
+        llm_manager,
+        data_dir: base_dir.clone(),
+        agent_manager,
+        viking,
+        tg_state,
+        log_buffer,
+        actor_runner,
+    });
+
     let server = Server::http("0.0.0.0:8080").expect("Failed to bind :8080");
 
+    // Print banner
     let os = std::env::consts::OS;
     let arch = std::env::consts::ARCH;
 
-    println!();
-    println!("  +=============================================+");
-    println!("  |  NDE-OS AI Operating System v0.2.0          |");
-    println!("  |  Phase 2 — Gateway + LLM + Plugins + MCP   |");
-    println!("  +=============================================+");
-    println!();
+    println!("\n{}\n", BANNER);
     println!("  Platform:    {}/{}", os, arch);
     println!("  Data dir:    {}", base_dir.display());
     println!("  Server:      http://localhost:8080");
     println!("  Swagger UI:  http://localhost:8080/swagger-ui/");
-    println!("  CLI:         nde --help");
-    println!();
-    println!("  Core:");
-    println!("    GET    /api/health");
-    println!("    GET    /api/system");
-    println!("    GET    /api/system/resources");
-    println!("    GET    /api/catalog");
-    println!("    GET    /api/apps");
-    println!("    POST   /api/apps");
-    println!("    GET    /api/apps/{{id}}");
-    println!("    DELETE /api/apps/{{id}}");
-    println!("    POST   /api/apps/{{id}}/launch");
-    println!("    POST   /api/apps/{{id}}/stop");
-    println!("    GET    /api/sandbox/{{id}}/verify");
-    println!("    GET    /api/sandbox/{{id}}/disk");
-    println!("    POST   /api/store/upload");
-    println!();
-    println!("  Agent:");
-    println!("    POST   /api/agent/chat");
-    println!("    POST   /api/agent/chat/stream          <- real SSE streaming");
-    println!("    GET    /api/agent/conversations");
-    println!("    GET    /api/agent/conversations/{{id}}/messages");
-    println!("    GET    /api/agent/config");
-    println!("    GET    /api/agent/tools");
-    println!();
-    println!("  Agent Tasks (Phase 3):");
-    println!("    POST   /api/agent/tasks                <- spawn task");
-    println!("    GET    /api/agent/tasks                <- list tasks");
-    println!("    GET    /api/agent/tasks/{{id}}           <- task status");
-    println!("    GET    /api/agent/tasks/{{id}}/stream    <- real SSE stream");
-    println!("    POST   /api/agent/tasks/{{id}}/cancel    <- cancel task");
-    println!();
-    println!("  Plugins:");
-    println!("    GET    /api/plugins");
-    println!("    GET    /api/plugins/{{id}}");
-    println!("    POST   /api/plugins/discover");
-    println!("    POST   /api/plugins/{{id}}/install");
-    println!("    POST   /api/plugins/{{id}}/start");
-    println!("    POST   /api/plugins/{{id}}/stop");
-    println!("    GET    /api/plugins/{{id}}/logs");
-    println!("    DELETE /api/plugins/{{id}}/logs");
-    println!();
-    println!("  Models:");
-    println!("    GET    /api/models");
-    println!("    GET    /api/models/active");
-    println!("    GET    /api/models/recommendations");
-    println!("    GET    /api/models/local");
-    println!("    POST   /api/models/switch");
-    println!("    POST   /api/models/providers");
-    println!("    POST   /api/models/verify");
-    println!("    DELETE /api/models/providers/{{name}}");
-    println!();
-    println!("  Codex OAuth:");
-    println!("    POST   /api/codex/oauth/start");
-    println!("    GET    /api/codex/oauth/status");
-    println!();
-    println!("  Channels:");
-    println!("    GET    /api/channels");
-    println!();
-    println!("  MCP:");
-    println!("    GET    /api/mcp/tools");
-    println!("    GET    /api/mcp/servers");
-    println!();
-    println!("  Skills:");
-    println!("    GET    /api/skills                    <- real SkillLoader");
-    println!();
-    println!("  Knowledge:");
-    println!("    GET    /api/knowledge                 <- real KnowledgeGraph");
-    println!("    GET    /api/knowledge/search?q={{query}}");
-    println!();
-    println!("  Memory:");
-    println!("    GET    /api/memory                    <- real KvStore");
-    println!("    GET    /api/memory/{{key}}");
-    println!();
-    println!("  OpenViking:");
-    println!("    GET    /api/viking/status              <- context database");
-    println!("    POST   /api/viking/install             <- install via uv/pip");
-    println!("    POST   /api/viking/start               <- start server");
-    println!("    POST   /api/viking/stop                <- stop server");
-    println!();
-    println!("  Kanban:");
-    println!("    GET    /api/kanban/tasks                <- list all tasks");
-    println!("    POST   /api/kanban/tasks                <- create task");
-    println!("    PUT    /api/kanban/tasks/{{file}}         <- update status");
-    println!("    DELETE /api/kanban/tasks/{{file}}         <- delete task");
-    println!("    GET    /api/kanban/tasks/{{file}}/content <- read content");
-    println!("    PUT    /api/kanban/tasks/{{file}}/content <- write content");
-    println!();
+    println!("  CLI:         nde --help\n");
+    print!("{}\n", ROUTES);
 
+    // ── Thread-pool request loop ────────────────────────────────────────────
+    // Pre-spawn a fixed number of worker threads. Each thread pulls requests
+    // from a channel, preventing unbounded thread creation under load.
+    let (tx, rx) = std::sync::mpsc::sync_channel::<tiny_http::Request>(64);
+    let rx = Arc::new(Mutex::new(rx));
+
+    for _ in 0..WORKER_THREADS {
+        let rx = rx.clone();
+        let state = state.clone();
+        std::thread::spawn(move || {
+            loop {
+                let mut request = match rx.lock().unwrap().recv() {
+                    Ok(req) => req,
+                    Err(_) => break, // Sender dropped — server shutting down
+                };
+                let response = router::route(&mut request, &state);
+                if let Err(e) = request.respond(response) {
+                    eprintln!("Response error: {}", e);
+                }
+            }
+        });
+    }
+
+    // Main thread: accept requests and dispatch to worker pool
     loop {
         match server.recv() {
-            Ok(mut request) => {
-                let mgr = mgr.clone();
-                let agent = agent.clone();
-                let rt = rt.clone();
-                let plugin_engine = plugin_engine.clone();
-                let llm_manager = llm_manager.clone();
-                let base_dir = base_dir.clone();
-                let agent_manager = agent_manager.clone();
-                let viking = viking.clone();
-                let tg_state = tg_state.clone();
-
-                std::thread::spawn(move || {
-                    let response = route(
-                        &mut request,
-                        &mgr,
-                        &agent,
-                        &rt,
-                        &plugin_engine,
-                        llm_manager,
-                        &base_dir,
-                        &agent_manager,
-                        &viking,
-                        &tg_state,
-                    );
-                    if let Err(e) = request.respond(response) {
-                        eprintln!("Response error: {}", e);
+            Ok(request) => {
+                if let Err(e) = tx.try_send(request) {
+                    // Pool is saturated — still handle it but log
+                    match e {
+                        std::sync::mpsc::TrySendError::Full(mut req) => {
+                            // Blocking send as backpressure
+                            let state = state.clone();
+                            std::thread::spawn(move || {
+                                let response = router::route(&mut req, &state);
+                                if let Err(e) = req.respond(response) {
+                                    eprintln!("Response error: {}", e);
+                                }
+                            });
+                        }
+                        std::sync::mpsc::TrySendError::Disconnected(_) => break,
                     }
-                });
+                }
             }
             Err(e) => {
                 eprintln!("Recv error: {}", e);

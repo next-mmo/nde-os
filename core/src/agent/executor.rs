@@ -232,17 +232,54 @@ pub async fn execute_task(
                 return Err(anyhow!("Task cancelled"));
             }
 
-            // Authorize via guardian
-            if let Err(e) = guardian.authorize_tool(&call.name, &call.arguments) {
-                let err_msg = e.to_string();
-                task.mark_failed(&err_msg);
-                let _ = event_tx
-                    .send(AgentEvent::failed(&task.id, &err_msg, 0, false))
-                    .await;
-                if let Some(store) = store {
-                    let _ = store.save_task(task);
+            // Authorize via guardian (includes policy check + budget check)
+            let verdict = match guardian.authorize_tool(&call.name, &call.arguments) {
+                Ok(v) => v,
+                Err(e) => {
+                    let err_msg = e.to_string();
+                    // Emit policy-blocked event for the frontend
+                    let _ = event_tx
+                        .send(AgentEvent::policy_blocked(
+                            &task.id,
+                            &call.name,
+                            &err_msg,
+                            None,
+                        ))
+                        .await;
+                    // Feed a sanitized error back to the LLM so it can adjust
+                    messages.push(Message::tool_result(
+                        &call.id,
+                        &format!("Error: Tool '{}' was blocked by security policy. Try a different approach.", call.name),
+                    ));
+                    task.tool_calls_made += 1;
+                    continue; // Don't abort the whole task — let the LLM recover
                 }
-                return Err(e);
+            };
+
+            // If the tool requires user confirmation, emit the event.
+            // For now, auto-deny in autonomous mode (no interactive approval channel yet).
+            // The ConfirmationRequired event alerts the user via SSE/Telegram.
+            if !verdict.auto_approve {
+                let _ = event_tx
+                    .send(AgentEvent::confirmation_required(
+                        &task.id,
+                        &call.name,
+                        call.arguments.clone(),
+                        &verdict.reason,
+                    ))
+                    .await;
+
+                // Feed a message back to the LLM explaining the denial
+                messages.push(Message::tool_result(
+                    &call.id,
+                    &format!(
+                        "⚠️ Tool '{}' requires user confirmation (risk level: {:?}). \
+                         The user has been notified. Try an alternative approach or wait.",
+                        call.name, verdict.risk
+                    ),
+                ));
+                task.tool_calls_made += 1;
+                continue;
             }
 
             let _ = event_tx
@@ -257,14 +294,17 @@ pub async fn execute_task(
             let result = tools.execute(call, sandbox).await;
             let duration_ms = tool_start.elapsed().as_millis() as u64;
 
-            let (output, is_error) = match result {
+            let (raw_output, is_error) = match result {
                 Ok(out) => (out, false),
                 Err(e) => (format!("Error: {}", e), true),
             };
 
+            // Scrub secrets from tool output before feeding back to LLM
+            let output = guardian.scrub_tool_output(&raw_output);
+
             task.tool_calls_made += 1;
 
-            // Record in audit trail
+            // Record in audit trail (scrubbed version)
             guardian.record_tool_result(&call.name, &output, is_error, duration_ms)?;
 
             let _ = event_tx

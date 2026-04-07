@@ -30,6 +30,9 @@ pub mod figma_json;
 // Shield Browser (anti-detect)
 pub mod shield;
 
+// Shield Actor System (Apify-compatible browser automation)
+pub mod actor;
+
 // FreeCut video editor engine
 pub mod freecut;
 

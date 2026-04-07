@@ -98,6 +98,25 @@ pub enum AgentEvent {
         tokens_used: u64,
     },
 
+    // ── Security ──────────────────────────────────────────────────────────
+    /// A dangerous tool call was blocked by the security policy.
+    ToolPolicyBlocked {
+        task_id: String,
+        tool_name: String,
+        reason: String,
+        threat: Option<String>,
+        timestamp: DateTime<Utc>,
+    },
+
+    /// A dangerous tool call requires user confirmation before proceeding.
+    ConfirmationRequired {
+        task_id: String,
+        tool_name: String,
+        arguments: serde_json::Value,
+        risk_reason: String,
+        timestamp: DateTime<Utc>,
+    },
+
     // ── Health ───────────────────────────────────────────────────────────
     /// Periodic heartbeat for active tasks.
     Heartbeat {
@@ -125,6 +144,8 @@ impl AgentEvent {
             | AgentEvent::ToolCallStart { task_id, .. }
             | AgentEvent::ToolCallResult { task_id, .. }
             | AgentEvent::IterationComplete { task_id, .. }
+            | AgentEvent::ToolPolicyBlocked { task_id, .. }
+            | AgentEvent::ConfirmationRequired { task_id, .. }
             | AgentEvent::Heartbeat { task_id, .. } => task_id,
         }
     }
@@ -248,6 +269,36 @@ impl AgentEvent {
             iterations,
             tokens_used,
             memory_bytes,
+            timestamp: Utc::now(),
+        }
+    }
+
+    pub fn policy_blocked(
+        task_id: &str,
+        tool_name: &str,
+        reason: &str,
+        threat: Option<&str>,
+    ) -> Self {
+        AgentEvent::ToolPolicyBlocked {
+            task_id: task_id.to_string(),
+            tool_name: tool_name.to_string(),
+            reason: reason.to_string(),
+            threat: threat.map(|t| t.to_string()),
+            timestamp: Utc::now(),
+        }
+    }
+
+    pub fn confirmation_required(
+        task_id: &str,
+        tool_name: &str,
+        arguments: serde_json::Value,
+        risk_reason: &str,
+    ) -> Self {
+        AgentEvent::ConfirmationRequired {
+            task_id: task_id.to_string(),
+            tool_name: tool_name.to_string(),
+            arguments,
+            risk_reason: risk_reason.to_string(),
             timestamp: Utc::now(),
         }
     }

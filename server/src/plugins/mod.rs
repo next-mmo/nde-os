@@ -1,13 +1,11 @@
 /// Plugin API handlers — CRUD for the plugin engine.
 use ai_launcher_core::plugins::PluginEngine;
-use std::io::Cursor;
 use std::sync::Mutex;
-use tiny_http::Response;
 
 use crate::response::*;
 
 /// GET /api/plugins — list all plugins.
-pub fn list_plugins(engine: &Mutex<PluginEngine>) -> Response<Cursor<Vec<u8>>> {
+pub fn list_plugins(engine: &Mutex<PluginEngine>) -> HttpResponse {
     match engine.lock() {
         Ok(e) => ok("Plugin list", e.status()),
         Err(_) => err(500, "Plugin engine lock failed"),
@@ -15,7 +13,7 @@ pub fn list_plugins(engine: &Mutex<PluginEngine>) -> Response<Cursor<Vec<u8>>> {
 }
 
 /// GET /api/plugins/{id} — get plugin details.
-pub fn get_plugin(id: &str, engine: &Mutex<PluginEngine>) -> Response<Cursor<Vec<u8>>> {
+pub fn get_plugin(id: &str, engine: &Mutex<PluginEngine>) -> HttpResponse {
     match engine.lock() {
         Ok(e) => match e.get(id) {
             Some(status) => ok(&format!("Plugin '{}'", id), status),
@@ -29,7 +27,7 @@ pub fn get_plugin(id: &str, engine: &Mutex<PluginEngine>) -> Response<Cursor<Vec
 pub fn discover_plugins(
     _rt: &tokio::runtime::Runtime,
     engine: &Mutex<PluginEngine>,
-) -> Response<Cursor<Vec<u8>>> {
+) -> HttpResponse {
     match engine.lock() {
         Ok(mut e) => match e.discover() {
             Ok(manifests) => ok(
@@ -47,7 +45,7 @@ pub fn install_plugin(
     id: &str,
     rt: &tokio::runtime::Runtime,
     engine: &Mutex<PluginEngine>,
-) -> Response<Cursor<Vec<u8>>> {
+) -> HttpResponse {
     let mut e = match engine.lock() {
         Ok(e) => e,
         Err(_) => return err(500, "Plugin engine lock failed"),
@@ -64,7 +62,7 @@ pub fn start_plugin(
     id: &str,
     rt: &tokio::runtime::Runtime,
     engine: &Mutex<PluginEngine>,
-) -> Response<Cursor<Vec<u8>>> {
+) -> HttpResponse {
     let mut e = match engine.lock() {
         Ok(e) => e,
         Err(_) => return err(500, "Plugin engine lock failed"),
@@ -81,7 +79,7 @@ pub fn stop_plugin(
     id: &str,
     rt: &tokio::runtime::Runtime,
     engine: &Mutex<PluginEngine>,
-) -> Response<Cursor<Vec<u8>>> {
+) -> HttpResponse {
     let mut e = match engine.lock() {
         Ok(e) => e,
         Err(_) => return err(500, "Plugin engine lock failed"),
@@ -94,7 +92,7 @@ pub fn stop_plugin(
 }
 
 /// GET /api/plugins/{id}/logs — get plugin logs.
-pub fn get_plugin_logs(id: &str, engine: &Mutex<PluginEngine>) -> Response<Cursor<Vec<u8>>> {
+pub fn get_plugin_logs(id: &str, engine: &Mutex<PluginEngine>) -> HttpResponse {
     match engine.lock() {
         Ok(e) => match e.logs(id) {
             Some(logs) => ok(&format!("Logs for plugin '{}'", id), logs),
@@ -105,7 +103,7 @@ pub fn get_plugin_logs(id: &str, engine: &Mutex<PluginEngine>) -> Response<Curso
 }
 
 /// DELETE /api/plugins/{id}/logs — clear plugin logs.
-pub fn clear_plugin_logs(id: &str, engine: &Mutex<PluginEngine>) -> Response<Cursor<Vec<u8>>> {
+pub fn clear_plugin_logs(id: &str, engine: &Mutex<PluginEngine>) -> HttpResponse {
     match engine.lock() {
         Ok(e) => {
             if e.clear_logs(id) {

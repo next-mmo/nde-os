@@ -7,8 +7,7 @@ use std::sync::Mutex;
 
 use crate::response::*;
 use serde_json::json;
-use std::io::Cursor;
-use tiny_http::{Request, Response};
+use tiny_http::Request;
 
 /// Shared agent state held by the server.
 pub struct AgentState {
@@ -61,11 +60,7 @@ pub struct ChatResponse {
 }
 
 #[derive(Deserialize)]
-pub struct CreateConversationRequest {
-    pub title: Option<String>,
-}
-
-#[derive(Deserialize)]
+#[allow(dead_code)]
 pub struct AutocompleteRequest {
     pub prefix: String,
     pub suffix: String,
@@ -99,15 +94,10 @@ pub fn agent_chat(
     req: &mut Request,
     state: &Mutex<AgentState>,
     llm_manager: &std::sync::Arc<Mutex<ai_launcher_core::llm::manager::LlmManager>>,
-) -> Response<Cursor<Vec<u8>>> {
-    let body = match crate::response::read_body(req) {
-        Some(b) => b,
-        None => return err(400, "Missing request body"),
-    };
-
-    let chat_req: ChatRequest = match serde_json::from_str(&body) {
+) -> HttpResponse {
+    let chat_req: ChatRequest = match parse_body(req) {
         Ok(r) => r,
-        Err(e) => return err(400, &format!("Invalid JSON: {}", e)),
+        Err(resp) => return resp,
     };
 
     let state = state.lock().unwrap();
@@ -188,7 +178,7 @@ pub fn agent_chat(
 }
 
 /// GET /api/agent/conversations — list conversations
-pub fn list_conversations(state: &Mutex<AgentState>) -> Response<Cursor<Vec<u8>>> {
+pub fn list_conversations(state: &Mutex<AgentState>) -> HttpResponse {
     let state = state.lock().unwrap();
     match state.memory.conversations.list_conversations(50) {
         Ok(convs) => ok(&format!("{} conversation(s)", convs.len()), convs),
@@ -197,7 +187,7 @@ pub fn list_conversations(state: &Mutex<AgentState>) -> Response<Cursor<Vec<u8>>
 }
 
 /// GET /api/agent/conversations/{id}/messages — get conversation history
-pub fn get_conversation_messages(id: &str, state: &Mutex<AgentState>) -> Response<Cursor<Vec<u8>>> {
+pub fn get_conversation_messages(id: &str, state: &Mutex<AgentState>) -> HttpResponse {
     let state = state.lock().unwrap();
     match state.memory.conversations.get_messages(id) {
         Ok(msgs) => ok(&format!("{} message(s)", msgs.len()), msgs),
@@ -209,7 +199,7 @@ pub fn get_conversation_messages(id: &str, state: &Mutex<AgentState>) -> Respons
 pub fn agent_config(
     state: &Mutex<AgentState>,
     llm_manager: &std::sync::Arc<Mutex<ai_launcher_core::llm::manager::LlmManager>>,
-) -> Response<Cursor<Vec<u8>>> {
+) -> HttpResponse {
     let state = state.lock().unwrap();
     let mut config = state.config.clone();
     sync_model_config(&mut config, llm_manager);
@@ -232,15 +222,10 @@ pub fn agent_autocomplete(
     req: &mut Request,
     llm_manager: &std::sync::Arc<Mutex<ai_launcher_core::llm::manager::LlmManager>>,
     rt: &tokio::runtime::Runtime,
-) -> Response<Cursor<Vec<u8>>> {
-    let body = match crate::response::read_body(req) {
-        Some(b) => b,
-        None => return err(400, "Missing request body"),
-    };
-
-    let ac_req: AutocompleteRequest = match serde_json::from_str(&body) {
+) -> HttpResponse {
+    let ac_req: AutocompleteRequest = match parse_body(req) {
         Ok(r) => r,
-        Err(e) => return err(400, &format!("Invalid JSON: {}", e)),
+        Err(resp) => return resp,
     };
 
     let prompt = format!(

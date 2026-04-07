@@ -6,9 +6,9 @@ use ai_launcher_core::agent::manager::AgentManager;
 use ai_launcher_core::agent::models::TaskFilter;
 use ai_launcher_core::agent::protocol::AgentEvent;
 use serde::Deserialize;
-use std::io::{Cursor, Write};
+use std::io::Write;
 use std::sync::{Arc, Mutex};
-use tiny_http::{Header, Request, Response};
+use tiny_http::Request;
 
 use crate::response::*;
 
@@ -28,15 +28,10 @@ pub fn spawn_task(
     req: &mut Request,
     rt: &tokio::runtime::Runtime,
     manager: &Arc<tokio::sync::Mutex<AgentManager>>,
-) -> Response<Cursor<Vec<u8>>> {
-    let body = match read_body(req) {
-        Some(b) => b,
-        None => return err(400, "Missing request body"),
-    };
-
-    let spawn_req: SpawnTaskRequest = match serde_json::from_str(&body) {
+) -> HttpResponse {
+    let spawn_req: SpawnTaskRequest = match parse_body(req) {
         Ok(r) => r,
-        Err(e) => return err(400, &format!("Invalid JSON: {}", e)),
+        Err(resp) => return resp,
     };
 
     let manager = manager.clone();
@@ -63,7 +58,7 @@ pub fn stream_task(
     task_id: &str,
     rt: &tokio::runtime::Runtime,
     manager: &Arc<tokio::sync::Mutex<AgentManager>>,
-) -> Response<Cursor<Vec<u8>>> {
+) -> HttpResponse {
     let manager = manager.clone();
     let task_id = task_id.to_string();
 
@@ -73,12 +68,11 @@ pub fn stream_task(
         drop(mgr); // Release lock so events can flow
 
         let mut sse_data = Vec::new();
-        let timeout = tokio::time::Duration::from_secs(300); // 5 min max
+        let timeout = tokio::time::Duration::from_secs(300);
 
         loop {
             match tokio::time::timeout(timeout, rx.recv()).await {
                 Ok(Ok(event)) => {
-                    // Only forward events for this task
                     if event.task_id() != task_id {
                         continue;
                     }
@@ -92,7 +86,6 @@ pub fn stream_task(
                     }
                 }
                 Ok(Err(_)) => {
-                    // Channel lagged or closed
                     write!(
                         sse_data,
                         "data: {}\n\ndata: [DONE]\n\n",
@@ -102,7 +95,6 @@ pub fn stream_task(
                     break;
                 }
                 Err(_) => {
-                    // Timeout
                     write!(
                         sse_data,
                         "data: {}\n\ndata: [DONE]\n\n",
@@ -117,11 +109,7 @@ pub fn stream_task(
         sse_data
     });
 
-    Response::from_data(result)
-        .with_header(Header::from_bytes("Content-Type", "text/event-stream").unwrap())
-        .with_header(Header::from_bytes("Cache-Control", "no-cache").unwrap())
-        .with_header(Header::from_bytes("Connection", "keep-alive").unwrap())
-        .with_header(Header::from_bytes("Access-Control-Allow-Origin", "*").unwrap())
+    sse_response(result)
 }
 
 /// POST /api/agent/tasks/{id}/cancel — cancel a running task.
@@ -129,7 +117,7 @@ pub fn cancel_task(
     task_id: &str,
     rt: &tokio::runtime::Runtime,
     manager: &Arc<tokio::sync::Mutex<AgentManager>>,
-) -> Response<Cursor<Vec<u8>>> {
+) -> HttpResponse {
     let manager = manager.clone();
     let task_id = task_id.to_string();
 
@@ -154,7 +142,7 @@ pub fn cancel_task(
 pub fn list_tasks(
     manager: &Arc<tokio::sync::Mutex<AgentManager>>,
     rt: &tokio::runtime::Runtime,
-) -> Response<Cursor<Vec<u8>>> {
+) -> HttpResponse {
     let manager = manager.clone();
     let result = rt.block_on(async {
         let mgr = manager.lock().await;
@@ -175,7 +163,7 @@ pub fn get_task(
     task_id: &str,
     manager: &Arc<tokio::sync::Mutex<AgentManager>>,
     rt: &tokio::runtime::Runtime,
-) -> Response<Cursor<Vec<u8>>> {
+) -> HttpResponse {
     let manager = manager.clone();
     let result = rt.block_on(async {
         let mgr = manager.lock().await;
@@ -194,20 +182,15 @@ pub fn get_task(
 pub fn handle_stream_chat(
     req: &mut Request,
     rt: &tokio::runtime::Runtime,
-    agent_state: &Mutex<crate::agent_handler::AgentState>,
+    agent_state: &Mutex<super::handler::AgentState>,
     llm_manager: &Arc<Mutex<ai_launcher_core::llm::manager::LlmManager>>,
     manager: Option<&Arc<tokio::sync::Mutex<AgentManager>>>,
-) -> Response<Cursor<Vec<u8>>> {
+) -> HttpResponse {
     // If AgentManager is available, use the new task-based streaming
     if let Some(manager) = manager {
-        let body = match read_body(req) {
-            Some(b) => b,
-            None => return err(400, "Missing request body"),
-        };
-
-        let chat_req: StreamChatRequest = match serde_json::from_str(&body) {
+        let chat_req: StreamChatRequest = match parse_body(req) {
             Ok(r) => r,
-            Err(e) => return err(400, &format!("Invalid JSON: {}", e)),
+            Err(resp) => return resp,
         };
 
         // Save to conversation store
@@ -256,7 +239,6 @@ pub fn handle_stream_chat(
 
                         let is_terminal = event.is_terminal();
 
-                        // Capture final output for conversation
                         if let AgentEvent::TaskCompleted { ref output, .. } = event {
                             final_output = output.clone();
                         }
@@ -264,7 +246,6 @@ pub fn handle_stream_chat(
                         write!(sse_data, "{}", event.to_sse()).ok();
 
                         if is_terminal {
-                            // Add conversation_id to done event
                             let done = serde_json::json!({
                                 "type": "done",
                                 "content": final_output,
@@ -300,11 +281,7 @@ pub fn handle_stream_chat(
         });
 
         return match result {
-            Ok(sse_data) => Response::from_data(sse_data)
-                .with_header(Header::from_bytes("Content-Type", "text/event-stream").unwrap())
-                .with_header(Header::from_bytes("Cache-Control", "no-cache").unwrap())
-                .with_header(Header::from_bytes("Connection", "keep-alive").unwrap())
-                .with_header(Header::from_bytes("Access-Control-Allow-Origin", "*").unwrap()),
+            Ok(sse_data) => sse_response(sse_data),
             Err(e) => {
                 let mut sse_data = Vec::new();
                 let error_event = serde_json::json!({
@@ -317,9 +294,7 @@ pub fn handle_stream_chat(
                     serde_json::to_string(&error_event).unwrap_or_default()
                 )
                 .ok();
-                Response::from_data(sse_data)
-                    .with_header(Header::from_bytes("Content-Type", "text/event-stream").unwrap())
-                    .with_header(Header::from_bytes("Access-Control-Allow-Origin", "*").unwrap())
+                sse_error_response(sse_data)
             }
         };
     }
@@ -332,22 +307,17 @@ pub fn handle_stream_chat(
 fn fallback_stream_chat(
     req: &mut Request,
     runtime: &tokio::runtime::Runtime,
-    agent_state: &Mutex<crate::agent_handler::AgentState>,
+    agent_state: &Mutex<super::handler::AgentState>,
     llm_manager: &Arc<Mutex<ai_launcher_core::llm::manager::LlmManager>>,
-) -> Response<Cursor<Vec<u8>>> {
-    let body = match read_body(req) {
-        Some(b) => b,
-        None => return err(400, "Missing request body"),
-    };
-
-    let chat_req: StreamChatRequest = match serde_json::from_str(&body) {
+) -> HttpResponse {
+    let chat_req: StreamChatRequest = match parse_body(req) {
         Ok(r) => r,
-        Err(e) => return err(400, &format!("Invalid JSON: {}", e)),
+        Err(resp) => return resp,
     };
 
     let state = agent_state.lock().unwrap();
     let mut config = state.config.clone();
-    crate::agent_handler::sync_model_config(&mut config, llm_manager);
+    super::handler::sync_model_config(&mut config, llm_manager);
 
     let message = chat_req.message.clone();
 
@@ -412,11 +382,7 @@ fn fallback_stream_chat(
             )
             .ok();
 
-            Response::from_data(sse_data)
-                .with_header(Header::from_bytes("Content-Type", "text/event-stream").unwrap())
-                .with_header(Header::from_bytes("Cache-Control", "no-cache").unwrap())
-                .with_header(Header::from_bytes("Connection", "keep-alive").unwrap())
-                .with_header(Header::from_bytes("Access-Control-Allow-Origin", "*").unwrap())
+            sse_response(sse_data)
         }
         Err(e) => {
             let mut sse_data = Vec::new();
@@ -432,9 +398,7 @@ fn fallback_stream_chat(
             )
             .ok();
 
-            Response::from_data(sse_data)
-                .with_header(Header::from_bytes("Content-Type", "text/event-stream").unwrap())
-                .with_header(Header::from_bytes("Access-Control-Allow-Origin", "*").unwrap())
+            sse_error_response(sse_data)
         }
     }
 }

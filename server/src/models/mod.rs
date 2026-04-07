@@ -1,13 +1,12 @@
 /// LLM model management handlers.
 use ai_launcher_core::llm::manager::LlmManager;
-use std::io::Cursor;
 use std::sync::Mutex;
-use tiny_http::{Request, Response};
+use tiny_http::Request;
 
 use crate::response::*;
 
 /// GET /api/models — list providers.
-pub fn list_models(manager: &Mutex<LlmManager>) -> Response<Cursor<Vec<u8>>> {
+pub fn list_models(manager: &Mutex<LlmManager>) -> HttpResponse {
     match manager.lock() {
         Ok(m) => ok("LLM providers", m.status()),
         Err(_) => err(500, "LLM manager lock failed"),
@@ -15,7 +14,7 @@ pub fn list_models(manager: &Mutex<LlmManager>) -> Response<Cursor<Vec<u8>>> {
 }
 
 /// GET /api/models/active — current active model.
-pub fn active_model(manager: &Mutex<LlmManager>) -> Response<Cursor<Vec<u8>>> {
+pub fn active_model(manager: &Mutex<LlmManager>) -> HttpResponse {
     match manager.lock() {
         Ok(m) => ok("Active provider", m.active_name()),
         Err(_) => err(500, "LLM manager lock failed"),
@@ -23,20 +22,15 @@ pub fn active_model(manager: &Mutex<LlmManager>) -> Response<Cursor<Vec<u8>>> {
 }
 
 /// POST /api/models/switch — switch active provider.
-pub fn switch_model(req: &mut Request, manager: &Mutex<LlmManager>) -> Response<Cursor<Vec<u8>>> {
-    let body = match read_body(req) {
-        Some(b) => b,
-        None => return err(400, "Missing request body"),
-    };
-
+pub fn switch_model(req: &mut Request, manager: &Mutex<LlmManager>) -> HttpResponse {
     #[derive(serde::Deserialize)]
     struct SwitchReq {
         name: String,
     }
 
-    let switch: SwitchReq = match serde_json::from_str(&body) {
+    let switch: SwitchReq = match parse_body(req) {
         Ok(r) => r,
-        Err(e) => return err(400, &format!("Invalid JSON: {}", e)),
+        Err(resp) => return resp,
     };
 
     match manager.lock() {
@@ -53,15 +47,10 @@ pub fn add_provider(
     req: &mut Request,
     manager: &Mutex<LlmManager>,
     rt: &tokio::runtime::Runtime,
-) -> Response<Cursor<Vec<u8>>> {
-    let body = match crate::response::read_body(req) {
-        Some(b) => b,
-        None => return err(400, "Missing request body"),
-    };
-
-    let config: ai_launcher_core::llm::manager::ProviderConfig = match serde_json::from_str(&body) {
+) -> HttpResponse {
+    let config: ai_launcher_core::llm::manager::ProviderConfig = match parse_body(req) {
         Ok(c) => c,
-        Err(e) => return err(400, &format!("Invalid JSON: {}", e)),
+        Err(resp) => return resp,
     };
 
     let name = config.name.clone();
@@ -90,7 +79,7 @@ pub fn add_provider(
 }
 
 /// DELETE /api/models/providers/{name} — remove a provider.
-pub fn remove_provider(name: &str, manager: &Mutex<LlmManager>) -> Response<Cursor<Vec<u8>>> {
+pub fn remove_provider(name: &str, manager: &Mutex<LlmManager>) -> HttpResponse {
     match manager.lock() {
         Ok(mut m) => {
             if m.remove(name) {
@@ -116,21 +105,18 @@ pub fn codex_oauth_start(
     manager: std::sync::Arc<Mutex<LlmManager>>,
     rt: &tokio::runtime::Runtime,
     _data_dir: &std::path::Path,
-) -> Response<Cursor<Vec<u8>>> {
+) -> HttpResponse {
     use ai_launcher_core::llm::codex_oauth;
 
     let mut model_name = "gpt-4o-mini".to_string();
-    if let Some(body) = crate::response::read_body(req) {
-        if let Ok(req_body) = serde_json::from_str::<CodexAuthReq>(&body) {
-            if let Some(m) = req_body.model {
-                model_name = m;
-            }
+    if let Ok(req_body) = parse_body::<CodexAuthReq>(req) {
+        if let Some(m) = req_body.model {
+            model_name = m;
         }
     }
 
     // Check if already authenticated
     if codex_oauth::get_codex_access_token().is_ok() {
-        // Already logged in — auto-add the codex_oauth provider
         add_codex_provider(&manager, &model_name);
 
         #[derive(serde::Serialize)]
@@ -152,10 +138,8 @@ pub fn codex_oauth_start(
     let flow = codex_oauth::start_oauth_flow();
     let auth_url = flow.auth_url.clone();
 
-    // Open browser for the user
     let _ = open_browser(&auth_url);
 
-    // Spawn callback server + token exchange in background
     let manager_clone = manager.clone();
 
     rt.spawn(async move {
@@ -166,7 +150,6 @@ pub fn codex_oauth_start(
                     .as_ref()
                     .and_then(|t| t.id_token.as_deref())
                     .and_then(|t| {
-                        // Extract email for logging
                         let parts: Vec<&str> = t.split('.').collect();
                         if parts.len() < 2 {
                             return None;
@@ -220,7 +203,7 @@ fn add_codex_provider(manager: &Mutex<LlmManager>, model: &str) {
 }
 
 /// GET /api/codex/oauth/status — check auth status.
-pub fn codex_oauth_status(data_dir: &std::path::Path) -> Response<Cursor<Vec<u8>>> {
+pub fn codex_oauth_status(data_dir: &std::path::Path) -> HttpResponse {
     use ai_launcher_core::llm::codex_oauth::CodexOAuthStatus;
     let status = CodexOAuthStatus::from_store(data_dir);
     ok("Codex OAuth status", status)
@@ -251,13 +234,13 @@ fn open_browser(url: &str) {
 /// GET /api/models/recommendations — get recommended GGUF models based on system RAM.
 pub fn recommend_gguf_models(
     mgr: &ai_launcher_core::app_manager::AppManager,
-) -> Response<Cursor<Vec<u8>>> {
+) -> HttpResponse {
     use ai_launcher_core::llm::gguf::GgufModelRecommendation;
     use ai_launcher_core::system_metrics::snapshot_resource_usage;
 
     let ram_bytes = match snapshot_resource_usage(mgr.base_dir()) {
         Ok(usage) => usage.memory_total_bytes,
-        Err(_) => 0, // Default to 0, which returns TinyLlama
+        Err(_) => 0,
     };
 
     let models = GgufModelRecommendation::recommend_models(ram_bytes, None);
@@ -265,43 +248,24 @@ pub fn recommend_gguf_models(
 }
 
 /// GET /api/models/local — list locally-available GGUF model files.
-pub fn list_local_models() -> Response<Cursor<Vec<u8>>> {
+/// Now accepts data_dir from AppState instead of recomputing it.
+pub fn list_local_models(data_dir: &std::path::Path) -> HttpResponse {
     use ai_launcher_core::llm::gguf::GgufProvider;
 
-    let data_dir = std::env::var("AI_LAUNCHER_DATA_DIR")
-        .map(std::path::PathBuf::from)
-        .unwrap_or_else(|_| {
-            if cfg!(windows) {
-                std::env::var("LOCALAPPDATA")
-                    .map(|p| std::path::PathBuf::from(p).join("ai-launcher"))
-                    .unwrap_or_else(|_| std::path::PathBuf::from("C:\\ai-launcher-data"))
-            } else {
-                std::env::var("HOME")
-                    .map(std::path::PathBuf::from)
-                    .unwrap_or_else(|_| std::path::PathBuf::from("/tmp"))
-                    .join(".ai-launcher")
-            }
-        });
-
-    let models = GgufProvider::list_local_models(&data_dir);
+    let models = GgufProvider::list_local_models(data_dir);
     ok("Local GGUF models", models)
 }
 
 /// POST /api/models/verify — verify a provider config can run without errors.
-/// Tests the actual connection (API key, model availability, server reachability)
-/// without saving the provider.
+/// Now accepts data_dir from AppState instead of recomputing it.
 pub fn verify_provider(
     req: &mut Request,
     rt: &tokio::runtime::Runtime,
-) -> Response<Cursor<Vec<u8>>> {
-    let body = match crate::response::read_body(req) {
-        Some(b) => b,
-        None => return err(400, "Missing request body"),
-    };
-
-    let config: ai_launcher_core::llm::manager::ProviderConfig = match serde_json::from_str(&body) {
+    data_dir: &std::path::Path,
+) -> HttpResponse {
+    let config: ai_launcher_core::llm::manager::ProviderConfig = match parse_body(req) {
         Ok(c) => c,
-        Err(e) => return err(400, &format!("Invalid JSON: {}", e)),
+        Err(resp) => return resp,
     };
 
     #[derive(serde::Serialize)]
@@ -318,22 +282,8 @@ pub fn verify_provider(
         "gguf" | "llama-cpp" | "llama.cpp"
     ) {
         let result = rt.block_on(async {
-            let data_dir = std::env::var("AI_LAUNCHER_DATA_DIR")
-                .map(std::path::PathBuf::from)
-                .unwrap_or_else(|_| {
-                    if cfg!(windows) {
-                        std::env::var("LOCALAPPDATA")
-                            .map(|p| std::path::PathBuf::from(p).join("ai-launcher"))
-                            .unwrap_or_else(|_| std::path::PathBuf::from("C:\\ai-launcher-data"))
-                    } else {
-                        std::env::var("HOME")
-                            .map(std::path::PathBuf::from)
-                            .unwrap_or_else(|_| std::path::PathBuf::from("/tmp"))
-                            .join(".ai-launcher")
-                    }
-                });
             let provider = ai_launcher_core::llm::gguf::GgufProvider::new(
-                &data_dir,
+                data_dir,
                 &config.model,
                 config.base_url.as_deref(),
                 None,
@@ -343,9 +293,7 @@ pub fn verify_provider(
         return ok("GGUF verification result", result);
     }
 
-    // For all other providers (Ollama, OpenAI, Anthropic, Groq, etc.),
-    // use the same verify_provider_config that add_provider uses.
-    // This actually tests the connection: pings Ollama, sends a test message to APIs, etc.
+    // For all other providers, test the connection
     let verify_res = rt.block_on(async {
         tracing::info!(
             "Verify-only test for '{}' (type={})...",
