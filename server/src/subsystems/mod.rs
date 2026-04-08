@@ -1,7 +1,6 @@
 /// Channel, MCP, Skills, Knowledge, Memory handlers.
 /// These expose core subsystem data to the desktop UI.
 /// Skills / Knowledge / Memory now use real core modules with OpenViking fallback.
-
 use crate::response::*;
 
 use serde_json::Value;
@@ -27,11 +26,15 @@ fn entity_to_json(e: &ai_launcher_core::knowledge::Entity) -> serde_json::Value 
 /// Reads live state from the Telegram gateway and config for others.
 pub fn list_channels(
     data_dir: &Path,
-    tg_state: &std::sync::Arc<crate::gateway::telegram::GatewayState>,
+    tg_state: &std::sync::Arc<crate::gateway::GatewayState>,
 ) -> HttpResponse {
     let tg_running = tg_state.running.load(std::sync::atomic::Ordering::SeqCst);
-    let tg_received = tg_state.messages_received.load(std::sync::atomic::Ordering::Relaxed);
-    let tg_sent = tg_state.messages_sent.load(std::sync::atomic::Ordering::Relaxed);
+    let tg_received = tg_state
+        .messages_received
+        .load(std::sync::atomic::Ordering::Relaxed);
+    let tg_sent = tg_state
+        .messages_sent
+        .load(std::sync::atomic::Ordering::Relaxed);
 
     let mut dc_running = false;
     let mut sl_running = false;
@@ -103,10 +106,7 @@ pub fn list_channels(
 }
 
 /// POST /api/channels/{name}/configure
-pub fn configure_channel(
-    req: &mut tiny_http::Request,
-    data_dir: &Path,
-) -> HttpResponse {
+pub fn configure_channel(req: &mut tiny_http::Request, data_dir: &Path) -> HttpResponse {
     let payload: Value = match parse_body(req) {
         Ok(v) => v,
         Err(resp) => return resp,
@@ -177,7 +177,10 @@ pub fn configure_channel(
     // could be exfiltrated via prompt injection. Each gateway reads its
     // token directly from channels.json on startup instead.
     if enabled {
-        tracing::info!(channel = channel_type, "Channel configured (token encrypted at rest)");
+        tracing::info!(
+            channel = channel_type,
+            "Channel configured (token encrypted at rest)"
+        );
     }
 
     ok("Channel configured", serde_json::json!({ "success": true }))
@@ -424,7 +427,10 @@ pub fn viking_install(
     };
 
     match rt.block_on(v.ensure_installed()) {
-        Ok(true) => ok("OpenViking installed", serde_json::json!({ "installed": true })),
+        Ok(true) => ok(
+            "OpenViking installed",
+            serde_json::json!({ "installed": true }),
+        ),
         Ok(false) => err(
             500,
             "OpenViking installation failed. Ensure Python and uv/pip are available.",

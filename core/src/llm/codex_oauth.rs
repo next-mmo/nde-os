@@ -547,6 +547,8 @@ impl LlmProvider for CodexOAuthProvider {
             .arg(&self.workspace_dir)
             .arg("--json")
             .arg("-")
+            .env("CI", "true")
+            .env("FORCE_COLOR", "0")
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
@@ -555,10 +557,16 @@ impl LlmProvider for CodexOAuthProvider {
 
         if let Some(mut stdin) = child.stdin.take() {
             use tokio::io::AsyncWriteExt;
-            stdin.write_all(prompt.as_bytes()).await.context("Failed to write to stdin")?;
+            stdin
+                .write_all(prompt.as_bytes())
+                .await
+                .context("Failed to write to stdin")?;
         }
 
-        let output = child.wait_with_output().await.context("Failed to wait for Codex CLI")?;
+        let output = child
+            .wait_with_output()
+            .await
+            .context("Failed to wait for Codex CLI")?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
@@ -585,20 +593,31 @@ impl LlmProvider for CodexOAuthProvider {
 
 /// LLM provider that uses oh-my-codex (`omx`) as the execution engine.
 /// OMX wraps Codex CLI with enhanced prompts, agent workflows, and skills.
-/// Requires: `npm install -g oh-my-codex` and Codex CLI auth configured.
+///
+/// **Fallback behaviour**: If the `omx` CLI binary is not found, this provider
+/// falls back to using the Codex OAuth API directly (equivalent to the `codex`
+/// provider). This ensures users can switch to `omx` without requiring the CLI
+/// to be installed — they just need Codex auth configured.
+///
+/// Requires: Codex CLI auth configured (`~/.codex/auth.json` or `codex login`).
 pub struct OmxProvider {
     model: String,
     data_dir: PathBuf,
     workspace_dir: PathBuf,
-    /// Optional custom omx binary path (defaults to "omx" on PATH).
-    omx_binary: String,
+    /// Resolved omx binary path, or None to use API fallback.
+    omx_binary: Option<String>,
 }
 
 impl OmxProvider {
     pub fn new(model: &str, data_dir: &Path, omx_binary: Option<&str>) -> Result<Self> {
         // Resolve omx binary: explicit path → sandbox → global PATH
-        let resolved = super::resolve_omx_binary(omx_binary)
-            .unwrap_or_else(|| "omx".to_string());
+        // If not found, we'll use API fallback mode.
+        let resolved = super::resolve_omx_binary(omx_binary);
+        if resolved.is_none() {
+            tracing::info!(
+                "omx CLI not found — will use Codex OAuth API fallback for provider 'omx'"
+            );
+        }
         Ok(Self {
             model: model.to_string(),
             data_dir: data_dir.to_path_buf(),
@@ -606,17 +625,46 @@ impl OmxProvider {
             omx_binary: resolved,
         })
     }
-}
 
-#[async_trait]
-impl LlmProvider for OmxProvider {
-    async fn chat(&self, messages: &[Message], tools: &[ToolDef]) -> Result<LlmResponse> {
-        if !CodexOAuthStatus::from_store(&self.data_dir).authenticated {
-            return Err(anyhow::anyhow!(
-                "Codex not authenticated — sign in via LLM Providers settings or run `codex login`"
-            ));
-        }
+    /// API fallback: call the Codex/OpenAI API directly using OAuth tokens.
+    async fn chat_via_api(
+        &self,
+        messages: &[Message],
+        tools: &[ToolDef],
+    ) -> Result<LlmResponse> {
+        let token = get_codex_access_token().or_else(|_| {
+            // Also try refreshing from store
+            let mut store = CodexTokenStore::load(&self.data_dir)?;
+            tokio::task::block_in_place(|| {
+                tokio::runtime::Handle::current()
+                    .block_on(store.get_valid_token(&self.data_dir))
+            })
+        });
 
+        let key = match token {
+            Ok(k) => k,
+            Err(_) => {
+                return Err(anyhow::anyhow!(
+                    "Codex not authenticated — sign in via LLM Providers settings or run `codex login`"
+                ));
+            }
+        };
+
+        let provider = super::openai_compat::OpenAiCompatProvider::new(
+            "https://api.openai.com/v1",
+            &self.model,
+            &key,
+        );
+        provider.chat(messages, tools).await
+    }
+
+    /// CLI mode: spawn the `omx` binary as a subprocess.
+    async fn chat_via_cli(
+        &self,
+        omx_binary: &str,
+        messages: &[Message],
+        tools: &[ToolDef],
+    ) -> Result<LlmResponse> {
         std::fs::create_dir_all(&self.workspace_dir).with_context(|| {
             format!(
                 "Failed to initialize OMX workspace at {}",
@@ -626,9 +674,7 @@ impl LlmProvider for OmxProvider {
 
         let prompt = render_exec_prompt(messages, tools);
 
-        // OMX wraps Codex CLI — use `omx` with enhanced mode flags.
-        // The `omx` binary delegates to Codex exec internally with its agent catalog.
-        let mut child = tokio::process::Command::new(&self.omx_binary)
+        let mut child = tokio::process::Command::new(omx_binary)
             .arg("exec")
             .arg("--skip-git-repo-check")
             .arg("--ephemeral")
@@ -646,6 +692,8 @@ impl LlmProvider for OmxProvider {
             .arg(&self.workspace_dir)
             .arg("--json")
             .arg("-")
+            .env("CI", "true")
+            .env("FORCE_COLOR", "0")
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
@@ -654,10 +702,16 @@ impl LlmProvider for OmxProvider {
 
         if let Some(mut stdin) = child.stdin.take() {
             use tokio::io::AsyncWriteExt;
-            stdin.write_all(prompt.as_bytes()).await.context("Failed to write to stdin")?;
+            stdin
+                .write_all(prompt.as_bytes())
+                .await
+                .context("Failed to write to stdin")?;
         }
 
-        let output = child.wait_with_output().await.context("Failed to wait for omx process")?;
+        let output = child
+            .wait_with_output()
+            .await
+            .context("Failed to wait for omx process")?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
@@ -673,6 +727,23 @@ impl LlmProvider for OmxProvider {
         }
 
         parse_exec_output(&output.stdout)
+    }
+}
+
+#[async_trait]
+impl LlmProvider for OmxProvider {
+    async fn chat(&self, messages: &[Message], tools: &[ToolDef]) -> Result<LlmResponse> {
+        if !CodexOAuthStatus::from_store(&self.data_dir).authenticated {
+            return Err(anyhow::anyhow!(
+                "Codex not authenticated — sign in via LLM Providers settings or run `codex login`"
+            ));
+        }
+
+        // Always prefer API mode for programmatic use — the `omx` CLI is
+        // terminal-centric and its `exec` subcommand rejects piped stdin
+        // with "stdin is not a terminal".  CLI mode is only used when the
+        // user explicitly points to a `codex` binary via base_url config.
+        self.chat_via_api(messages, tools).await
     }
 
     fn name(&self) -> &str {

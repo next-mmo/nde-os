@@ -60,7 +60,9 @@ pub async fn viking_install(state: tauri::State<'_, VikingState>) -> Result<bool
 #[tauri::command]
 pub async fn viking_start(state: tauri::State<'_, VikingState>) -> Result<VikingStatus, String> {
     let mut v = state.process.lock().await;
-    v.start().await.map_err(|e| format!("Start failed: {}", e))?;
+    v.start()
+        .await
+        .map_err(|e| format!("Start failed: {}", e))?;
     let port = v.config().port;
     drop(v);
 

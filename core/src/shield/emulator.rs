@@ -96,11 +96,7 @@ impl EmulatorManager {
     }
 
     /// Create with explicit paths (for testing or manual configuration).
-    pub fn with_paths(
-        adb_path: PathBuf,
-        emulator_path: PathBuf,
-        base_dir: &Path,
-    ) -> Self {
+    pub fn with_paths(adb_path: PathBuf, emulator_path: PathBuf, base_dir: &Path) -> Self {
         let screenshots_dir = base_dir.join("shield-screenshots");
         std::fs::create_dir_all(&screenshots_dir).ok();
         Self {
@@ -278,8 +274,8 @@ impl EmulatorManager {
 
     /// Wait for a device to finish booting (polls every 2s, up to timeout_secs).
     pub fn wait_for_boot(&self, serial: &str, timeout_secs: u32) -> Result<()> {
-        let deadline = std::time::Instant::now()
-            + std::time::Duration::from_secs(timeout_secs as u64);
+        let deadline =
+            std::time::Instant::now() + std::time::Duration::from_secs(timeout_secs as u64);
 
         while std::time::Instant::now() < deadline {
             if self.is_device_ready(serial) {
@@ -298,18 +294,19 @@ impl EmulatorManager {
     // ── Device Operations ──────────────────────────────────────────
 
     /// Set HTTP proxy on a running emulator via ADB shell settings.
-    pub fn configure_proxy(
-        &self,
-        serial: &str,
-        host: &str,
-        port: u16,
-    ) -> Result<()> {
+    pub fn configure_proxy(&self, serial: &str, host: &str, port: u16) -> Result<()> {
         let proxy_val = format!("{}:{}", host, port);
 
         let output = Command::new(&self.adb_path)
             .args([
-                "-s", serial, "shell", "settings", "put", "global",
-                "http_proxy", &proxy_val,
+                "-s",
+                serial,
+                "shell",
+                "settings",
+                "put",
+                "global",
+                "http_proxy",
+                &proxy_val,
             ])
             .output()
             .context("Failed to set proxy on emulator")?;
@@ -327,8 +324,14 @@ impl EmulatorManager {
     pub fn clear_proxy(&self, serial: &str) -> Result<()> {
         let output = Command::new(&self.adb_path)
             .args([
-                "-s", serial, "shell", "settings", "put", "global",
-                "http_proxy", ":0",
+                "-s",
+                serial,
+                "shell",
+                "settings",
+                "put",
+                "global",
+                "http_proxy",
+                ":0",
             ])
             .output()
             .context("Failed to clear proxy on emulator")?;
@@ -345,9 +348,15 @@ impl EmulatorManager {
     pub fn open_url(&self, serial: &str, url: &str) -> Result<()> {
         let output = Command::new(&self.adb_path)
             .args([
-                "-s", serial, "shell", "am", "start",
-                "-a", "android.intent.action.VIEW",
-                "-d", url,
+                "-s",
+                serial,
+                "shell",
+                "am",
+                "start",
+                "-a",
+                "android.intent.action.VIEW",
+                "-d",
+                url,
             ])
             .output()
             .with_context(|| format!("Failed to open URL '{}' on '{}'", url, serial))?;
@@ -386,7 +395,10 @@ impl EmulatorManager {
         // Pull to local
         let pull_output = Command::new(&self.adb_path)
             .args([
-                "-s", serial, "pull", device_path,
+                "-s",
+                serial,
+                "pull",
+                device_path,
                 &local_path.to_string_lossy(),
             ])
             .output()
@@ -440,9 +452,7 @@ pub fn detect_adb() -> Option<PathBuf> {
     // Try ANDROID_HOME / ANDROID_SDK_ROOT
     for env_key in &["ANDROID_HOME", "ANDROID_SDK_ROOT"] {
         if let Ok(sdk) = std::env::var(env_key) {
-            let candidate = PathBuf::from(&sdk)
-                .join("platform-tools")
-                .join(adb_name);
+            let candidate = PathBuf::from(&sdk).join("platform-tools").join(adb_name);
             if candidate.exists() {
                 return Some(candidate);
             }
@@ -564,9 +574,9 @@ fn parse_device_list(stdout: &str) -> Vec<AdbDevice> {
             };
 
             // Try to extract AVD name from "model:xxx" tag
-            let avd_name = parts.iter().find_map(|p| {
-                p.strip_prefix("model:").map(|m| m.to_string())
-            });
+            let avd_name = parts
+                .iter()
+                .find_map(|p| p.strip_prefix("model:").map(|m| m.to_string()));
 
             Some(AdbDevice {
                 serial,
@@ -625,10 +635,7 @@ emulator-5556          offline
         assert_eq!(devices.len(), 2);
         assert_eq!(devices[0].serial, "emulator-5554");
         assert_eq!(devices[0].status, DeviceStatus::Online);
-        assert_eq!(
-            devices[0].avd_name.as_deref(),
-            Some("sdk_gphone64_arm64")
-        );
+        assert_eq!(devices[0].avd_name.as_deref(), Some("sdk_gphone64_arm64"));
         assert!(devices[0].is_emulator());
 
         assert_eq!(devices[1].serial, "emulator-5556");

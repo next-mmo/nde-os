@@ -232,9 +232,7 @@ fn open_browser(url: &str) {
 }
 
 /// GET /api/models/recommendations — get recommended GGUF models based on system RAM.
-pub fn recommend_gguf_models(
-    mgr: &ai_launcher_core::app_manager::AppManager,
-) -> HttpResponse {
+pub fn recommend_gguf_models(mgr: &ai_launcher_core::app_manager::AppManager) -> HttpResponse {
     use ai_launcher_core::llm::gguf::GgufModelRecommendation;
     use ai_launcher_core::system_metrics::snapshot_resource_usage;
 

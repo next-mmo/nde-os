@@ -8,7 +8,10 @@ use super::runtime::{run_checked_command, VoiceRuntime};
 use super::types::{TtsSynthesizeRequest, TtsSynthesizeResult};
 
 /// Synthesize speech from text using Edge TTS.
-pub fn synthesize(request: &TtsSynthesizeRequest, runtime: &VoiceRuntime) -> Result<TtsSynthesizeResult> {
+pub fn synthesize(
+    request: &TtsSynthesizeRequest,
+    runtime: &VoiceRuntime,
+) -> Result<TtsSynthesizeResult> {
     runtime.with_runtime_path(|| {
         let edge_tts = runtime
             .resolve_tool("edge-tts")
@@ -23,7 +26,8 @@ pub fn synthesize(request: &TtsSynthesizeRequest, runtime: &VoiceRuntime) -> Res
         let out_path = match &request.output_path {
             Some(p) => std::path::PathBuf::from(p),
             None => {
-                let tmp = std::env::temp_dir().join(format!("nde-tts-{}.mp3", uuid::Uuid::new_v4()));
+                let tmp =
+                    std::env::temp_dir().join(format!("nde-tts-{}.mp3", uuid::Uuid::new_v4()));
                 tmp
             }
         };

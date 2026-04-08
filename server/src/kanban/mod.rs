@@ -5,10 +5,7 @@ use crate::response::*;
 use tiny_http::Request;
 
 /// Handle a simple kanban tool call with optional request body.
-pub fn execute_tool(
-    tool_name: &str,
-    req: Option<&mut Request>,
-) -> HttpResponse {
+pub fn execute_tool(tool_name: &str, req: Option<&mut Request>) -> HttpResponse {
     let params = if let Some(req) = req {
         match parse_body::<serde_json::Value>(req) {
             Ok(v) => v,
@@ -51,7 +48,10 @@ pub fn update_task_content(filename: &str, req: &mut Request) -> HttpResponse {
         "content": body_json.get("content").and_then(|v| v.as_str()).unwrap_or("")
     });
     match ai_launcher_core::mcp::kanban::execute("nde_kanban_update_task_content", &params) {
-        Ok(result) => ok("Task content updated", serde_json::json!({ "result": result })),
+        Ok(result) => ok(
+            "Task content updated",
+            serde_json::json!({ "result": result }),
+        ),
         Err(e) => err(500, &format!("Failed to update: {}", e)),
     }
 }

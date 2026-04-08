@@ -17,9 +17,7 @@ use ai_launcher_core::freecut::{
     },
     storage::{FreeCutStore, ProjectSummary},
 };
-use ai_launcher_core::{
-    uv_env::{ensure_uv, UvEnv},
-};
+use ai_launcher_core::uv_env::{ensure_uv, UvEnv};
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -249,9 +247,12 @@ pub async fn freecut_import_media(
     }
 
     // Emit event.
-    let _ = app.emit("freecut://media-imported", MediaImportedEvent {
-        media: meta.clone(),
-    });
+    let _ = app.emit(
+        "freecut://media-imported",
+        MediaImportedEvent {
+            media: meta.clone(),
+        },
+    );
 
     Ok(meta)
 }
@@ -305,12 +306,11 @@ pub async fn freecut_generate_waveform(
     let src = PathBuf::from(&file_path);
     let samples = sample_count.unwrap_or(500);
 
-    let peaks = tokio::task::spawn_blocking(move || {
-        media_probe::generate_waveform(&src, samples, None)
-    })
-    .await
-    .map_err(|e| e.to_string())?
-    .map_err(|e| e.to_string())?;
+    let peaks =
+        tokio::task::spawn_blocking(move || media_probe::generate_waveform(&src, samples, None))
+            .await
+            .map_err(|e| e.to_string())?
+            .map_err(|e| e.to_string())?;
 
     let _ = app.emit(
         "freecut://waveform-ready",
@@ -518,9 +518,11 @@ pub async fn freecut_detect_dubbing_tools(
 ) -> Result<DubbingToolReport, String> {
     let tooling_dir = state.tooling_dir.clone();
     let _guard = state.tool_env_lock.lock().await;
-    tokio::task::spawn_blocking(move || with_tool_runtime_path(tooling_dir, || {
-        detect_local_tools().map_err(|e| e.to_string())
-    }))
+    tokio::task::spawn_blocking(move || {
+        with_tool_runtime_path(tooling_dir, || {
+            detect_local_tools().map_err(|e| e.to_string())
+        })
+    })
     .await
     .map_err(|e| e.to_string())?
 }
@@ -557,8 +559,7 @@ pub async fn freecut_generate_dub_assets(
         })
     })
     .await
-    .map_err(|e| e.to_string())?
-    ?;
+    .map_err(|e| e.to_string())??;
 
     let _ = app.emit(
         "freecut://dubbing-ready",

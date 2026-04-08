@@ -12,7 +12,11 @@ pub fn cors_preflight() -> Response<std::io::Cursor<Vec<u8>>> {
     Response::from_data(Vec::new())
         .with_header(Header::from_bytes("Access-Control-Allow-Origin", "*").unwrap())
         .with_header(
-            Header::from_bytes("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS").unwrap(),
+            Header::from_bytes(
+                "Access-Control-Allow-Methods",
+                "GET,POST,PUT,DELETE,OPTIONS",
+            )
+            .unwrap(),
         )
         .with_header(Header::from_bytes("Access-Control-Allow-Headers", "Content-Type").unwrap())
 }

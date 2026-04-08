@@ -222,7 +222,10 @@ impl EngineManager {
                 .output();
             match status {
                 Ok(output) if output.status.success() => {
-                    tracing::info!("Removed quarantine attribute from {}", install_dir.display());
+                    tracing::info!(
+                        "Removed quarantine attribute from {}",
+                        install_dir.display()
+                    );
                 }
                 Ok(output) => {
                     tracing::warn!(

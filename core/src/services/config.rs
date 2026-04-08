@@ -63,10 +63,10 @@ impl ServiceConfigStore {
         if !self.path.exists() {
             return Ok(HashMap::new());
         }
-        let contents = std::fs::read_to_string(&self.path)
-            .context("Failed to read service_configs.json")?;
-        let data = serde_json::from_str(&contents)
-            .context("Failed to parse service_configs.json")?;
+        let contents =
+            std::fs::read_to_string(&self.path).context("Failed to read service_configs.json")?;
+        let data =
+            serde_json::from_str(&contents).context("Failed to parse service_configs.json")?;
         Ok(data)
     }
 
@@ -77,16 +77,19 @@ impl ServiceConfigStore {
     }
 
     /// Save config values for a single service (merges into existing file).
-    pub fn save(&self, service_id: &str, values: &HashMap<String, serde_json::Value>) -> Result<()> {
+    pub fn save(
+        &self,
+        service_id: &str,
+        values: &HashMap<String, serde_json::Value>,
+    ) -> Result<()> {
         let mut all = self.load_all().unwrap_or_default();
         all.insert(service_id.to_string(), values.clone());
-        let json = serde_json::to_string_pretty(&all)
-            .context("Failed to serialize service configs")?;
+        let json =
+            serde_json::to_string_pretty(&all).context("Failed to serialize service configs")?;
         if let Some(parent) = self.path.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        std::fs::write(&self.path, json)
-            .context("Failed to write service_configs.json")?;
+        std::fs::write(&self.path, json).context("Failed to write service_configs.json")?;
         Ok(())
     }
 }
@@ -155,16 +158,25 @@ fn openviking_fields() -> Vec<ConfigField> {
             field_type: ConfigFieldType::Select,
             default: serde_json::json!("litellm"),
             options: vec![
-                "openai".into(), "azure".into(), "ollama".into(), "jina".into(),
-                "gemini".into(), "voyage".into(), "cohere".into(), "litellm".into(),
-                "volcengine".into(), "vikingdb".into(), "minimax".into(),
+                "openai".into(),
+                "azure".into(),
+                "ollama".into(),
+                "jina".into(),
+                "gemini".into(),
+                "voyage".into(),
+                "cohere".into(),
+                "litellm".into(),
+                "volcengine".into(),
+                "vikingdb".into(),
+                "minimax".into(),
             ],
             required: true,
         },
         ConfigField {
             key: "embedding_model".into(),
             label: "Embedding Model".into(),
-            description: "Model name for embeddings (e.g. text-embedding-3-large, nomic-embed-text)".into(),
+            description:
+                "Model name for embeddings (e.g. text-embedding-3-large, nomic-embed-text)".into(),
             field_type: ConfigFieldType::Text,
             default: serde_json::json!("qwen2.5-0.5b-instruct"),
             options: vec![],
@@ -182,7 +194,8 @@ fn openviking_fields() -> Vec<ConfigField> {
         ConfigField {
             key: "embedding_api_key".into(),
             label: "Embedding API Key".into(),
-            description: "API key for the embedding provider (leave empty for local providers)".into(),
+            description: "API key for the embedding provider (leave empty for local providers)"
+                .into(),
             field_type: ConfigFieldType::Password,
             default: serde_json::json!(""),
             options: vec![],
@@ -250,8 +263,11 @@ fn voice_runtime_fields() -> Vec<ConfigField> {
             field_type: ConfigFieldType::Select,
             default: serde_json::json!("base"),
             options: vec![
-                "tiny".into(), "base".into(), "small".into(),
-                "medium".into(), "large".into(),
+                "tiny".into(),
+                "base".into(),
+                "small".into(),
+                "medium".into(),
+                "large".into(),
             ],
             required: false,
         },
@@ -259,45 +275,39 @@ fn voice_runtime_fields() -> Vec<ConfigField> {
 }
 
 fn ffmpeg_fields() -> Vec<ConfigField> {
-    vec![
-        ConfigField {
-            key: "ffmpeg_path".into(),
-            label: "FFmpeg Path".into(),
-            description: "Override the system FFmpeg binary path (leave empty for auto-detect)".into(),
-            field_type: ConfigFieldType::Path,
-            default: serde_json::json!(""),
-            options: vec![],
-            required: false,
-        },
-    ]
+    vec![ConfigField {
+        key: "ffmpeg_path".into(),
+        label: "FFmpeg Path".into(),
+        description: "Override the system FFmpeg binary path (leave empty for auto-detect)".into(),
+        field_type: ConfigFieldType::Path,
+        default: serde_json::json!(""),
+        options: vec![],
+        required: false,
+    }]
 }
 
 fn python_fields() -> Vec<ConfigField> {
-    vec![
-        ConfigField {
-            key: "python_path".into(),
-            label: "Python Path".into(),
-            description: "Override the Python binary path (leave empty for auto-detect)".into(),
-            field_type: ConfigFieldType::Path,
-            default: serde_json::json!(""),
-            options: vec![],
-            required: false,
-        },
-    ]
+    vec![ConfigField {
+        key: "python_path".into(),
+        label: "Python Path".into(),
+        description: "Override the Python binary path (leave empty for auto-detect)".into(),
+        field_type: ConfigFieldType::Path,
+        default: serde_json::json!(""),
+        options: vec![],
+        required: false,
+    }]
 }
 
 fn uv_fields() -> Vec<ConfigField> {
-    vec![
-        ConfigField {
-            key: "uv_path".into(),
-            label: "uv Path".into(),
-            description: "Override the uv binary path (leave empty for bundled/auto-detect)".into(),
-            field_type: ConfigFieldType::Path,
-            default: serde_json::json!(""),
-            options: vec![],
-            required: false,
-        },
-    ]
+    vec![ConfigField {
+        key: "uv_path".into(),
+        label: "uv Path".into(),
+        description: "Override the uv binary path (leave empty for bundled/auto-detect)".into(),
+        field_type: ConfigFieldType::Path,
+        default: serde_json::json!(""),
+        options: vec![],
+        required: false,
+    }]
 }
 
 #[cfg(test)]
@@ -334,7 +344,10 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let mut values = HashMap::new();
         values.insert("embedding_provider".into(), serde_json::json!("openai"));
-        values.insert("embedding_model".into(), serde_json::json!("text-embedding-3-large"));
+        values.insert(
+            "embedding_model".into(),
+            serde_json::json!("text-embedding-3-large"),
+        );
         set_service_config("openviking", values, dir.path()).unwrap();
 
         let config = get_service_config("openviking", dir.path()).unwrap();
@@ -355,9 +368,20 @@ mod tests {
     #[test]
     fn test_all_services_have_fields() {
         let dir = tempfile::tempdir().unwrap();
-        for id in &["openviking", "rvc", "voice-runtime", "ffmpeg", "python", "uv"] {
+        for id in &[
+            "openviking",
+            "rvc",
+            "voice-runtime",
+            "ffmpeg",
+            "python",
+            "uv",
+        ] {
             let config = get_service_config(id, dir.path()).unwrap();
-            assert!(!config.fields.is_empty(), "service {} should have config fields", id);
+            assert!(
+                !config.fields.is_empty(),
+                "service {} should have config fields",
+                id
+            );
         }
     }
 }

@@ -57,7 +57,10 @@ impl Tool for ShellExecTool {
                 .env_clear()
                 .envs(env_vars.iter().map(|(k, v)| (k.as_str(), v.as_str())))
                 // Preserve essential Windows paths for command resolution
-                .env("SYSTEMROOT", std::env::var("SYSTEMROOT").unwrap_or_default())
+                .env(
+                    "SYSTEMROOT",
+                    std::env::var("SYSTEMROOT").unwrap_or_default(),
+                )
                 .env("PATH", std::env::var("PATH").unwrap_or_default())
                 .stdout(std::process::Stdio::piped())
                 .stderr(std::process::Stdio::piped())
@@ -70,7 +73,10 @@ impl Tool for ShellExecTool {
                 .env_clear()
                 .envs(env_vars.iter().map(|(k, v)| (k.as_str(), v.as_str())))
                 // Preserve essential Unix paths for command resolution
-                .env("PATH", std::env::var("PATH").unwrap_or_else(|_| "/usr/bin:/bin".into()))
+                .env(
+                    "PATH",
+                    std::env::var("PATH").unwrap_or_else(|_| "/usr/bin:/bin".into()),
+                )
                 .stdout(std::process::Stdio::piped())
                 .stderr(std::process::Stdio::piped())
                 .spawn()

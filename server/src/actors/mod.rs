@@ -76,7 +76,10 @@ pub fn scaffold_actor(req: &mut Request, data_dir: &Path) -> HttpResponse {
 
     match template.scaffold(&actor_dir, actor_name) {
         Ok(()) => ok(
-            &format!("Actor '{}' scaffolded from template '{}'", actor_id, template_id),
+            &format!(
+                "Actor '{}' scaffolded from template '{}'",
+                actor_id, template_id
+            ),
             serde_json::json!({
                 "id": actor_id,
                 "name": actor_name,
@@ -119,10 +122,7 @@ pub fn run_actor(
     });
 
     match result {
-        Ok(run) => ok(
-            &format!("Actor '{}' started", id),
-            serde_json::json!(run),
-        ),
+        Ok(run) => ok(&format!("Actor '{}' started", id), serde_json::json!(run)),
         Err(e) => err(500, &format!("Failed to start actor: {e}")),
     }
 }
@@ -187,15 +187,16 @@ pub fn get_run(
 pub fn get_run_dataset(actor_id: &str, run_id: &str, data_dir: &Path) -> HttpResponse {
     let actors_dir = data_dir.join("actors");
     match RunStorage::open(&actors_dir, actor_id, run_id) {
-        Ok(storage) => {
-            match storage.dataset.export_json() {
-                Ok(items) => ok("dataset", serde_json::json!({
+        Ok(storage) => match storage.dataset.export_json() {
+            Ok(items) => ok(
+                "dataset",
+                serde_json::json!({
                     "items": items,
                     "count": items.len(),
-                })),
-                Err(e) => err(500, &format!("Failed to read dataset: {e}")),
-            }
-        }
+                }),
+            ),
+            Err(e) => err(500, &format!("Failed to read dataset: {e}")),
+        },
         Err(e) => err(404, &format!("Run not found: {e}")),
     }
 }
@@ -211,14 +212,20 @@ pub fn get_run_log(actor_id: &str, run_id: &str, data_dir: &Path) -> HttpRespons
         .join("log.txt");
 
     match std::fs::read_to_string(&log_path) {
-        Ok(log) => ok("log", serde_json::json!({
-            "log": log,
-            "lines": log.lines().count(),
-        })),
-        Err(_) => ok("log", serde_json::json!({
-            "log": "",
-            "lines": 0,
-        })),
+        Ok(log) => ok(
+            "log",
+            serde_json::json!({
+                "log": log,
+                "lines": log.lines().count(),
+            }),
+        ),
+        Err(_) => ok(
+            "log",
+            serde_json::json!({
+                "log": "",
+                "lines": 0,
+            }),
+        ),
     }
 }
 

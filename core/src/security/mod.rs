@@ -6,4 +6,4 @@ pub mod policy;
 pub use audit::AuditTrail;
 pub use injection::InjectionScanner;
 pub use metering::ComputeMeter;
-pub use policy::{PolicyVerdict, ToolPolicy, ToolRisk, scrub_output};
+pub use policy::{scrub_output, PolicyVerdict, ToolPolicy, ToolRisk};

@@ -140,8 +140,12 @@ where
     F: Fn(DubbingProgressUpdate),
 {
     let output_dir = render_root.join(project_id).join("dubbing");
-    fs::create_dir_all(&output_dir)
-        .with_context(|| format!("failed to create dubbing directory {}", output_dir.display()))?;
+    fs::create_dir_all(&output_dir).with_context(|| {
+        format!(
+            "failed to create dubbing directory {}",
+            output_dir.display()
+        )
+    })?;
 
     progress(DubbingProgressUpdate {
         phase: "prepare".to_string(),
@@ -163,10 +167,9 @@ where
                 session.speakers = merge_speakers(&session.speakers, &imported.speakers);
             }
             DubbingIngestMode::Whisper => {
-                let source_media_path = session
-                    .source_media_path
-                    .clone()
-                    .ok_or_else(|| anyhow!("Whisper ingest selected but no source media path was provided"))?;
+                let source_media_path = session.source_media_path.clone().ok_or_else(|| {
+                    anyhow!("Whisper ingest selected but no source media path was provided")
+                })?;
                 progress(DubbingProgressUpdate {
                     phase: "transcribe".to_string(),
                     current: 0,
@@ -204,7 +207,12 @@ where
                 total: session.segments.len(),
                 message: "Polishing lines with the active NDE LLM".to_string(),
             });
-            apply_nde_llm_to_segments(&mut session.segments, &llm, &session.target_language, &progress)?;
+            apply_nde_llm_to_segments(
+                &mut session.segments,
+                &llm,
+                &session.target_language,
+                &progress,
+            )?;
         }
     }
 
@@ -281,10 +289,7 @@ fn apply_nde_llm_to_segments<F>(
 where
     F: Fn(DubbingProgressUpdate),
 {
-    let mode = llm
-        .mode
-        .clone()
-        .unwrap_or_else(|| "translate".to_string());
+    let mode = llm.mode.clone().unwrap_or_else(|| "translate".to_string());
     let client = Client::new();
 
     let total = segments.len();
@@ -350,7 +355,11 @@ fn synthesize_with_edge_tts(
     command.arg("--text").arg(text);
     command.arg("--write-media").arg(out_path);
 
-    if let Some(rate) = speaker.rate.as_deref().filter(|value| !value.trim().is_empty()) {
+    if let Some(rate) = speaker
+        .rate
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+    {
         command.arg(format!("--rate={rate}"));
     }
     if let Some(pitch) = speaker
@@ -445,7 +454,10 @@ fn transcribe_with_whisper(
 
     run_checked_command(command, "Whisper transcription")?;
 
-    if let Some(stem) = source_media_path.file_stem().and_then(|value| value.to_str()) {
+    if let Some(stem) = source_media_path
+        .file_stem()
+        .and_then(|value| value.to_str())
+    {
         let expected = output_dir.join(format!("{stem}.srt"));
         if expected.exists() {
             return Ok(expected);
@@ -570,10 +582,15 @@ fn build_speakers_from_segments(segments: &mut [DubbingSegment]) -> Vec<DubbingS
 }
 
 fn merge_speakers(existing: &[DubbingSpeaker], imported: &[DubbingSpeaker]) -> Vec<DubbingSpeaker> {
-    let mut by_id: HashMap<String, DubbingSpeaker> =
-        existing.iter().cloned().map(|speaker| (speaker.id.clone(), speaker)).collect();
+    let mut by_id: HashMap<String, DubbingSpeaker> = existing
+        .iter()
+        .cloned()
+        .map(|speaker| (speaker.id.clone(), speaker))
+        .collect();
     for speaker in imported {
-        by_id.entry(speaker.id.clone()).or_insert_with(|| speaker.clone());
+        by_id
+            .entry(speaker.id.clone())
+            .or_insert_with(|| speaker.clone());
     }
     let mut speakers: Vec<DubbingSpeaker> = by_id.into_values().collect();
     speakers.sort_by(|left, right| left.label.cmp(&right.label));
@@ -634,8 +651,8 @@ fn extract_speaker_label(text: &str) -> (Option<String>, String) {
 }
 
 fn list_edge_voices() -> Result<Vec<String>> {
-    let edge_tts = resolve_command("edge-tts")
-        .ok_or_else(|| anyhow!("edge-tts CLI not found on PATH"))?;
+    let edge_tts =
+        resolve_command("edge-tts").ok_or_else(|| anyhow!("edge-tts CLI not found on PATH"))?;
     let output = Command::new(edge_tts)
         .arg("--list-voices")
         .output()
@@ -672,8 +689,9 @@ fn detect_nde_llm() -> Result<String> {
         .context("failed to reach NDE agent config endpoint")?
         .error_for_status()
         .context("NDE agent config endpoint returned an error")?;
-    let body: NdeEnvelope<serde_json::Value> =
-        response.json().context("invalid NDE agent config response")?;
+    let body: NdeEnvelope<serde_json::Value> = response
+        .json()
+        .context("invalid NDE agent config response")?;
     if !body.success {
         bail!("NDE agent config request failed: {}", body.message);
     }
@@ -757,7 +775,11 @@ fn slugify(raw: &str) -> String {
 }
 
 fn prettify_speaker_label(speaker_id: &str, index: usize) -> String {
-    let label = speaker_id.replace('-', " ").replace('_', " ").trim().to_string();
+    let label = speaker_id
+        .replace('-', " ")
+        .replace('_', " ")
+        .trim()
+        .to_string();
     if label.is_empty() {
         format!("Speaker {index}")
     } else {

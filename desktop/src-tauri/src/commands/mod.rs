@@ -9,7 +9,7 @@ pub mod lifecycle;
 pub mod pty;
 pub mod sandbox;
 pub mod screenshot;
+pub mod service_hub;
 pub mod shield;
 pub mod system;
-pub mod service_hub;
 pub mod viking;

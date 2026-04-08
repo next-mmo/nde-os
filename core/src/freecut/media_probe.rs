@@ -43,9 +43,7 @@ pub fn probe_media(file_path: &Path, ffprobe_bin: Option<&str>) -> Result<MediaM
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_default();
 
-    let file_size = std::fs::metadata(file_path)
-        .map(|m| m.len())
-        .unwrap_or(0);
+    let file_size = std::fs::metadata(file_path).map(|m| m.len()).unwrap_or(0);
 
     // Find video and audio streams.
     let video_stream = probe
@@ -105,9 +103,7 @@ pub fn probe_media(file_path: &Path, ffprobe_bin: Option<&str>) -> Result<MediaM
     let (audio_codec, sample_rate, channels) = match audio_stream {
         Some(a) => (
             a.codec_name.clone(),
-            a.sample_rate
-                .as_deref()
-                .and_then(|s| s.parse::<u32>().ok()),
+            a.sample_rate.as_deref().and_then(|s| s.parse::<u32>().ok()),
             a.channels,
         ),
         None => (None, None, None),
@@ -179,12 +175,7 @@ pub fn generate_thumbnails(
         let out_path = output_dir.join(&out_name);
 
         let status = std::process::Command::new(bin)
-            .args([
-                "-y",
-                "-ss",
-                &format!("{time:.3}"),
-                "-i",
-            ])
+            .args(["-y", "-ss", &format!("{time:.3}"), "-i"])
             .arg(file_path.as_os_str())
             .args([
                 "-vframes",
@@ -223,7 +214,15 @@ pub fn generate_waveform(
         .args(["-i"])
         .arg(file_path.as_os_str())
         .args([
-            "-ac", "1", "-ar", "8000", "-f", "s16le", "-acodec", "pcm_s16le", "pipe:1",
+            "-ac",
+            "1",
+            "-ar",
+            "8000",
+            "-f",
+            "s16le",
+            "-acodec",
+            "pcm_s16le",
+            "pipe:1",
         ])
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::null())

@@ -240,10 +240,7 @@ pub async fn execute_task(
                     // Emit policy-blocked event for the frontend
                     let _ = event_tx
                         .send(AgentEvent::policy_blocked(
-                            &task.id,
-                            &call.name,
-                            &err_msg,
-                            None,
+                            &task.id, &call.name, &err_msg, None,
                         ))
                         .await;
                     // Feed a sanitized error back to the LLM so it can adjust

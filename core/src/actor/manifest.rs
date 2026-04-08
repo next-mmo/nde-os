@@ -97,24 +97,14 @@ impl InputSchema {
                 if let Some(min) = prop.minimum {
                     if let Some(n) = value.as_f64() {
                         if n < min {
-                            anyhow::bail!(
-                                "Input '{}' value {} is below minimum {}",
-                                key,
-                                n,
-                                min
-                            );
+                            anyhow::bail!("Input '{}' value {} is below minimum {}", key, n, min);
                         }
                     }
                 }
                 if let Some(max) = prop.maximum {
                     if let Some(n) = value.as_f64() {
                         if n > max {
-                            anyhow::bail!(
-                                "Input '{}' value {} is above maximum {}",
-                                key,
-                                n,
-                                max
-                            );
+                            anyhow::bail!("Input '{}' value {} is above maximum {}", key, n, max);
                         }
                     }
                 }
@@ -408,13 +398,14 @@ impl ActorManifest {
     pub fn load(actor_dir: &Path) -> Result<Self> {
         let manifest_path = actor_dir.join("nde_actor.json");
         let content = std::fs::read_to_string(&manifest_path).with_context(|| {
+            format!("Failed to read actor manifest: {}", manifest_path.display())
+        })?;
+        let manifest: Self = serde_json::from_str(&content).with_context(|| {
             format!(
-                "Failed to read actor manifest: {}",
+                "Failed to parse actor manifest: {}",
                 manifest_path.display()
             )
         })?;
-        let manifest: Self = serde_json::from_str(&content)
-            .with_context(|| format!("Failed to parse actor manifest: {}", manifest_path.display()))?;
         Ok(manifest)
     }
 
@@ -460,8 +451,7 @@ impl ActorManifest {
 
     /// Generate Apify-compatible `input_schema.json` content.
     pub fn to_apify_input_schema(&self) -> serde_json::Value {
-        serde_json::to_value(&self.input_schema)
-            .unwrap_or_else(|_| serde_json::json!({}))
+        serde_json::to_value(&self.input_schema).unwrap_or_else(|_| serde_json::json!({}))
     }
 
     /// Generate a Dockerfile for Apify deployment.
@@ -524,8 +514,8 @@ impl ActorManager {
         }
 
         let mut actors = Vec::new();
-        for entry in std::fs::read_dir(&self.actors_dir)
-            .context("Failed to read actors directory")?
+        for entry in
+            std::fs::read_dir(&self.actors_dir).context("Failed to read actors directory")?
         {
             let entry = entry?;
             let path = entry.path();
@@ -533,11 +523,7 @@ impl ActorManager {
                 match ActorManifest::load(&path) {
                     Ok(manifest) => actors.push(manifest),
                     Err(e) => {
-                        tracing::warn!(
-                            "Skipping actor dir {}: {}",
-                            path.display(),
-                            e
-                        );
+                        tracing::warn!("Skipping actor dir {}: {}", path.display(), e);
                     }
                 }
             }
@@ -576,8 +562,7 @@ impl ActorManager {
 
         // Create .actor/ directory
         let apify_dir = actor_dir.join(".actor");
-        std::fs::create_dir_all(&apify_dir)
-            .context("Failed to create .actor directory")?;
+        std::fs::create_dir_all(&apify_dir).context("Failed to create .actor directory")?;
 
         // Write actor.json
         let actor_json = manifest.to_apify_actor_json();

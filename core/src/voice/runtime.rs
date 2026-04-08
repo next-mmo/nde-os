@@ -135,8 +135,12 @@ impl VoiceRuntime {
 
     /// Install voice runtime components into the shared venv.
     pub fn install_components(&self, components: &[String]) -> Result<VoiceInstallResult> {
-        fs::create_dir_all(&self.workspace)
-            .with_context(|| format!("failed to create voice runtime dir: {}", self.workspace.display()))?;
+        fs::create_dir_all(&self.workspace).with_context(|| {
+            format!(
+                "failed to create voice runtime dir: {}",
+                self.workspace.display()
+            )
+        })?;
 
         let mut packages = Vec::new();
         for component in components {
@@ -151,12 +155,14 @@ impl VoiceRuntime {
             }
         }
 
-        let uv_bin = crate::uv_env::ensure_uv(&self.base_dir)
-            .context("failed to ensure uv binary")?;
+        let uv_bin =
+            crate::uv_env::ensure_uv(&self.base_dir).context("failed to ensure uv binary")?;
         let uv = crate::uv_env::UvEnv::new(&uv_bin, &self.workspace, "3.11");
         uv.ensure_python().context("failed to ensure Python 3.11")?;
-        uv.create_venv().context("failed to create voice runtime venv")?;
-        uv.install_deps(&packages).context("failed to install voice dependencies")?;
+        uv.create_venv()
+            .context("failed to create voice runtime venv")?;
+        uv.install_deps(&packages)
+            .context("failed to install voice dependencies")?;
 
         let bin_path = self.bin_dir();
         Ok(VoiceInstallResult {
@@ -181,12 +187,13 @@ impl VoiceRuntime {
         // Move the old workspace to the new location
         fs::create_dir_all(self.workspace.parent().unwrap_or(Path::new(".")))
             .context("failed to create parent dir for voice-runtime")?;
-        fs::rename(&old_workspace, &self.workspace)
-            .with_context(|| format!(
+        fs::rename(&old_workspace, &self.workspace).with_context(|| {
+            format!(
                 "failed to migrate FreeCut runtime from {} to {}",
                 old_workspace.display(),
                 self.workspace.display()
-            ))?;
+            )
+        })?;
         Ok(())
     }
 }
@@ -236,8 +243,8 @@ pub fn run_checked_command(mut command: Command, label: &str) -> Result<()> {
 
 /// List Edge TTS voices (raw parse of `edge-tts --list-voices`).
 fn list_edge_voices_raw() -> Result<Vec<String>> {
-    let edge_tts = resolve_system_command("edge-tts")
-        .ok_or_else(|| anyhow!("edge-tts not found"))?;
+    let edge_tts =
+        resolve_system_command("edge-tts").ok_or_else(|| anyhow!("edge-tts not found"))?;
     let output = Command::new(edge_tts)
         .arg("--list-voices")
         .output()

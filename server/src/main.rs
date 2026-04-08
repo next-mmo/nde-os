@@ -245,6 +245,7 @@ fn main() {
         gateway::start_telegram_gateway(
             tg_config,
             agent_manager.clone(),
+            llm_manager.clone(),
             rt.handle().clone(),
             tg_state.clone(),
             log_buffer.clone(),

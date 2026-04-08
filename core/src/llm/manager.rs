@@ -189,6 +189,51 @@ impl LlmManager {
         removed
     }
 
+    /// Change the model of the currently active provider.
+    ///
+    /// Re-creates the provider instance with the new model string and persists
+    /// the updated config to disk. Returns an error if no provider is active.
+    pub fn update_active_model(&mut self, new_model: &str) -> Result<()> {
+        if self.active.is_empty() {
+            return Err(anyhow!("No active provider to update"));
+        }
+
+        // Find and update the config
+        let config = self
+            .configs
+            .iter_mut()
+            .find(|c| c.name == self.active)
+            .ok_or_else(|| anyhow!("Active provider '{}' config not found", self.active))?;
+
+        let old_model = config.model.clone();
+        config.model = new_model.to_string();
+
+        // Re-create the provider with the new model
+        let api_key = config.api_key.clone().or_else(|| {
+            config
+                .api_key_env
+                .as_ref()
+                .and_then(|env_name| std::env::var(env_name).ok())
+        });
+
+        let provider = super::create_provider(
+            &config.provider_type,
+            new_model,
+            config.base_url.as_deref(),
+            api_key.as_deref(),
+        )?;
+
+        self.providers.insert(self.active.clone(), provider);
+        tracing::info!(
+            provider = %self.active,
+            old_model = %old_model,
+            new_model = %new_model,
+            "Updated active provider model"
+        );
+        self.save_to_disk();
+        Ok(())
+    }
+
     /// Get status summary of all providers.
     pub fn status(&self) -> Vec<ProviderStatus> {
         self.providers

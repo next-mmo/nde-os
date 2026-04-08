@@ -115,6 +115,11 @@ impl AgentManager {
         })
     }
 
+    /// Get a reference to the current agent config.
+    pub fn agent_config(&self) -> &AgentConfig {
+        &self.agent_config
+    }
+
     /// Update the LLM provider (e.g. after model switch).
     pub fn update_provider(&mut self, agent_config: &AgentConfig) -> Result<()> {
         self.provider = Self::create_provider(agent_config)?;

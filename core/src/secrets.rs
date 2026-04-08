@@ -24,17 +24,13 @@ fn derive_key(data_dir: &Path) -> [u8; 32] {
     // Machine hostname
     if let Ok(hostname) = std::env::var("COMPUTERNAME")
         .or_else(|_| std::env::var("HOSTNAME"))
-        .or_else(|_| {
-            gethostname()
-        })
+        .or_else(|_| gethostname())
     {
         hasher.update(hostname.as_bytes());
     }
 
     // Current user
-    if let Ok(user) = std::env::var("USERNAME")
-        .or_else(|_| std::env::var("USER"))
-    {
+    if let Ok(user) = std::env::var("USERNAME").or_else(|_| std::env::var("USER")) {
         hasher.update(user.as_bytes());
     }
 
@@ -68,8 +64,8 @@ pub fn encrypt_token(plaintext: &str, data_dir: &Path) -> Result<String> {
     }
 
     let key = derive_key(data_dir);
-    let cipher = Aes256Gcm::new_from_slice(&key)
-        .map_err(|e| anyhow!("Failed to create cipher: {}", e))?;
+    let cipher =
+        Aes256Gcm::new_from_slice(&key).map_err(|e| anyhow!("Failed to create cipher: {}", e))?;
 
     // Generate random 96-bit nonce
     let nonce_bytes: [u8; 12] = {
@@ -111,27 +107,27 @@ pub fn decrypt_token(encrypted: &str, data_dir: &Path) -> Result<String> {
         return Err(anyhow!("Invalid encrypted token format"));
     }
 
-    let nonce_bytes = hex_decode(parts[0])
-        .map_err(|e| anyhow!("Invalid nonce hex: {}", e))?;
-    let ciphertext = hex_decode(parts[1])
-        .map_err(|e| anyhow!("Invalid ciphertext hex: {}", e))?;
+    let nonce_bytes = hex_decode(parts[0]).map_err(|e| anyhow!("Invalid nonce hex: {}", e))?;
+    let ciphertext = hex_decode(parts[1]).map_err(|e| anyhow!("Invalid ciphertext hex: {}", e))?;
 
     if nonce_bytes.len() != 12 {
-        return Err(anyhow!("Invalid nonce length: expected 12, got {}", nonce_bytes.len()));
+        return Err(anyhow!(
+            "Invalid nonce length: expected 12, got {}",
+            nonce_bytes.len()
+        ));
     }
 
     let key = derive_key(data_dir);
-    let cipher = Aes256Gcm::new_from_slice(&key)
-        .map_err(|e| anyhow!("Failed to create cipher: {}", e))?;
+    let cipher =
+        Aes256Gcm::new_from_slice(&key).map_err(|e| anyhow!("Failed to create cipher: {}", e))?;
 
     let nonce = Nonce::from_slice(&nonce_bytes);
 
-    let plaintext = cipher
-        .decrypt(nonce, ciphertext.as_ref())
-        .map_err(|_| anyhow!("Decryption failed — token may have been encrypted on a different machine"))?;
+    let plaintext = cipher.decrypt(nonce, ciphertext.as_ref()).map_err(|_| {
+        anyhow!("Decryption failed — token may have been encrypted on a different machine")
+    })?;
 
-    String::from_utf8(plaintext)
-        .map_err(|e| anyhow!("Decrypted token is not valid UTF-8: {}", e))
+    String::from_utf8(plaintext).map_err(|e| anyhow!("Decrypted token is not valid UTF-8: {}", e))
 }
 
 // ── Hex encoding (no extra deps) ─────────────────────────────────────────────
@@ -203,6 +199,9 @@ mod tests {
         let encrypted = encrypt_token(token, dir1.path()).unwrap();
         // Different data_dir = different key = decryption should fail
         let result = decrypt_token(&encrypted, dir2.path());
-        assert!(result.is_err(), "Different machine key should fail to decrypt");
+        assert!(
+            result.is_err(),
+            "Different machine key should fail to decrypt"
+        );
     }
 }

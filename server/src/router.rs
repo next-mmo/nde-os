@@ -13,7 +13,7 @@ use ai_launcher_core::plugins::PluginEngine;
 use tiny_http::{Method, Request};
 
 use crate::agent::AgentState;
-use crate::gateway::{SharedLogBuffer, GatewayState};
+use crate::gateway::{GatewayState, SharedLogBuffer};
 use crate::response::*;
 use crate::{actors, agent, apps, gateway, kanban, models, openapi, plugins, subsystems};
 
@@ -141,10 +141,17 @@ pub fn route(req: &mut Request, state: &AppState) -> HttpResponse {
             state.sync_agent_provider();
             return resp;
         }
-        (Method::Post, "/api/models/verify") => return models::verify_provider(req, &state.rt, &state.data_dir),
+        (Method::Post, "/api/models/verify") => {
+            return models::verify_provider(req, &state.rt, &state.data_dir)
+        }
         // Codex OAuth
         (Method::Post, "/api/codex/oauth/start") => {
-            let resp = models::codex_oauth_start(req, state.llm_manager.clone(), &state.rt, &state.data_dir);
+            let resp = models::codex_oauth_start(
+                req,
+                state.llm_manager.clone(),
+                &state.rt,
+                &state.data_dir,
+            );
             state.sync_agent_provider();
             return resp;
         }
@@ -152,7 +159,9 @@ pub fn route(req: &mut Request, state: &AppState) -> HttpResponse {
             return models::codex_oauth_status(&state.data_dir)
         }
         // Channels
-        (Method::Get, "/api/channels") => return subsystems::list_channels(&state.data_dir, &state.tg_state),
+        (Method::Get, "/api/channels") => {
+            return subsystems::list_channels(&state.data_dir, &state.tg_state)
+        }
         // Gateway logs
         (Method::Get, "/api/logs") => {
             let since_id: u64 = url
@@ -163,7 +172,10 @@ pub fn route(req: &mut Request, state: &AppState) -> HttpResponse {
                 .unwrap_or(0);
             if let Ok(buf) = state.log_buffer.lock() {
                 let entries = buf.since(since_id);
-                return ok(&format!("{} log entries", entries.len()), serde_json::json!(entries));
+                return ok(
+                    &format!("{} log entries", entries.len()),
+                    serde_json::json!(entries),
+                );
             }
             return err(500, "Log buffer lock failed");
         }
@@ -177,17 +189,31 @@ pub fn route(req: &mut Request, state: &AppState) -> HttpResponse {
         // Memory
         (Method::Get, "/api/memory") => return subsystems::list_memory(&state.data_dir),
         // Kanban static
-        (Method::Get, "/api/kanban/tasks") => return kanban::execute_tool("nde_kanban_get_tasks", None),
-        (Method::Post, "/api/kanban/tasks") => return kanban::execute_tool("nde_kanban_create_task", Some(req)),
+        (Method::Get, "/api/kanban/tasks") => {
+            return kanban::execute_tool("nde_kanban_get_tasks", None)
+        }
+        (Method::Post, "/api/kanban/tasks") => {
+            return kanban::execute_tool("nde_kanban_create_task", Some(req))
+        }
         // OpenViking
-        (Method::Get, "/api/viking/status") => return subsystems::viking_status(&state.rt, &state.viking),
-        (Method::Post, "/api/viking/install") => return subsystems::viking_install(&state.rt, &state.viking),
-        (Method::Post, "/api/viking/start") => return subsystems::viking_start(&state.rt, &state.viking),
-        (Method::Post, "/api/viking/stop") => return subsystems::viking_stop(&state.rt, &state.viking),
+        (Method::Get, "/api/viking/status") => {
+            return subsystems::viking_status(&state.rt, &state.viking)
+        }
+        (Method::Post, "/api/viking/install") => {
+            return subsystems::viking_install(&state.rt, &state.viking)
+        }
+        (Method::Post, "/api/viking/start") => {
+            return subsystems::viking_start(&state.rt, &state.viking)
+        }
+        (Method::Post, "/api/viking/stop") => {
+            return subsystems::viking_stop(&state.rt, &state.viking)
+        }
         // Actors (Shield Actor system)
         (Method::Get, "/api/actors") => return actors::list_actors(&state.data_dir),
         (Method::Post, "/api/actors/templates") => return actors::list_templates(),
-        (Method::Post, "/api/actors/scaffold") => return actors::scaffold_actor(req, &state.data_dir),
+        (Method::Post, "/api/actors/scaffold") => {
+            return actors::scaffold_actor(req, &state.data_dir)
+        }
         _ => {}
     }
 
@@ -268,6 +294,7 @@ pub fn route(req: &mut Request, state: &AppState) -> HttpResponse {
                     gateway::start_telegram_gateway(
                         tg_config,
                         state.agent_manager.clone(),
+                        state.llm_manager.clone(),
                         state.rt.handle().clone(),
                         state.tg_state.clone(),
                         state.log_buffer.clone(),
@@ -286,12 +313,8 @@ pub fn route(req: &mut Request, state: &AppState) -> HttpResponse {
     if path.starts_with("/api/actors/") {
         let parts: Vec<&str> = path.trim_start_matches('/').split('/').collect();
         return match (method.clone(), parts.as_slice()) {
-            (Method::Get, ["api", "actors", id]) => {
-                actors::get_actor(id, &state.data_dir)
-            }
-            (Method::Delete, ["api", "actors", id]) => {
-                actors::delete_actor(id, &state.data_dir)
-            }
+            (Method::Get, ["api", "actors", id]) => actors::get_actor(id, &state.data_dir),
+            (Method::Delete, ["api", "actors", id]) => actors::delete_actor(id, &state.data_dir),
             (Method::Post, ["api", "actors", id, "run"]) => {
                 actors::run_actor(id, req, &state.rt, &state.actor_runner)
             }
@@ -349,9 +372,7 @@ pub fn route(req: &mut Request, state: &AppState) -> HttpResponse {
             (Method::Put, ["api", "kanban", "tasks", filename]) => {
                 kanban::update_task(filename, req)
             }
-            (Method::Delete, ["api", "kanban", "tasks", filename]) => {
-                kanban::delete_task(filename)
-            }
+            (Method::Delete, ["api", "kanban", "tasks", filename]) => kanban::delete_task(filename),
             _ => err(404, &format!("Not found: {}", path)),
         };
     }

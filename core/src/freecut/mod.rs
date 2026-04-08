@@ -3,8 +3,8 @@
 //! All media processing (decode, encode, compose, analyze) runs in Rust.
 //! The Svelte frontend receives rendered frames and status via Tauri events.
 
-pub mod media_probe;
 pub mod dubbing;
+pub mod media_probe;
 pub mod project;
 pub mod render_engine;
 pub mod storage;

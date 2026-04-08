@@ -169,10 +169,16 @@ impl VikingProcess {
             Ok(out) => {
                 let stdout = String::from_utf8_lossy(&out.stdout);
                 let stderr = String::from_utf8_lossy(&out.stderr);
-                tracing::info!("OpenViking import test: status={}, stdout={}, stderr={}", out.status, stdout.trim(), stderr.trim());
+                tracing::info!(
+                    "OpenViking import test: status={}, stdout={}, stderr={}",
+                    out.status,
+                    stdout.trim(),
+                    stderr.trim()
+                );
                 if !out.status.success() {
                     return Err(anyhow::anyhow!(
-                        "OpenViking module not importable: {}", stderr.trim()
+                        "OpenViking module not importable: {}",
+                        stderr.trim()
                     ));
                 }
             }
@@ -184,10 +190,14 @@ impl VikingProcess {
         // Spawn the server process directly — no shell wrapper needed.
         let child = Command::new("python")
             .args([
-                "-m", "openviking_cli.server_bootstrap",
-                "--config", &conf_str,
-                "--port", &port_str,
-                "--host", "127.0.0.1",
+                "-m",
+                "openviking_cli.server_bootstrap",
+                "--config",
+                &conf_str,
+                "--port",
+                &port_str,
+                "--host",
+                "127.0.0.1",
             ])
             .stdout(Stdio::null())
             .stderr(Stdio::piped())
@@ -196,7 +206,10 @@ impl VikingProcess {
             .context("Failed to spawn openviking server process")?;
 
         self.child = Some(child);
-        tracing::info!("OpenViking server spawned on port {} (waiting for health...)", self.config.port);
+        tracing::info!(
+            "OpenViking server spawned on port {} (waiting for health...)",
+            self.config.port
+        );
 
         // Wait for health check (up to 30 seconds)
         let client = VikingClient::new(&self.config.base_url());
@@ -216,11 +229,18 @@ impl VikingProcess {
                         let _ = stderr.read_to_string(&mut stderr_msg).await;
                     }
                     let status = dead_child.try_wait().ok().flatten();
-                    let code = status.map(|s| s.to_string()).unwrap_or_else(|| "unknown".into());
-                    tracing::error!("OpenViking crashed (status {}): {}", code, stderr_msg.trim());
+                    let code = status
+                        .map(|s| s.to_string())
+                        .unwrap_or_else(|| "unknown".into());
+                    tracing::error!(
+                        "OpenViking crashed (status {}): {}",
+                        code,
+                        stderr_msg.trim()
+                    );
                     return Err(anyhow::anyhow!(
                         "OpenViking server process exited with {}: {}",
-                        code, stderr_msg.trim()
+                        code,
+                        stderr_msg.trim()
                     ));
                 }
             }

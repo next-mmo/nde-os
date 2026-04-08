@@ -53,8 +53,7 @@ impl VikingConfig {
     /// Build a VikingConfig from persisted service hub settings.
     /// Falls back to `Default` for any missing values.
     pub fn from_service_config(data_dir: &Path) -> Self {
-        let cfg = crate::services::config::get_service_config("openviking", data_dir)
-            .ok();
+        let cfg = crate::services::config::get_service_config("openviking", data_dir).ok();
         let vals = cfg.as_ref().map(|c| &c.values);
 
         let defaults = Self::default();
@@ -186,7 +185,10 @@ mod tests {
         let config = VikingConfig::default();
         assert_eq!(config.port, 1933);
         assert_eq!(config.base_url(), "http://localhost:1933");
-        assert!(config.embedding.is_some(), "default must include embedding config");
+        assert!(
+            config.embedding.is_some(),
+            "default must include embedding config"
+        );
     }
 
     #[test]
@@ -197,7 +199,10 @@ mod tests {
         let conf_path = config.write_server_conf(dir.path()).unwrap();
         let content: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(&conf_path).unwrap()).unwrap();
-        assert!(content.get("embedding").is_some(), "ov.conf must contain embedding section");
+        assert!(
+            content.get("embedding").is_some(),
+            "ov.conf must contain embedding section"
+        );
         assert_eq!(content["embedding"]["dense"]["provider"], "litellm");
     }
 

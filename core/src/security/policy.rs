@@ -242,11 +242,7 @@ impl ToolPolicy {
     /// - auto-approve (safe/moderate)
     /// - require confirmation (dangerous)
     /// - block entirely (blocked command detected)
-    pub fn evaluate(
-        &self,
-        tool_name: &str,
-        args: &serde_json::Value,
-    ) -> PolicyVerdict {
+    pub fn evaluate(&self, tool_name: &str, args: &serde_json::Value) -> PolicyVerdict {
         let risk = self.classify_tool(tool_name);
 
         // For dangerous tools, inspect arguments for blocked patterns
@@ -255,10 +251,7 @@ impl ToolPolicy {
                 return PolicyVerdict {
                     risk: ToolRisk::Dangerous,
                     auto_approve: false,
-                    reason: format!(
-                        "⚠️ Blocked command detected in '{}': {}",
-                        tool_name, threat
-                    ),
+                    reason: format!("⚠️ Blocked command detected in '{}': {}", tool_name, threat),
                     threat: Some(threat),
                 };
             }
@@ -302,11 +295,7 @@ impl ToolPolicy {
     }
 
     /// Scan shell_exec / http_fetch arguments for blocked command patterns.
-    fn scan_command_args(
-        &self,
-        tool_name: &str,
-        args: &serde_json::Value,
-    ) -> Option<String> {
+    fn scan_command_args(&self, tool_name: &str, args: &serde_json::Value) -> Option<String> {
         let text_to_scan = match tool_name {
             "shell_exec" => args.get("command").and_then(|v| v.as_str()),
             "http_fetch" => args.get("url").and_then(|v| v.as_str()),

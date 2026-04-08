@@ -6,7 +6,7 @@ use std::sync::Arc;
 use tokio::process::Command as TokioCommand;
 use tokio::sync::Mutex;
 
-use super::manifest::{ActorManifest, ActorManager, ActorRuntime};
+use super::manifest::{ActorManager, ActorManifest, ActorRuntime};
 use super::storage::RunStorage;
 
 // ─── Run Status ────────────────────────────────────────────────────
@@ -149,8 +149,8 @@ impl ActorRunner {
         cmd.env("NDE_MAX_PAGES", manifest.browser.pages.to_string());
 
         // Redirect stdout/stderr to log file
-        let log_file = std::fs::File::create(&storage.log_path)
-            .context("Failed to create actor log file")?;
+        let log_file =
+            std::fs::File::create(&storage.log_path).context("Failed to create actor log file")?;
         let log_err = log_file
             .try_clone()
             .context("Failed to clone log file handle")?;
@@ -163,7 +163,7 @@ impl ActorRunner {
         {
             use tokio::process::Command as TokioCommand;
             // Creation flags aren't directly exposed on tokio::process::Command without casting to std cmd
-            // Let's use the underlying std::process::Command representation if needed, 
+            // Let's use the underlying std::process::Command representation if needed,
             // but for portability let's use the wrapper methods if applicable.
             // Tokio Command doesn't have creation_flags natively, we need to import std::os::windows::process::CommandExt
             // and use it on the tokio command builder if it supports it, wait, tokio Command allows standard ext traits.
@@ -180,9 +180,7 @@ impl ActorRunner {
             )
         })?;
 
-        let process_id = child
-            .id()
-            .context("Failed to get actor process ID")?;
+        let process_id = child.id().context("Failed to get actor process ID")?;
 
         tracing::info!(
             "Actor '{}' started: run_id={}, PID={}",
@@ -220,10 +218,7 @@ impl ActorRunner {
                     .unwrap_or_default()
                     .as_secs();
 
-                let exit_code = exit_status
-                    .as_ref()
-                    .ok()
-                    .and_then(|s| s.code());
+                let exit_code = exit_status.as_ref().ok().and_then(|s| s.code());
 
                 let status = match exit_code {
                     Some(0) => RunStatus::Succeeded,
@@ -288,11 +283,7 @@ impl ActorRunner {
 
         match actor {
             Some(a) => {
-                tracing::info!(
-                    "Stopping actor '{}' (PID {})",
-                    a.actor_id,
-                    a.process_id
-                );
+                tracing::info!("Stopping actor '{}' (PID {})", a.actor_id, a.process_id);
                 kill_process(a.process_id);
 
                 // Write aborted status
@@ -365,9 +356,7 @@ impl ActorRunner {
                             // Update dataset count
                             let ds_path = entry.path().join("dataset.jsonl");
                             if ds_path.exists() {
-                                if let Ok(storage) =
-                                    super::storage::ActorDataset::new(ds_path)
-                                {
+                                if let Ok(storage) = super::storage::ActorDataset::new(ds_path) {
                                     run.dataset_items = storage.count().unwrap_or(0);
                                 }
                             }

@@ -362,17 +362,18 @@ pub async fn verify_provider_config(config: &manager::ProviderConfig) -> anyhow:
             }
         }
 
-        // oh-my-codex: verify `omx` binary is available + Codex auth exists
+        // oh-my-codex: verify Codex auth exists (supports CLI + API fallback)
         "omx" | "oh-my-codex" | "oh_my_codex" => {
             // Check omx binary — sandbox first, then PATH, then explicit base_url
             let omx_path = resolve_omx_binary(config.base_url.as_deref());
             if omx_path.is_none() {
-                return Err(anyhow::anyhow!(
-                    "oh-my-codex (omx) CLI not found. It will be auto-installed into the NDE-OS sandbox on first use, or set a custom path in 'OMX Binary Path'."
-                ));
+                tracing::info!(
+                    "omx CLI not found — provider will use Codex OAuth API fallback"
+                );
+            } else {
+                tracing::info!(path = ?omx_path, "omx binary found");
             }
-            tracing::info!(path = ?omx_path, "omx binary found");
-            // Verify Codex auth (omx uses the same tokens)
+            // Verify Codex auth (required for both CLI and API modes)
             if codex_oauth::get_codex_access_token().is_err() {
                 return Err(anyhow::anyhow!(
                     "Codex not authenticated — run `codex login` or sign in via LLM Providers"
@@ -449,9 +450,13 @@ pub fn resolve_omx_binary(explicit_path: Option<&str>) -> Option<String> {
 
     // 3. Global PATH
     let which_check = if cfg!(windows) {
-        std::process::Command::new("cmd").args(["/C", "where omx"]).output()
+        std::process::Command::new("cmd")
+            .args(["/C", "where omx"])
+            .output()
     } else {
-        std::process::Command::new("sh").args(["-c", "which omx"]).output()
+        std::process::Command::new("sh")
+            .args(["-c", "which omx"])
+            .output()
     };
     if let Ok(output) = which_check {
         if output.status.success() {
@@ -483,9 +488,19 @@ fn sandbox_omx_path() -> Option<String> {
         });
 
     let omx_bin = if cfg!(windows) {
-        data_dir.join("tools").join("omx").join("node_modules").join(".bin").join("omx.cmd")
+        data_dir
+            .join("tools")
+            .join("omx")
+            .join("node_modules")
+            .join(".bin")
+            .join("omx.cmd")
     } else {
-        data_dir.join("tools").join("omx").join("node_modules").join(".bin").join("omx")
+        data_dir
+            .join("tools")
+            .join("omx")
+            .join("node_modules")
+            .join(".bin")
+            .join("omx")
     };
 
     Some(omx_bin.to_string_lossy().to_string())

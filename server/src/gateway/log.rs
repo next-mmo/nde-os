@@ -11,8 +11,8 @@ const MAX_ENTRIES: usize = 500;
 pub struct GatewayLogEntry {
     pub id: u64,
     pub timestamp: String,
-    pub level: &'static str,   // "info" | "success" | "warning" | "error"
-    pub source: &'static str,  // "gateway" | "telegram" | "chat" | "system"
+    pub level: &'static str,  // "info" | "success" | "warning" | "error"
+    pub source: &'static str, // "gateway" | "telegram" | "chat" | "system"
     pub message: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub app_id: Option<String>,
@@ -32,7 +32,13 @@ impl GatewayLogBuffer {
     }
 
     /// Push a log entry with optional app_id.
-    pub fn push(&mut self, level: &'static str, source: &'static str, message: String, app_id: Option<&str>) {
+    pub fn push(
+        &mut self,
+        level: &'static str,
+        source: &'static str,
+        message: String,
+        app_id: Option<&str>,
+    ) {
         let entry = GatewayLogEntry {
             id: self.next_id,
             timestamp: chrono::Utc::now().to_rfc3339(),

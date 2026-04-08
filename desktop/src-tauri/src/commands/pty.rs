@@ -39,10 +39,11 @@ pub async fn spawn_pty(
         CommandBuilder::new("cmd.exe")
     } else {
         let mut b = CommandBuilder::new("bash");
-        
+
         if let Ok(sandbox) = ai_launcher_core::sandbox::Sandbox::new(&app_state.base_dir) {
             let sandbox_root = sandbox.root().to_string_lossy().to_string();
-            let rc_content = format!(r#"
+            let rc_content = format!(
+                r#"
 export PS1="nde-os:\w\$ "
 
 cd() {{
@@ -70,14 +71,15 @@ ls() {{
     done
     command ls "$@"
 }}
-"#);
+"#
+            );
             let rc_path = sandbox.root().join(".nde_rc");
             let _ = std::fs::write(&rc_path, rc_content);
             b.args(["--noprofile", "--rcfile", &rc_path.to_string_lossy()]);
         }
         b
     };
-    
+
     // Inject the NDE-OS strict jail environment variables.
     // This forcibly remaps HOME, TMPDIR, and configs directly to the sandbox root!
     if let Ok(sandbox) = ai_launcher_core::sandbox::Sandbox::new(&app_state.base_dir) {
@@ -85,7 +87,7 @@ ls() {{
         for (k, v) in sandbox.env_vars() {
             cmd.env(k, v);
         }
-        
+
         // Auto-activate the sandbox Python virtual environment
         let current_path = std::env::var("PATH").unwrap_or_default();
         let venv_bin = if cfg!(windows) {
@@ -95,10 +97,10 @@ ls() {{
         };
         let sys_path_sep = if cfg!(windows) { ";" } else { ":" };
         let isolated_path = format!("{}{}{}", venv_bin.display(), sys_path_sep, current_path);
-        
+
         cmd.env("PATH", isolated_path);
     }
-    
+
     cmd.cwd(cwd);
 
     let _child = pair.slave.spawn_command(cmd).map_err(|e| e.to_string())?;

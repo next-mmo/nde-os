@@ -223,8 +223,6 @@ pub async fn rename_entry(
     .map_err(|e| e.to_string())?
 }
 
-
-
 // ── Tests ───────────────────────────────────────────────────────────────
 
 #[cfg(test)]

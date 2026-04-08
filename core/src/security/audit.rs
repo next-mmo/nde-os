@@ -53,7 +53,7 @@ impl AuditTrail {
         }
 
         let timestamp = chrono::Utc::now().to_rfc3339();
-        
+
         // Scrub secrets from the data payload before storing/hashing
         let data = crate::security::policy::scrub_output(raw_data);
 

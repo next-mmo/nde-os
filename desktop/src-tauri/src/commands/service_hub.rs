@@ -79,12 +79,10 @@ pub async fn service_hub_get_config(
     service_id: String,
 ) -> Result<svc_config::ServiceConfig, String> {
     let base_dir = app_state.base_dir.clone();
-    tokio::task::spawn_blocking(move || {
-        svc_config::get_service_config(&service_id, &base_dir)
-    })
-    .await
-    .map_err(|e| e.to_string())?
-    .map_err(|e| e.to_string())
+    tokio::task::spawn_blocking(move || svc_config::get_service_config(&service_id, &base_dir))
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())
 }
 
 /// Save config values for a service.
@@ -103,4 +101,3 @@ pub async fn service_hub_set_config(
     .map_err(|e| e.to_string())?;
     Ok("Config saved".to_string())
 }
-

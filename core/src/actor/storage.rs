@@ -16,8 +16,7 @@ impl ActorDataset {
     /// Create or open a dataset at the given file path.
     pub fn new(path: PathBuf) -> Result<Self> {
         if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)
-                .context("Failed to create dataset directory")?;
+            std::fs::create_dir_all(parent).context("Failed to create dataset directory")?;
         }
         Ok(Self { path })
     }
@@ -32,8 +31,7 @@ impl ActorDataset {
 
         let mut writer = BufWriter::new(file);
         for item in items {
-            let line = serde_json::to_string(item)
-                .context("Failed to serialize dataset item")?;
+            let line = serde_json::to_string(item).context("Failed to serialize dataset item")?;
             writeln!(writer, "{}", line)?;
         }
         writer.flush()?;
@@ -46,8 +44,7 @@ impl ActorDataset {
             return Ok(Vec::new());
         }
 
-        let file = std::fs::File::open(&self.path)
-            .context("Failed to open dataset for reading")?;
+        let file = std::fs::File::open(&self.path).context("Failed to open dataset for reading")?;
         let reader = BufReader::new(file);
 
         let items: Vec<serde_json::Value> = reader
@@ -68,8 +65,8 @@ impl ActorDataset {
             return Ok(0);
         }
 
-        let file = std::fs::File::open(&self.path)
-            .context("Failed to open dataset for counting")?;
+        let file =
+            std::fs::File::open(&self.path).context("Failed to open dataset for counting")?;
         let reader = BufReader::new(file);
         let count = reader
             .lines()
@@ -113,21 +110,18 @@ impl ActorDataset {
             let row: Vec<String> = headers
                 .iter()
                 .map(|h| {
-                    item.get(h).map_or_else(
-                        String::new,
-                        |v| match v {
-                            serde_json::Value::String(s) => {
-                                // Escape CSV values containing commas or quotes
-                                if s.contains(',') || s.contains('"') || s.contains('\n') {
-                                    format!("\"{}\"", s.replace('"', "\"\""))
-                                } else {
-                                    s.clone()
-                                }
+                    item.get(h).map_or_else(String::new, |v| match v {
+                        serde_json::Value::String(s) => {
+                            // Escape CSV values containing commas or quotes
+                            if s.contains(',') || s.contains('"') || s.contains('\n') {
+                                format!("\"{}\"", s.replace('"', "\"\""))
+                            } else {
+                                s.clone()
                             }
-                            serde_json::Value::Null => String::new(),
-                            other => other.to_string(),
-                        },
-                    )
+                        }
+                        serde_json::Value::Null => String::new(),
+                        other => other.to_string(),
+                    })
                 })
                 .collect();
             writeln!(writer, "{}", row.join(","))?;
@@ -198,8 +192,8 @@ impl ActorKvStore {
 
     /// Store a JSON value under the given key.
     pub fn set_json(&self, key: &str, value: &serde_json::Value) -> Result<()> {
-        let bytes = serde_json::to_vec_pretty(value)
-            .context("Failed to serialize JSON for KV store")?;
+        let bytes =
+            serde_json::to_vec_pretty(value).context("Failed to serialize JSON for KV store")?;
         self.set(key, &bytes, "application/json")
     }
 
@@ -223,9 +217,7 @@ impl ActorKvStore {
             return Ok(keys);
         }
 
-        for entry in std::fs::read_dir(&self.dir)
-            .context("Failed to read KV store directory")?
-        {
+        for entry in std::fs::read_dir(&self.dir).context("Failed to read KV store directory")? {
             let entry = entry?;
             let name = entry.file_name().to_string_lossy().to_string();
             // Skip content-type metadata files
@@ -294,8 +286,7 @@ impl RunStorage {
     /// Initialize storage for a new actor run.
     pub fn create(actors_dir: &Path, actor_id: &str, run_id: &str) -> Result<Self> {
         let run_dir = actors_dir.join(actor_id).join("runs").join(run_id);
-        std::fs::create_dir_all(&run_dir)
-            .context("Failed to create run directory")?;
+        std::fs::create_dir_all(&run_dir).context("Failed to create run directory")?;
 
         let dataset_path = run_dir.join("dataset.jsonl");
         let kv_dir = run_dir.join("key-value-store");
@@ -321,10 +312,7 @@ impl RunStorage {
     pub fn open(actors_dir: &Path, actor_id: &str, run_id: &str) -> Result<Self> {
         let run_dir = actors_dir.join(actor_id).join("runs").join(run_id);
         if !run_dir.exists() {
-            anyhow::bail!(
-                "Run directory not found: {}",
-                run_dir.display()
-            );
+            anyhow::bail!("Run directory not found: {}", run_dir.display());
         }
 
         let dataset_path = run_dir.join("dataset.jsonl");

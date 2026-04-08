@@ -343,10 +343,16 @@ mod tests {
         .unwrap();
         g.start_metering();
 
-        assert!(g.authorize_tool("file_read", &serde_json::json!({})).is_ok());
-        assert!(g.authorize_tool("file_read", &serde_json::json!({})).is_ok());
+        assert!(g
+            .authorize_tool("file_read", &serde_json::json!({}))
+            .is_ok());
+        assert!(g
+            .authorize_tool("file_read", &serde_json::json!({}))
+            .is_ok());
         // Third call exceeds budget
-        assert!(g.authorize_tool("file_read", &serde_json::json!({})).is_err());
+        assert!(g
+            .authorize_tool("file_read", &serde_json::json!({}))
+            .is_err());
     }
 
     #[test]
@@ -380,9 +386,9 @@ mod tests {
         .unwrap();
         g.start_metering();
         g.check_input("hello").unwrap();
-        g.authorize_tool("file_read", &serde_json::json!({})).unwrap();
+        g.authorize_tool("file_read", &serde_json::json!({}))
+            .unwrap();
         g.record_action("custom", "some data").unwrap();
         assert!(g.verify_audit_integrity().unwrap());
     }
 }
-

@@ -107,8 +107,7 @@ impl ActorTemplate {
 
     /// Scaffold a new actor project from this template.
     pub fn scaffold(&self, dir: &Path, actor_name: &str) -> Result<()> {
-        std::fs::create_dir_all(dir)
-            .context("Failed to create actor directory")?;
+        std::fs::create_dir_all(dir).context("Failed to create actor directory")?;
 
         let actor_id = slugify(actor_name);
         let manifest = self.build_manifest(&actor_id, actor_name);
@@ -185,7 +184,8 @@ impl ActorTemplate {
                 id: actor_id.to_string(),
                 name: actor_name.to_string(),
                 version: "1.0.0".to_string(),
-                description: "Scrapes data from websites using Shield anti-detect browser".to_string(),
+                description: "Scrapes data from websites using Shield anti-detect browser"
+                    .to_string(),
                 author: None,
                 tags: vec!["scraping".into(), "anti-detect".into()],
                 icon: Some("🕷️".into()),
@@ -210,7 +210,8 @@ impl ActorTemplate {
                 id: actor_id.to_string(),
                 name: actor_name.to_string(),
                 version: "1.0.0".to_string(),
-                description: "Crawls multi-page websites with URL queue and depth control".to_string(),
+                description: "Crawls multi-page websites with URL queue and depth control"
+                    .to_string(),
                 author: None,
                 tags: vec!["crawling".into(), "anti-detect".into()],
                 icon: Some("🔗".into()),
@@ -235,7 +236,8 @@ impl ActorTemplate {
                 id: actor_id.to_string(),
                 name: actor_name.to_string(),
                 version: "1.0.0".to_string(),
-                description: "Takes screenshots of URLs with Shield anti-detect browser".to_string(),
+                description: "Takes screenshots of URLs with Shield anti-detect browser"
+                    .to_string(),
                 author: None,
                 tags: vec!["screenshot".into(), "visual".into()],
                 icon: Some("📸".into()),
@@ -340,12 +342,8 @@ impl ActorTemplate {
     /// Generate requirements.txt for this template.
     fn generate_requirements(&self) -> String {
         match self {
-            ActorTemplate::EmulatorBot => {
-                "nde-actor-sdk\n".to_string()
-            }
-            _ => {
-                "playwright\nnde-actor-sdk\n".to_string()
-            }
+            ActorTemplate::EmulatorBot => "nde-actor-sdk\n".to_string(),
+            _ => "playwright\nnde-actor-sdk\n".to_string(),
         }
     }
 
@@ -395,30 +393,48 @@ Results are stored in the dataset (JSONL format locally, Apify Dataset in cloud)
 
 fn scraper_input_schema() -> InputSchema {
     let mut props = HashMap::new();
-    props.insert("startUrls".into(), InputProperty {
-        title: "Start URLs".into(),
-        property_type: PropertyType::Array,
-        description: Some("List of URLs to scrape".into()),
-        default: None,
-        editor: Some("requestListSources".into()),
-        enum_values: None, minimum: None, maximum: None,
-        prefill: Some(serde_json::json!([{"url": "https://example.com"}])),
-    });
-    props.insert("maxPages".into(), InputProperty {
-        title: "Max Pages".into(),
-        property_type: PropertyType::Integer,
-        description: Some("Maximum number of pages to scrape".into()),
-        default: Some(serde_json::json!(10)),
-        editor: None, enum_values: None,
-        minimum: Some(1.0), maximum: Some(10000.0), prefill: None,
-    });
-    props.insert("waitForSelector".into(), InputProperty {
-        title: "Wait for Selector".into(),
-        property_type: PropertyType::String,
-        description: Some("CSS selector to wait for before extracting data".into()),
-        default: Some(serde_json::json!("body")),
-        editor: None, enum_values: None, minimum: None, maximum: None, prefill: None,
-    });
+    props.insert(
+        "startUrls".into(),
+        InputProperty {
+            title: "Start URLs".into(),
+            property_type: PropertyType::Array,
+            description: Some("List of URLs to scrape".into()),
+            default: None,
+            editor: Some("requestListSources".into()),
+            enum_values: None,
+            minimum: None,
+            maximum: None,
+            prefill: Some(serde_json::json!([{"url": "https://example.com"}])),
+        },
+    );
+    props.insert(
+        "maxPages".into(),
+        InputProperty {
+            title: "Max Pages".into(),
+            property_type: PropertyType::Integer,
+            description: Some("Maximum number of pages to scrape".into()),
+            default: Some(serde_json::json!(10)),
+            editor: None,
+            enum_values: None,
+            minimum: Some(1.0),
+            maximum: Some(10000.0),
+            prefill: None,
+        },
+    );
+    props.insert(
+        "waitForSelector".into(),
+        InputProperty {
+            title: "Wait for Selector".into(),
+            property_type: PropertyType::String,
+            description: Some("CSS selector to wait for before extracting data".into()),
+            default: Some(serde_json::json!("body")),
+            editor: None,
+            enum_values: None,
+            minimum: None,
+            maximum: None,
+            prefill: None,
+        },
+    );
 
     InputSchema {
         title: "Shield Scraper Input".into(),
@@ -432,38 +448,62 @@ fn scraper_input_schema() -> InputSchema {
 
 fn crawler_input_schema() -> InputSchema {
     let mut props = HashMap::new();
-    props.insert("startUrls".into(), InputProperty {
-        title: "Start URLs".into(),
-        property_type: PropertyType::Array,
-        description: Some("Seed URLs to begin crawling from".into()),
-        default: None,
-        editor: Some("requestListSources".into()),
-        enum_values: None, minimum: None, maximum: None,
-        prefill: Some(serde_json::json!([{"url": "https://example.com"}])),
-    });
-    props.insert("maxDepth".into(), InputProperty {
-        title: "Max Crawl Depth".into(),
-        property_type: PropertyType::Integer,
-        description: Some("Maximum link depth to follow".into()),
-        default: Some(serde_json::json!(3)),
-        editor: None, enum_values: None,
-        minimum: Some(1.0), maximum: Some(20.0), prefill: None,
-    });
-    props.insert("maxPages".into(), InputProperty {
-        title: "Max Pages".into(),
-        property_type: PropertyType::Integer,
-        description: Some("Maximum total pages to crawl".into()),
-        default: Some(serde_json::json!(100)),
-        editor: None, enum_values: None,
-        minimum: Some(1.0), maximum: Some(100000.0), prefill: None,
-    });
-    props.insert("sameDomainOnly".into(), InputProperty {
-        title: "Same Domain Only".into(),
-        property_type: PropertyType::Boolean,
-        description: Some("Only follow links on the same domain".into()),
-        default: Some(serde_json::json!(true)),
-        editor: None, enum_values: None, minimum: None, maximum: None, prefill: None,
-    });
+    props.insert(
+        "startUrls".into(),
+        InputProperty {
+            title: "Start URLs".into(),
+            property_type: PropertyType::Array,
+            description: Some("Seed URLs to begin crawling from".into()),
+            default: None,
+            editor: Some("requestListSources".into()),
+            enum_values: None,
+            minimum: None,
+            maximum: None,
+            prefill: Some(serde_json::json!([{"url": "https://example.com"}])),
+        },
+    );
+    props.insert(
+        "maxDepth".into(),
+        InputProperty {
+            title: "Max Crawl Depth".into(),
+            property_type: PropertyType::Integer,
+            description: Some("Maximum link depth to follow".into()),
+            default: Some(serde_json::json!(3)),
+            editor: None,
+            enum_values: None,
+            minimum: Some(1.0),
+            maximum: Some(20.0),
+            prefill: None,
+        },
+    );
+    props.insert(
+        "maxPages".into(),
+        InputProperty {
+            title: "Max Pages".into(),
+            property_type: PropertyType::Integer,
+            description: Some("Maximum total pages to crawl".into()),
+            default: Some(serde_json::json!(100)),
+            editor: None,
+            enum_values: None,
+            minimum: Some(1.0),
+            maximum: Some(100000.0),
+            prefill: None,
+        },
+    );
+    props.insert(
+        "sameDomainOnly".into(),
+        InputProperty {
+            title: "Same Domain Only".into(),
+            property_type: PropertyType::Boolean,
+            description: Some("Only follow links on the same domain".into()),
+            default: Some(serde_json::json!(true)),
+            editor: None,
+            enum_values: None,
+            minimum: None,
+            maximum: None,
+            prefill: None,
+        },
+    );
 
     InputSchema {
         title: "Shield Crawler Input".into(),
@@ -477,38 +517,62 @@ fn crawler_input_schema() -> InputSchema {
 
 fn screenshot_input_schema() -> InputSchema {
     let mut props = HashMap::new();
-    props.insert("urls".into(), InputProperty {
-        title: "URLs".into(),
-        property_type: PropertyType::Array,
-        description: Some("URLs to screenshot".into()),
-        default: None,
-        editor: Some("requestListSources".into()),
-        enum_values: None, minimum: None, maximum: None,
-        prefill: Some(serde_json::json!([{"url": "https://example.com"}])),
-    });
-    props.insert("viewportWidth".into(), InputProperty {
-        title: "Viewport Width".into(),
-        property_type: PropertyType::Integer,
-        description: Some("Browser viewport width in pixels".into()),
-        default: Some(serde_json::json!(1920)),
-        editor: None, enum_values: None,
-        minimum: Some(320.0), maximum: Some(3840.0), prefill: None,
-    });
-    props.insert("viewportHeight".into(), InputProperty {
-        title: "Viewport Height".into(),
-        property_type: PropertyType::Integer,
-        description: Some("Browser viewport height in pixels".into()),
-        default: Some(serde_json::json!(1080)),
-        editor: None, enum_values: None,
-        minimum: Some(240.0), maximum: Some(2160.0), prefill: None,
-    });
-    props.insert("fullPage".into(), InputProperty {
-        title: "Full Page".into(),
-        property_type: PropertyType::Boolean,
-        description: Some("Capture full scrollable page instead of just viewport".into()),
-        default: Some(serde_json::json!(false)),
-        editor: None, enum_values: None, minimum: None, maximum: None, prefill: None,
-    });
+    props.insert(
+        "urls".into(),
+        InputProperty {
+            title: "URLs".into(),
+            property_type: PropertyType::Array,
+            description: Some("URLs to screenshot".into()),
+            default: None,
+            editor: Some("requestListSources".into()),
+            enum_values: None,
+            minimum: None,
+            maximum: None,
+            prefill: Some(serde_json::json!([{"url": "https://example.com"}])),
+        },
+    );
+    props.insert(
+        "viewportWidth".into(),
+        InputProperty {
+            title: "Viewport Width".into(),
+            property_type: PropertyType::Integer,
+            description: Some("Browser viewport width in pixels".into()),
+            default: Some(serde_json::json!(1920)),
+            editor: None,
+            enum_values: None,
+            minimum: Some(320.0),
+            maximum: Some(3840.0),
+            prefill: None,
+        },
+    );
+    props.insert(
+        "viewportHeight".into(),
+        InputProperty {
+            title: "Viewport Height".into(),
+            property_type: PropertyType::Integer,
+            description: Some("Browser viewport height in pixels".into()),
+            default: Some(serde_json::json!(1080)),
+            editor: None,
+            enum_values: None,
+            minimum: Some(240.0),
+            maximum: Some(2160.0),
+            prefill: None,
+        },
+    );
+    props.insert(
+        "fullPage".into(),
+        InputProperty {
+            title: "Full Page".into(),
+            property_type: PropertyType::Boolean,
+            description: Some("Capture full scrollable page instead of just viewport".into()),
+            default: Some(serde_json::json!(false)),
+            editor: None,
+            enum_values: None,
+            minimum: None,
+            maximum: None,
+            prefill: None,
+        },
+    );
 
     InputSchema {
         title: "Shield Screenshot Input".into(),
@@ -522,29 +586,48 @@ fn screenshot_input_schema() -> InputSchema {
 
 fn form_filler_input_schema() -> InputSchema {
     let mut props = HashMap::new();
-    props.insert("url".into(), InputProperty {
-        title: "Form URL".into(),
-        property_type: PropertyType::String,
-        description: Some("URL of the page containing the form".into()),
-        default: None,
-        editor: None, enum_values: None, minimum: None, maximum: None, prefill: None,
-    });
-    props.insert("fields".into(), InputProperty {
-        title: "Form Fields".into(),
-        property_type: PropertyType::Object,
-        description: Some("Map of CSS selector → value to fill".into()),
-        default: None,
-        editor: Some("json".into()),
-        enum_values: None, minimum: None, maximum: None,
-        prefill: Some(serde_json::json!({"#email": "test@example.com", "#name": "John Doe"})),
-    });
-    props.insert("submitSelector".into(), InputProperty {
-        title: "Submit Button Selector".into(),
-        property_type: PropertyType::String,
-        description: Some("CSS selector for the submit button".into()),
-        default: Some(serde_json::json!("button[type='submit']")),
-        editor: None, enum_values: None, minimum: None, maximum: None, prefill: None,
-    });
+    props.insert(
+        "url".into(),
+        InputProperty {
+            title: "Form URL".into(),
+            property_type: PropertyType::String,
+            description: Some("URL of the page containing the form".into()),
+            default: None,
+            editor: None,
+            enum_values: None,
+            minimum: None,
+            maximum: None,
+            prefill: None,
+        },
+    );
+    props.insert(
+        "fields".into(),
+        InputProperty {
+            title: "Form Fields".into(),
+            property_type: PropertyType::Object,
+            description: Some("Map of CSS selector → value to fill".into()),
+            default: None,
+            editor: Some("json".into()),
+            enum_values: None,
+            minimum: None,
+            maximum: None,
+            prefill: Some(serde_json::json!({"#email": "test@example.com", "#name": "John Doe"})),
+        },
+    );
+    props.insert(
+        "submitSelector".into(),
+        InputProperty {
+            title: "Submit Button Selector".into(),
+            property_type: PropertyType::String,
+            description: Some("CSS selector for the submit button".into()),
+            default: Some(serde_json::json!("button[type='submit']")),
+            editor: None,
+            enum_values: None,
+            minimum: None,
+            maximum: None,
+            prefill: None,
+        },
+    );
 
     InputSchema {
         title: "Shield Form Filler Input".into(),
@@ -558,39 +641,72 @@ fn form_filler_input_schema() -> InputSchema {
 
 fn social_bot_input_schema() -> InputSchema {
     let mut props = HashMap::new();
-    props.insert("platform".into(), InputProperty {
-        title: "Platform".into(),
-        property_type: PropertyType::String,
-        description: Some("Social media platform".into()),
-        default: None,
-        editor: None,
-        enum_values: Some(vec!["twitter".into(), "instagram".into(), "facebook".into(), "linkedin".into(), "tiktok".into()]),
-        minimum: None, maximum: None, prefill: None,
-    });
-    props.insert("action".into(), InputProperty {
-        title: "Action".into(),
-        property_type: PropertyType::String,
-        description: Some("What action to perform".into()),
-        default: None,
-        editor: None,
-        enum_values: Some(vec!["scrape_profile".into(), "scrape_feed".into(), "scrape_search".into()]),
-        minimum: None, maximum: None, prefill: None,
-    });
-    props.insert("target".into(), InputProperty {
-        title: "Target".into(),
-        property_type: PropertyType::String,
-        description: Some("Username, URL, or search query".into()),
-        default: None,
-        editor: None, enum_values: None, minimum: None, maximum: None, prefill: None,
-    });
-    props.insert("maxResults".into(), InputProperty {
-        title: "Max Results".into(),
-        property_type: PropertyType::Integer,
-        description: Some("Maximum items to collect".into()),
-        default: Some(serde_json::json!(50)),
-        editor: None, enum_values: None,
-        minimum: Some(1.0), maximum: Some(10000.0), prefill: None,
-    });
+    props.insert(
+        "platform".into(),
+        InputProperty {
+            title: "Platform".into(),
+            property_type: PropertyType::String,
+            description: Some("Social media platform".into()),
+            default: None,
+            editor: None,
+            enum_values: Some(vec![
+                "twitter".into(),
+                "instagram".into(),
+                "facebook".into(),
+                "linkedin".into(),
+                "tiktok".into(),
+            ]),
+            minimum: None,
+            maximum: None,
+            prefill: None,
+        },
+    );
+    props.insert(
+        "action".into(),
+        InputProperty {
+            title: "Action".into(),
+            property_type: PropertyType::String,
+            description: Some("What action to perform".into()),
+            default: None,
+            editor: None,
+            enum_values: Some(vec![
+                "scrape_profile".into(),
+                "scrape_feed".into(),
+                "scrape_search".into(),
+            ]),
+            minimum: None,
+            maximum: None,
+            prefill: None,
+        },
+    );
+    props.insert(
+        "target".into(),
+        InputProperty {
+            title: "Target".into(),
+            property_type: PropertyType::String,
+            description: Some("Username, URL, or search query".into()),
+            default: None,
+            editor: None,
+            enum_values: None,
+            minimum: None,
+            maximum: None,
+            prefill: None,
+        },
+    );
+    props.insert(
+        "maxResults".into(),
+        InputProperty {
+            title: "Max Results".into(),
+            property_type: PropertyType::Integer,
+            description: Some("Maximum items to collect".into()),
+            default: Some(serde_json::json!(50)),
+            editor: None,
+            enum_values: None,
+            minimum: Some(1.0),
+            maximum: Some(10000.0),
+            prefill: None,
+        },
+    );
 
     InputSchema {
         title: "Shield Social Bot Input".into(),
@@ -604,36 +720,67 @@ fn social_bot_input_schema() -> InputSchema {
 
 fn emulator_input_schema() -> InputSchema {
     let mut props = HashMap::new();
-    props.insert("deviceSerial".into(), InputProperty {
-        title: "Device Serial".into(),
-        property_type: PropertyType::String,
-        description: Some("ADB device serial (e.g. emulator-5554, 127.0.0.1:5555)".into()),
-        default: Some(serde_json::json!("emulator-5554")),
-        editor: None, enum_values: None, minimum: None, maximum: None, prefill: None,
-    });
-    props.insert("action".into(), InputProperty {
-        title: "Action".into(),
-        property_type: PropertyType::String,
-        description: Some("Action to perform on the emulator".into()),
-        default: None,
-        editor: None,
-        enum_values: Some(vec!["open_url".into(), "screenshot".into(), "install_apk".into(), "run_command".into()]),
-        minimum: None, maximum: None, prefill: None,
-    });
-    props.insert("url".into(), InputProperty {
-        title: "URL".into(),
-        property_type: PropertyType::String,
-        description: Some("URL to open (for open_url action)".into()),
-        default: None,
-        editor: None, enum_values: None, minimum: None, maximum: None, prefill: None,
-    });
-    props.insert("command".into(), InputProperty {
-        title: "Shell Command".into(),
-        property_type: PropertyType::String,
-        description: Some("ADB shell command to execute (for run_command action)".into()),
-        default: None,
-        editor: None, enum_values: None, minimum: None, maximum: None, prefill: None,
-    });
+    props.insert(
+        "deviceSerial".into(),
+        InputProperty {
+            title: "Device Serial".into(),
+            property_type: PropertyType::String,
+            description: Some("ADB device serial (e.g. emulator-5554, 127.0.0.1:5555)".into()),
+            default: Some(serde_json::json!("emulator-5554")),
+            editor: None,
+            enum_values: None,
+            minimum: None,
+            maximum: None,
+            prefill: None,
+        },
+    );
+    props.insert(
+        "action".into(),
+        InputProperty {
+            title: "Action".into(),
+            property_type: PropertyType::String,
+            description: Some("Action to perform on the emulator".into()),
+            default: None,
+            editor: None,
+            enum_values: Some(vec![
+                "open_url".into(),
+                "screenshot".into(),
+                "install_apk".into(),
+                "run_command".into(),
+            ]),
+            minimum: None,
+            maximum: None,
+            prefill: None,
+        },
+    );
+    props.insert(
+        "url".into(),
+        InputProperty {
+            title: "URL".into(),
+            property_type: PropertyType::String,
+            description: Some("URL to open (for open_url action)".into()),
+            default: None,
+            editor: None,
+            enum_values: None,
+            minimum: None,
+            maximum: None,
+            prefill: None,
+        },
+    );
+    props.insert(
+        "command".into(),
+        InputProperty {
+            title: "Shell Command".into(),
+            property_type: PropertyType::String,
+            description: Some("ADB shell command to execute (for run_command action)".into()),
+            default: None,
+            editor: None,
+            enum_values: None,
+            minimum: None,
+            maximum: None,
+            prefill: None,
+        },
+    );
 
     InputSchema {
         title: "Emulator Bot Input".into(),
@@ -1158,7 +1305,9 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let dir = tmp.path().join("my-scraper");
 
-        ActorTemplate::ShieldScraper.scaffold(&dir, "My Scraper").unwrap();
+        ActorTemplate::ShieldScraper
+            .scaffold(&dir, "My Scraper")
+            .unwrap();
 
         // Check created files
         assert!(dir.join("nde_actor.json").exists());
@@ -1202,7 +1351,9 @@ mod tests {
     fn test_emulator_template_no_apify() {
         let tmp = TempDir::new().unwrap();
         let dir = tmp.path().join("emu-bot");
-        ActorTemplate::EmulatorBot.scaffold(&dir, "Emu Bot").unwrap();
+        ActorTemplate::EmulatorBot
+            .scaffold(&dir, "Emu Bot")
+            .unwrap();
 
         let manifest = ActorManifest::load(&dir).unwrap();
         assert!(manifest.apify.is_none());

@@ -99,26 +99,22 @@ pub struct NodeEnv {
 /// Check if a binary is available on system PATH. Returns its path.
 fn find_binary(name: &str) -> Option<PathBuf> {
     let cmd = if cfg!(windows) { "where" } else { "which" };
-    Command::new(cmd)
-        .arg(name)
-        .output()
-        .ok()
-        .and_then(|o| {
-            if o.status.success() {
-                let path = String::from_utf8_lossy(&o.stdout)
-                    .trim()
-                    .lines()
-                    .next()?
-                    .to_string();
-                if !path.is_empty() {
-                    Some(PathBuf::from(path))
-                } else {
-                    None
-                }
+    Command::new(cmd).arg(name).output().ok().and_then(|o| {
+        if o.status.success() {
+            let path = String::from_utf8_lossy(&o.stdout)
+                .trim()
+                .lines()
+                .next()?
+                .to_string();
+            if !path.is_empty() {
+                Some(PathBuf::from(path))
             } else {
                 None
             }
-        })
+        } else {
+            None
+        }
+    })
 }
 
 /// Get the version string of a binary.
@@ -144,12 +140,10 @@ fn binary_version(name: &str) -> Option<String> {
 /// Detect system Node.js. Returns (path, version) or error.
 pub fn detect_node() -> Result<(PathBuf, String)> {
     let node_name = if cfg!(windows) { "node.exe" } else { "node" };
-    let node_bin = find_binary(node_name)
-        .ok_or_else(|| anyhow!(
-            "Node.js not found. Install from https://nodejs.org or via nvm/fnm"
-        ))?;
-    let version = binary_version(&node_bin.to_string_lossy())
-        .unwrap_or_else(|| "unknown".into());
+    let node_bin = find_binary(node_name).ok_or_else(|| {
+        anyhow!("Node.js not found. Install from https://nodejs.org or via nvm/fnm")
+    })?;
+    let version = binary_version(&node_bin.to_string_lossy()).unwrap_or_else(|| "unknown".into());
     Ok((node_bin, version))
 }
 
@@ -187,7 +181,11 @@ impl NodeEnv {
 
         let pkg_manager = detect_package_manager(workspace);
         if let Some(pm_version) = binary_version(pkg_manager.bin()) {
-            println!("  [node] Package manager: {} ({})", pkg_manager.display_name(), pm_version);
+            println!(
+                "  [node] Package manager: {} ({})",
+                pkg_manager.display_name(),
+                pm_version
+            );
         } else {
             println!("  [node] Package manager: {}", pkg_manager.display_name());
         }
@@ -236,7 +234,11 @@ impl NodeEnv {
         let status = Command::new(self.pkg_manager.bin())
             .args(&args)
             .current_dir(&self.workspace)
-            .envs(self.env_vars().iter().map(|(k, v)| (k.as_str(), v.as_str())))
+            .envs(
+                self.env_vars()
+                    .iter()
+                    .map(|(k, v)| (k.as_str(), v.as_str())),
+            )
             .status()
             .with_context(|| {
                 format!(
@@ -263,9 +265,19 @@ impl NodeEnv {
         let status = Command::new(self.pkg_manager.bin())
             .args(["run", script])
             .current_dir(&self.workspace)
-            .envs(self.env_vars().iter().map(|(k, v)| (k.as_str(), v.as_str())))
+            .envs(
+                self.env_vars()
+                    .iter()
+                    .map(|(k, v)| (k.as_str(), v.as_str())),
+            )
             .status()
-            .with_context(|| format!("Failed to run {} run {}", self.pkg_manager.display_name(), script))?;
+            .with_context(|| {
+                format!(
+                    "Failed to run {} run {}",
+                    self.pkg_manager.display_name(),
+                    script
+                )
+            })?;
         Ok(status)
     }
 
@@ -286,10 +298,7 @@ impl NodeEnv {
 
         let mut vars = vec![
             // Node.js binary location
-            (
-                "NODE_PATH".into(),
-                format!("{}{}node_modules", root, sep),
-            ),
+            ("NODE_PATH".into(), format!("{}{}node_modules", root, sep)),
             // npm cache inside sandbox
             (
                 "NPM_CONFIG_CACHE".into(),
@@ -307,10 +316,7 @@ impl NodeEnv {
             // Disable npm fund messages
             ("NPM_CONFIG_FUND".into(), "false".into()),
             // pnpm store inside sandbox
-            (
-                "PNPM_HOME".into(),
-                format!("{}{}.pnpm", root, sep),
-            ),
+            ("PNPM_HOME".into(), format!("{}{}.pnpm", root, sep)),
             // yarn cache inside sandbox
             (
                 "YARN_CACHE_FOLDER".into(),

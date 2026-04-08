@@ -1,19 +1,17 @@
 mod commands;
 mod state;
 
+use ai_launcher_core::openviking::{config::VikingConfig, VikingProcess};
 use ai_launcher_core::shield::launcher::BrowserLauncher;
 use ai_launcher_core::voice::runtime::VoiceRuntime;
-use ai_launcher_core::openviking::{VikingProcess, config::VikingConfig};
 use commands::freecut::FreeCutState;
-use commands::service_hub::{VoiceRuntimeState, VikingState};
+use commands::service_hub::{VikingState, VoiceRuntimeState};
 use commands::shield::ShieldLauncherState;
 use state::AppState;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tauri::{Emitter, Manager};
 use tokio::sync::Mutex;
-
-
 
 /// Cross-platform base directory
 fn get_base_dir() -> PathBuf {
@@ -44,8 +42,7 @@ pub fn run() {
     };
 
     // FreeCut video editor state
-    let freecut_state =
-        FreeCutState::new(&base_dir).expect("Failed to initialize FreeCut state");
+    let freecut_state = FreeCutState::new(&base_dir).expect("Failed to initialize FreeCut state");
 
     // Viking context database process state
     let viking_config = VikingConfig::from_service_config(&base_dir);

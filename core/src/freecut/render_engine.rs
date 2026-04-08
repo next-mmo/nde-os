@@ -152,16 +152,8 @@ fn render_composed_frame(
                         cmd.args(["-i"]).arg(src_path.as_os_str());
 
                         // Get transform values.
-                        let x = item
-                            .transform
-                            .as_ref()
-                            .and_then(|t| t.x)
-                            .unwrap_or(0.0);
-                        let y = item
-                            .transform
-                            .as_ref()
-                            .and_then(|t| t.y)
-                            .unwrap_or(0.0);
+                        let x = item.transform.as_ref().and_then(|t| t.x).unwrap_or(0.0);
+                        let y = item.transform.as_ref().and_then(|t| t.y).unwrap_or(0.0);
                         let w = item
                             .transform
                             .as_ref()
@@ -243,7 +235,10 @@ fn render_composed_frame(
     } else {
         // Map the final label to output.
         let filter = filter_parts.join(";");
-        cmd.args(["-filter_complex", &format!("{filter};{last_label}null[out]")]);
+        cmd.args([
+            "-filter_complex",
+            &format!("{filter};{last_label}null[out]"),
+        ]);
         cmd.args(["-map", "[out]", "-frames:v", "1"]);
         cmd.arg(out.as_os_str());
     }
@@ -251,7 +246,9 @@ fn render_composed_frame(
     cmd.stdout(std::process::Stdio::null());
     cmd.stderr(std::process::Stdio::piped());
 
-    let output = cmd.output().context("failed to run ffmpeg for composed frame")?;
+    let output = cmd
+        .output()
+        .context("failed to run ffmpeg for composed frame")?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -275,20 +272,11 @@ fn collect_visible_items(timeline: &ProjectTimeline, frame: u32) -> Vec<&Timelin
 }
 
 /// Verify a rendered frame's actual pixel dimensions using FFprobe.
-pub fn verify_frame_dimensions(
-    frame_path: &Path,
-    ffprobe_bin: Option<&str>,
-) -> Result<(u32, u32)> {
+pub fn verify_frame_dimensions(frame_path: &Path, ffprobe_bin: Option<&str>) -> Result<(u32, u32)> {
     let bin = ffprobe_bin.unwrap_or("ffprobe");
 
     let output = std::process::Command::new(bin)
-        .args([
-            "-v",
-            "quiet",
-            "-print_format",
-            "json",
-            "-show_streams",
-        ])
+        .args(["-v", "quiet", "-print_format", "json", "-show_streams"])
         .arg(frame_path.as_os_str())
         .output()
         .context("failed to run ffprobe on rendered frame")?;
@@ -337,9 +325,7 @@ pub fn generate_test_video(
             "-f",
             "lavfi",
             "-i",
-            &format!(
-                "testsrc=size={width}x{height}:rate={fps}:duration={duration_secs:.1}"
-            ),
+            &format!("testsrc=size={width}x{height}:rate={fps}:duration={duration_secs:.1}"),
             "-c:v",
             "libx264",
             "-preset",
@@ -413,11 +399,7 @@ pub fn export_video(
 
     // ── Build FFmpeg arguments ──────────────────────────────────────────
 
-    let mut args: Vec<String> = vec![
-        "-y".into(),
-        "-progress".into(),
-        "pipe:1".into(),
-    ];
+    let mut args: Vec<String> = vec!["-y".into(), "-progress".into(), "pipe:1".into()];
 
     // Input 0: solid background for the full duration.
     args.extend([
@@ -455,11 +437,23 @@ pub fn export_video(
                 let sfps = item.source_fps.unwrap_or(fps as f64);
                 let src_start = item.source_start.unwrap_or(0) as f64 / sfps;
 
-                let w = item.transform.as_ref().and_then(|t| t.width).unwrap_or(res.width as f64);
-                let h = item.transform.as_ref().and_then(|t| t.height).unwrap_or(res.height as f64);
+                let w = item
+                    .transform
+                    .as_ref()
+                    .and_then(|t| t.width)
+                    .unwrap_or(res.width as f64);
+                let h = item
+                    .transform
+                    .as_ref()
+                    .and_then(|t| t.height)
+                    .unwrap_or(res.height as f64);
                 let x = item.transform.as_ref().and_then(|t| t.x).unwrap_or(0.0);
                 let y = item.transform.as_ref().and_then(|t| t.y).unwrap_or(0.0);
-                let opacity = item.transform.as_ref().and_then(|t| t.opacity).unwrap_or(1.0);
+                let opacity = item
+                    .transform
+                    .as_ref()
+                    .and_then(|t| t.opacity)
+                    .unwrap_or(1.0);
 
                 let tr = format!("[vt{input_idx}]");
                 let sc = format!("[vs{input_idx}]");
@@ -534,8 +528,16 @@ pub fn export_video(
                 }
                 let fsize = item.font_size.unwrap_or(60.0) as u32;
                 let color = item.color.as_deref().unwrap_or("white");
-                let x = item.transform.as_ref().and_then(|t| t.x).unwrap_or((res.width / 2) as f64);
-                let y = item.transform.as_ref().and_then(|t| t.y).unwrap_or((res.height / 2) as f64);
+                let x = item
+                    .transform
+                    .as_ref()
+                    .and_then(|t| t.x)
+                    .unwrap_or((res.width / 2) as f64);
+                let y = item
+                    .transform
+                    .as_ref()
+                    .and_then(|t| t.y)
+                    .unwrap_or((res.height / 2) as f64);
                 let t0 = item.from as f64 / fps as f64;
                 let t1 = (item.from + item.duration_in_frames) as f64 / fps as f64;
 
@@ -588,17 +590,24 @@ pub fn export_video(
     };
 
     args.extend([
-        "-c:v".into(), encoder.to_string(),
-        "-preset".into(), preset.to_string(),
-        "-crf".into(), crf.to_string(),
-        "-pix_fmt".into(), "yuv420p".to_string(),
-        "-r".into(), fps.to_string(),
+        "-c:v".into(),
+        encoder.to_string(),
+        "-preset".into(),
+        preset.to_string(),
+        "-crf".into(),
+        crf.to_string(),
+        "-pix_fmt".into(),
+        "yuv420p".to_string(),
+        "-r".into(),
+        fps.to_string(),
     ]);
 
     if has_audio {
         args.extend([
-            "-c:a".into(), "aac".to_string(),
-            "-b:a".into(), "192k".to_string(),
+            "-c:a".into(),
+            "aac".to_string(),
+            "-b:a".into(),
+            "192k".to_string(),
         ]);
     }
 
@@ -626,7 +635,9 @@ pub fn export_video(
         }
     }
 
-    let output = child.wait_with_output().context("ffmpeg export process failed")?;
+    let output = child
+        .wait_with_output()
+        .context("ffmpeg export process failed")?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -634,7 +645,10 @@ pub fn export_video(
         if has_audio && stderr.contains("does not contain any stream") {
             return export_video_no_audio(project, config, ffmpeg_bin, on_progress);
         }
-        bail!("export failed: {}", stderr.chars().take(500).collect::<String>());
+        bail!(
+            "export failed: {}",
+            stderr.chars().take(500).collect::<String>()
+        );
     }
 
     Ok(output_path)
@@ -654,7 +668,12 @@ fn export_video_no_audio(
     let total_frames = if project.duration > 0 {
         project.duration
     } else {
-        timeline.items.iter().map(|i| i.from + i.duration_in_frames).max().unwrap_or(0)
+        timeline
+            .items
+            .iter()
+            .map(|i| i.from + i.duration_in_frames)
+            .max()
+            .unwrap_or(0)
     };
     let total_duration = total_frames as f64 / fps as f64;
     let output_path = PathBuf::from(&config.output_path);
@@ -663,8 +682,13 @@ fn export_video_no_audio(
 
     // Background.
     args.extend([
-        "-f".into(), "lavfi".into(), "-i".into(),
-        format!("color=c={}:s={}x{}:d={:.6}:r={}", res.background_color, res.width, res.height, total_duration, fps),
+        "-f".into(),
+        "lavfi".into(),
+        "-i".into(),
+        format!(
+            "color=c={}:s={}x{}:d={:.6}:r={}",
+            res.background_color, res.width, res.height, total_duration, fps
+        ),
     ]);
 
     let mut input_idx = 1u32;
@@ -688,8 +712,16 @@ fn export_video_no_audio(
                 let speed = item.speed.unwrap_or(1.0);
                 let sfps = item.source_fps.unwrap_or(fps as f64);
                 let src_start = item.source_start.unwrap_or(0) as f64 / sfps;
-                let w = item.transform.as_ref().and_then(|t| t.width).unwrap_or(res.width as f64);
-                let h = item.transform.as_ref().and_then(|t| t.height).unwrap_or(res.height as f64);
+                let w = item
+                    .transform
+                    .as_ref()
+                    .and_then(|t| t.width)
+                    .unwrap_or(res.width as f64);
+                let h = item
+                    .transform
+                    .as_ref()
+                    .and_then(|t| t.height)
+                    .unwrap_or(res.height as f64);
                 let x = item.transform.as_ref().and_then(|t| t.x).unwrap_or(0.0);
                 let y = item.transform.as_ref().and_then(|t| t.y).unwrap_or(0.0);
 
@@ -711,11 +743,21 @@ fn export_video_no_audio(
             }
             ItemType::Text => {
                 let text = item.text.as_deref().unwrap_or("");
-                if text.is_empty() { continue; }
+                if text.is_empty() {
+                    continue;
+                }
                 let fsize = item.font_size.unwrap_or(60.0) as u32;
                 let color = item.color.as_deref().unwrap_or("white");
-                let x = item.transform.as_ref().and_then(|t| t.x).unwrap_or((res.width / 2) as f64);
-                let y = item.transform.as_ref().and_then(|t| t.y).unwrap_or((res.height / 2) as f64);
+                let x = item
+                    .transform
+                    .as_ref()
+                    .and_then(|t| t.x)
+                    .unwrap_or((res.width / 2) as f64);
+                let y = item
+                    .transform
+                    .as_ref()
+                    .and_then(|t| t.y)
+                    .unwrap_or((res.height / 2) as f64);
                 let t0 = item.from as f64 / fps as f64;
                 let t1 = (item.from + item.duration_in_frames) as f64 / fps as f64;
                 let escaped = text.replace('\'', "'\\''").replace(':', "\\:");
@@ -734,7 +776,9 @@ fn export_video_no_audio(
 
     let encoder = if config.hw_accel.is_some() {
         config.hw_accel.as_deref().unwrap_or("libx264")
-    } else { "libx264" };
+    } else {
+        "libx264"
+    };
     let (preset, crf) = match config.quality.as_str() {
         "low" => ("veryfast", "28"),
         "medium" => ("medium", "23"),
@@ -745,11 +789,16 @@ fn export_video_no_audio(
     args.extend(["-filter_complex".into(), filter]);
     args.extend(["-map".into(), "[vout]".into()]);
     args.extend([
-        "-c:v".into(), encoder.to_string(),
-        "-preset".into(), preset.to_string(),
-        "-crf".into(), crf.to_string(),
-        "-pix_fmt".into(), "yuv420p".to_string(),
-        "-r".into(), fps.to_string(),
+        "-c:v".into(),
+        encoder.to_string(),
+        "-preset".into(),
+        preset.to_string(),
+        "-crf".into(),
+        crf.to_string(),
+        "-pix_fmt".into(),
+        "yuv420p".to_string(),
+        "-r".into(),
+        fps.to_string(),
         "-an".into(),
     ]);
     args.push(config.output_path.clone());
@@ -773,10 +822,15 @@ fn export_video_no_audio(
         }
     }
 
-    let output = child.wait_with_output().context("ffmpeg no-audio export failed")?;
+    let output = child
+        .wait_with_output()
+        .context("ffmpeg no-audio export failed")?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        bail!("export failed (no-audio fallback): {}", stderr.chars().take(500).collect::<String>());
+        bail!(
+            "export failed (no-audio fallback): {}",
+            stderr.chars().take(500).collect::<String>()
+        );
     }
 
     Ok(output_path)

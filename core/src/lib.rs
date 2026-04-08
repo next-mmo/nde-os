@@ -12,8 +12,8 @@ pub mod channels;
 pub mod knowledge;
 pub mod llm;
 pub mod memory;
-pub mod security;
 pub mod secrets;
+pub mod security;
 pub mod skills;
 pub mod tools;
 

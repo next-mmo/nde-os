@@ -95,7 +95,10 @@ impl AppManager {
             AppRuntime::Node => "Node.js",
             AppRuntime::Custom => "Custom",
         };
-        println!("\n  [install] {} — runtime: {}", manifest.name, runtime_label);
+        println!(
+            "\n  [install] {} — runtime: {}",
+            manifest.name, runtime_label
+        );
 
         // 1. Create sandbox
         println!("  [1/5] Creating sandbox...");
@@ -167,7 +170,10 @@ impl AppManager {
         println!("  [3/5] Setting up Python environment...");
         let uv = self.uv_for_app(&manifest.id, &manifest.python_version);
         if let Err(e) = uv.ensure_python() {
-            println!("  [uv] Python setup skipped: {} (will use system Python)", e);
+            println!(
+                "  [uv] Python setup skipped: {} (will use system Python)",
+                e
+            );
         }
 
         // Create venv
@@ -175,7 +181,10 @@ impl AppManager {
         let has_venv = match uv.create_venv() {
             Ok(()) => true,
             Err(e) => {
-                println!("  [uv] Venv creation skipped: {} (will use system Python)", e);
+                println!(
+                    "  [uv] Venv creation skipped: {} (will use system Python)",
+                    e
+                );
                 false
             }
         };
@@ -184,7 +193,10 @@ impl AppManager {
         if has_venv && !manifest.pip_deps.is_empty() {
             println!("  [5/5] Installing dependencies via uv...");
             if let Err(e) = uv.install_deps(&manifest.pip_deps) {
-                println!("  [uv] Dep install issue: {} (app may need manual setup)", e);
+                println!(
+                    "  [uv] Dep install issue: {} (app may need manual setup)",
+                    e
+                );
             }
             let req_file = sandbox.root().join("requirements.txt");
             uv.install_requirements(&req_file).ok();
@@ -213,16 +225,25 @@ impl AppManager {
         println!("  [4/5] Setting up Python environment (for native modules)...");
         let uv = self.uv_for_app(&manifest.id, &manifest.python_version);
         if let Err(e) = uv.ensure_python() {
-            println!("  [uv] Python setup skipped: {} (native modules may fail)", e);
+            println!(
+                "  [uv] Python setup skipped: {} (native modules may fail)",
+                e
+            );
         }
         let _ = uv.create_venv(); // best-effort, not fatal for Node apps
 
         // Install Node.js deps
         let package_json = sandbox.root().join("package.json");
         if package_json.exists() {
-            println!("  [5/5] Installing Node.js dependencies via {}...", node_env.package_manager().display_name());
+            println!(
+                "  [5/5] Installing Node.js dependencies via {}...",
+                node_env.package_manager().display_name()
+            );
             if let Err(e) = node_env.install_deps() {
-                println!("  [node] Dep install issue: {} (app may need manual setup)", e);
+                println!(
+                    "  [node] Dep install issue: {} (app may need manual setup)",
+                    e
+                );
             }
         } else {
             println!("  [5/5] No package.json found");

@@ -93,7 +93,13 @@ impl AppEvent {
     }
 
     /// Convenience: create an install step with detail.
-    pub fn install_step_detail(app_id: &str, step: u32, total: u32, msg: &str, detail: &str) -> Self {
+    pub fn install_step_detail(
+        app_id: &str,
+        step: u32,
+        total: u32,
+        msg: &str,
+        detail: &str,
+    ) -> Self {
         Self::Step {
             app_id: app_id.to_string(),
             phase: EventPhase::Install,
@@ -227,12 +233,19 @@ mod tests {
     #[tokio::test]
     async fn test_event_bus_send_receive() {
         let (bus, mut rx) = EventBus::new();
-        bus.emit(AppEvent::install_step("test-app", 1, 3, "Creating sandbox..."));
+        bus.emit(AppEvent::install_step(
+            "test-app",
+            1,
+            3,
+            "Creating sandbox...",
+        ));
 
         let event = rx.recv().await.unwrap();
         assert_eq!(event.app_id(), "test-app");
         match event {
-            AppEvent::Step { step, total_steps, .. } => {
+            AppEvent::Step {
+                step, total_steps, ..
+            } => {
                 assert_eq!(step, 1);
                 assert_eq!(total_steps, 3);
             }

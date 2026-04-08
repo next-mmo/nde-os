@@ -154,9 +154,7 @@ pub fn install_service(service_id: &str, base_dir: &Path) -> Result<String> {
             let vp = VikingProcess::new(config, base_dir);
             let rt = tokio::runtime::Handle::try_current()
                 .map(|_| None)
-                .unwrap_or_else(|_| {
-                    Some(tokio::runtime::Runtime::new().expect("tokio runtime"))
-                });
+                .unwrap_or_else(|_| Some(tokio::runtime::Runtime::new().expect("tokio runtime")));
             let result = if let Some(ref rt) = rt {
                 rt.block_on(vp.ensure_installed())
             } else {
@@ -209,10 +207,7 @@ fn detect_python_version() -> Option<String> {
     }
     let stdout = String::from_utf8_lossy(&output.stdout);
     // "Python 3.11.x"
-    stdout
-        .trim()
-        .strip_prefix("Python ")
-        .map(|v| v.to_string())
+    stdout.trim().strip_prefix("Python ").map(|v| v.to_string())
 }
 
 #[cfg(test)]
