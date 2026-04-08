@@ -739,10 +739,18 @@ impl LlmProvider for OmxProvider {
             ));
         }
 
-        // Always prefer API mode for programmatic use — the `omx` CLI is
-        // terminal-centric and its `exec` subcommand rejects piped stdin
-        // with "stdin is not a terminal".  CLI mode is only used when the
-        // user explicitly points to a `codex` binary via base_url config.
+        // We fixed the CLI's TTY issues by injecting CI=true.
+        // We should prefer the CLI if available as direct API requests against api.openai.com using
+        // ChatGPT proxy tokens often trigger 429 Too Many Requests or usage limits.
+        if let Some(omx) = &self.omx_binary {
+            match self.chat_via_cli(omx, messages, tools).await {
+                Ok(resp) => return Ok(resp),
+                Err(e) => {
+                    tracing::warn!("omx CLI failed, falling back to API: {}", e);
+                }
+            }
+        }
+
         self.chat_via_api(messages, tools).await
     }
 
