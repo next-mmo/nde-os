@@ -505,3 +505,32 @@ fn sandbox_omx_path() -> Option<String> {
 
     Some(omx_bin.to_string_lossy().to_string())
 }
+
+/// Resolve the `codex` binary on global PATH.
+/// Returns the resolved path string, or None if not found.
+pub fn resolve_codex_binary() -> Option<String> {
+    let which_check = if cfg!(windows) {
+        std::process::Command::new("cmd")
+            .args(["/C", "where codex"])
+            .output()
+    } else {
+        std::process::Command::new("sh")
+            .args(["-c", "which codex"])
+            .output()
+    };
+    if let Ok(output) = which_check {
+        if output.status.success() {
+            // `where` on Windows can return multiple lines; take the first.
+            let path = String::from_utf8_lossy(&output.stdout)
+                .lines()
+                .next()
+                .unwrap_or("")
+                .trim()
+                .to_string();
+            if !path.is_empty() {
+                return Some(path);
+            }
+        }
+    }
+    None
+}

@@ -500,27 +500,34 @@ pub struct CodexOAuthProvider {
     model: String,
     data_dir: PathBuf,
     workspace_dir: PathBuf,
+    /// Resolved `codex` binary path, or None → API-only mode.
+    codex_binary: Option<String>,
 }
 
 impl CodexOAuthProvider {
     pub fn new(model: &str, data_dir: &Path) -> Result<Self> {
+        // Try to find the `codex` binary on PATH.
+        let codex_binary = super::resolve_codex_binary();
+        if codex_binary.is_none() {
+            tracing::info!(
+                "codex CLI not found on PATH — codex_oauth provider will use direct API mode"
+            );
+        }
         Ok(Self {
             model: model.to_string(),
             data_dir: data_dir.to_path_buf(),
             workspace_dir: data_dir.join("workspace"),
+            codex_binary,
         })
     }
-}
 
-#[async_trait]
-impl LlmProvider for CodexOAuthProvider {
-    async fn chat(&self, messages: &[Message], tools: &[ToolDef]) -> Result<LlmResponse> {
-        if !CodexOAuthStatus::from_store(&self.data_dir).authenticated {
-            return Err(anyhow::anyhow!(
-                "Codex not authenticated — sign in via LLM Providers settings"
-            ));
-        }
-
+    /// CLI mode: spawn the `codex` binary as a subprocess.
+    async fn chat_via_cli(
+        &self,
+        codex_bin: &str,
+        messages: &[Message],
+        tools: &[ToolDef],
+    ) -> Result<LlmResponse> {
         std::fs::create_dir_all(&self.workspace_dir).with_context(|| {
             format!(
                 "Failed to initialize Codex workspace at {}",
@@ -529,7 +536,7 @@ impl LlmProvider for CodexOAuthProvider {
         })?;
 
         let prompt = render_exec_prompt(messages, tools);
-        let mut child = tokio::process::Command::new("codex")
+        let mut child = tokio::process::Command::new(codex_bin)
             .arg("exec")
             .arg("--skip-git-repo-check")
             .arg("--ephemeral")
@@ -582,6 +589,62 @@ impl LlmProvider for CodexOAuthProvider {
         }
 
         parse_exec_output(&output.stdout)
+    }
+
+    /// API fallback: call the OpenAI API directly using Codex OAuth tokens.
+    async fn chat_via_api(
+        &self,
+        messages: &[Message],
+        tools: &[ToolDef],
+    ) -> Result<LlmResponse> {
+        let token = get_codex_access_token().or_else(|_| {
+            let mut store = CodexTokenStore::load(&self.data_dir)?;
+            tokio::task::block_in_place(|| {
+                tokio::runtime::Handle::current()
+                    .block_on(store.get_valid_token(&self.data_dir))
+            })
+        });
+
+        let key = match token {
+            Ok(k) => k,
+            Err(_) => {
+                return Err(anyhow::anyhow!(
+                    "Codex not authenticated — sign in via LLM Providers settings or run `codex login`"
+                ));
+            }
+        };
+
+        let provider = super::openai_compat::OpenAiCompatProvider::new(
+            "https://api.openai.com/v1",
+            &self.model,
+            &key,
+        );
+        provider.chat(messages, tools).await
+    }
+}
+
+#[async_trait]
+impl LlmProvider for CodexOAuthProvider {
+    async fn chat(&self, messages: &[Message], tools: &[ToolDef]) -> Result<LlmResponse> {
+        if !CodexOAuthStatus::from_store(&self.data_dir).authenticated {
+            return Err(anyhow::anyhow!(
+                "Codex not authenticated — sign in via LLM Providers settings"
+            ));
+        }
+
+        // Prefer CLI if available — it routes through Codex's own proxy and
+        // avoids 429 rate-limit issues that direct api.openai.com calls hit.
+        if let Some(codex) = &self.codex_binary {
+            match self.chat_via_cli(codex, messages, tools).await {
+                Ok(resp) => return Ok(resp),
+                Err(e) => {
+                    tracing::warn!("Codex CLI failed, falling back to API: {}", e);
+                }
+            }
+        }
+
+        // Fallback: direct API call using OAuth access token.
+        self.chat_via_api(messages, tools).await
     }
 
     fn name(&self) -> &str {
