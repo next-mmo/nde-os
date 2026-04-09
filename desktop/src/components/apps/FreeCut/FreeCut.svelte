@@ -596,6 +596,20 @@
     } catch (e) { console.error(e); }
   }
 
+  async function deleteMedia(media: MediaItem) {
+    try {
+      await invoke("freecut_delete_media", { mediaId: media.id });
+      mediaLibrary = mediaLibrary.filter((m) => m.id !== media.id);
+      if (dubbingSession.sourceMediaId === media.id) {
+        const next = mediaLibrary.find((m) => m.mediaType !== "image") ?? null;
+        patchCurrentProjectDubbing({
+          sourceMediaId: next?.id ?? null,
+          sourceMediaPath: next?.filePath ?? null,
+        });
+      }
+    } catch (e) { console.error(e); }
+  }
+
   async function detectDubbingTools() {
     try {
       dubbingError = null;
@@ -1877,6 +1891,13 @@
                         {#if media.durationSecs} · {formatDuration(media.durationSecs)}{/if}
                       </p>
                     </div>
+                    <button
+                      class="shrink-0 p-1 rounded hover:bg-red-500/20 text-white/0 group-hover:text-white/30 hover:!text-red-400 transition-all"
+                      onclick={(e) => { e.stopPropagation(); deleteMedia(media); }}
+                      aria-label="Delete media"
+                    >
+                      <Trash2 class="w-3.5 h-3.5" />
+                    </button>
                   </div>
                 {/each}
               </div>

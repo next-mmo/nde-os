@@ -343,6 +343,11 @@ pub fn start_telegram_gateway(
                                             format!("Shield research request: {}", topic),
                                         );
                                         let prompt = commands::build_research_shield_prompt(topic);
+                                        commands::sync_agent_provider_from_llm(
+                                            &agent_manager,
+                                            &llm_manager,
+                                        )
+                                        .await;
                                         let raw = commands::process_with_agent(&prompt, &agent_manager).await;
                                         commands::format_research_response(topic, &raw)
                                     }
@@ -365,11 +370,21 @@ pub fn start_telegram_gateway(
                                             format!("Research request: {}", topic),
                                         );
                                         let prompt = commands::build_research_prompt(topic);
+                                        commands::sync_agent_provider_from_llm(
+                                            &agent_manager,
+                                            &llm_manager,
+                                        )
+                                        .await;
                                         let raw = commands::process_with_agent(&prompt, &agent_manager).await;
                                         commands::format_research_response(topic, &raw)
                                     }
                                 } else {
                                     let prompt = session::build_context(&sessions, chat_id, &text);
+                                    commands::sync_agent_provider_from_llm(
+                                        &agent_manager,
+                                        &llm_manager,
+                                    )
+                                    .await;
                                     commands::process_with_agent(&prompt, &agent_manager).await
                                 };
 

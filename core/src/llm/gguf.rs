@@ -688,9 +688,10 @@ impl GgufProvider {
         let server_bin = self.ensure_server_binary().await?;
         self.ensure_model().await?;
 
-        // Use larger context for agent workflows; GPU can handle it
+        // Agent workflows (research, tool calls) need ample context.
+        // Most GGUF models support 32K+ natively; GPU can comfortably do 32K.
         let has_gpu = Self::has_nvidia_gpu();
-        let ctx_size = if has_gpu { "16384" } else { "8192" };
+        let ctx_size = if has_gpu { "32768" } else { "16384" };
 
         tracing::info!(
             bin = %server_bin.display(),

@@ -461,7 +461,7 @@
                   <div class="engine-row-info">
                     <span class="engine-row-name">{engineLabel(eng.engine)}</span>
                     <span class="engine-row-version">v{eng.version}</span>
-                    {#if settingsLatestVersions[eng.engine] && eng.version !== settingsLatestVersions[eng.engine]}
+                    {#if settingsLatestVersions[eng.engine] && eng.version !== settingsLatestVersions[eng.engine] && !status?.installed_engines.some(ie => ie.engine === eng.engine && ie.version === settingsLatestVersions[eng.engine])}
                       <span class="update-badge">Update available: v{settingsLatestVersions[eng.engine]}</span>
                     {:else if settingsLatestVersions[eng.engine] && eng.version === settingsLatestVersions[eng.engine]}
                       <span class="up-to-date-badge">✓ Up to date</span>
@@ -470,7 +470,7 @@
                     {/if}
                   </div>
                   <div class="engine-row-actions">
-                    {#if settingsLatestVersions[eng.engine] && eng.version !== settingsLatestVersions[eng.engine]}
+                    {#if settingsLatestVersions[eng.engine] && eng.version !== settingsLatestVersions[eng.engine] && !status?.installed_engines.some(ie => ie.engine === eng.engine && ie.version === settingsLatestVersions[eng.engine])}
                       <button class="action-btn primary" onclick={() => downloadEngine(eng.engine, settingsLatestVersions[eng.engine])} disabled={downloading}>
                         {downloading ? downloadProgress : `⬆ Update to v${settingsLatestVersions[eng.engine]}`}
                       </button>
