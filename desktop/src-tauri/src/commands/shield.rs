@@ -285,9 +285,164 @@ pub fn get_available_engines() -> Vec<launcher::AvailableEngine> {
     launcher::get_available_engines()
 }
 
+// ─── Android Emulator/Device Commands ──────────────────────────────
+
+#[derive(Serialize)]
+pub struct AdbStatusResponse {
+    pub adb_available: bool,
+    pub emulator_available: bool,
+}
+
+#[tauri::command]
+pub fn shield_adb_status() -> AdbStatusResponse {
+    use ai_launcher_core::shield::emulator;
+    AdbStatusResponse {
+        adb_available: emulator::is_adb_available(),
+        emulator_available: emulator::is_android_sdk_available(),
+    }
+}
+
+#[derive(Serialize)]
+pub struct AdbDeviceResponse {
+    pub serial: String,
+    pub status: String,
+    pub avd_name: Option<String>,
+    pub is_emulator: bool,
+    pub display_name: String,
+    /// "avd" | "ldplayer" | "nox" | "tcp" | "usb"
+    pub device_type: String,
+}
+
+fn classify_device_type(serial: &str) -> String {
+    if serial.starts_with("emulator-") {
+        "avd".to_string()
+    } else if serial.starts_with("127.0.0.1:555") || serial.starts_with("localhost:555") {
+        // LDPlayer uses sequential ports starting from 5555
+        "ldplayer".to_string()
+    } else if serial.starts_with("127.0.0.1:620") || serial.starts_with("localhost:620") {
+        // Nox uses ports starting from 62001
+        "nox".to_string()
+    } else if serial.contains(':') {
+        "tcp".to_string()
+    } else {
+        "usb".to_string()
+    }
+}
+
+#[tauri::command]
+pub fn shield_list_android_devices(
+    state: tauri::State<'_, AppState>,
+) -> Result<Vec<AdbDeviceResponse>, String> {
+    use ai_launcher_core::shield::emulator::EmulatorManager;
+    let mgr = EmulatorManager::new(&state.base_dir).map_err(|e| e.to_string())?;
+    let devices = mgr.list_devices().map_err(|e| e.to_string())?;
+    Ok(devices
+        .into_iter()
+        .map(|d| AdbDeviceResponse {
+            status: d.status.to_string(),
+            avd_name: d.avd_name.clone(),
+            is_emulator: d.is_emulator(),
+            display_name: d.display_name(),
+            device_type: classify_device_type(&d.serial),
+            serial: d.serial,
+        })
+        .collect())
+}
+
+#[derive(Serialize)]
+pub struct AvdResponse {
+    pub name: String,
+}
+
+#[tauri::command]
+pub fn shield_list_avds(
+    state: tauri::State<'_, AppState>,
+) -> Result<Vec<AvdResponse>, String> {
+    use ai_launcher_core::shield::emulator::EmulatorManager;
+    let mgr = EmulatorManager::new(&state.base_dir).map_err(|e| e.to_string())?;
+    let avds = mgr.list_avds().map_err(|e| e.to_string())?;
+    Ok(avds.into_iter().map(|a| AvdResponse { name: a.name }).collect())
+}
+
+#[tauri::command]
+pub fn shield_launch_avd(
+    state: tauri::State<'_, AppState>,
+    avd_name: String,
+) -> Result<(), String> {
+    use ai_launcher_core::shield::emulator::EmulatorManager;
+    let mgr = EmulatorManager::new(&state.base_dir).map_err(|e| e.to_string())?;
+    mgr.launch_avd(&avd_name).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn shield_stop_device(
+    state: tauri::State<'_, AppState>,
+    serial: String,
+) -> Result<(), String> {
+    use ai_launcher_core::shield::emulator::EmulatorManager;
+    let mgr = EmulatorManager::new(&state.base_dir).map_err(|e| e.to_string())?;
+    mgr.stop_device(&serial).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn shield_adb_connect(
+    state: tauri::State<'_, AppState>,
+    address: String,
+) -> Result<(), String> {
+    use ai_launcher_core::shield::emulator::EmulatorManager;
+    let mgr = EmulatorManager::new(&state.base_dir).map_err(|e| e.to_string())?;
+    mgr.adb_connect(&address).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn shield_configure_proxy(
+    state: tauri::State<'_, AppState>,
+    serial: String,
+    host: String,
+    port: u16,
+) -> Result<(), String> {
+    use ai_launcher_core::shield::emulator::EmulatorManager;
+    let mgr = EmulatorManager::new(&state.base_dir).map_err(|e| e.to_string())?;
+    mgr.configure_proxy(&serial, &host, port)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn shield_clear_proxy(
+    state: tauri::State<'_, AppState>,
+    serial: String,
+) -> Result<(), String> {
+    use ai_launcher_core::shield::emulator::EmulatorManager;
+    let mgr = EmulatorManager::new(&state.base_dir).map_err(|e| e.to_string())?;
+    mgr.clear_proxy(&serial).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn shield_device_screenshot(
+    state: tauri::State<'_, AppState>,
+    serial: String,
+) -> Result<String, String> {
+    use ai_launcher_core::shield::emulator::EmulatorManager;
+    let mgr = EmulatorManager::new(&state.base_dir).map_err(|e| e.to_string())?;
+    let path = mgr.take_screenshot(&serial).map_err(|e| e.to_string())?;
+    Ok(path.display().to_string())
+}
+
+#[tauri::command]
+pub fn shield_open_url_on_device(
+    state: tauri::State<'_, AppState>,
+    serial: String,
+    url: String,
+) -> Result<(), String> {
+    use ai_launcher_core::shield::emulator::EmulatorManager;
+    let mgr = EmulatorManager::new(&state.base_dir).map_err(|e| e.to_string())?;
+    mgr.open_url(&serial, &url).map_err(|e| e.to_string())
+}
+
 // ─── Managed State ─────────────────────────────────────────────────
 
 /// Tauri-managed state for the browser launcher (async-safe).
 pub struct ShieldLauncherState {
     pub launcher: Arc<Mutex<BrowserLauncher>>,
 }
+

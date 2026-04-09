@@ -33,6 +33,14 @@
     "core:event:allow-emit-to",
     "core:event:allow-listen",
     "core:event:allow-unlisten",
-    "core:webview:allow-create-webview-window"
+    "core:webview:allow-create-webview-window",
+    {
+      "identifier": "core:default",
+      "allow": [
+        {
+          "path": "$APPLOCALDATA/**"
+        }
+      ]
+    }
   ]
 }

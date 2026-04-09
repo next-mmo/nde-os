@@ -1,6 +1,6 @@
 # NDE-OS Feature Status Tracker
 
-> **Last Updated:** 2026-04-08  
+> **Last Updated:** 2026-04-10  
 > **Legend:** ✅ Working | ⚠️ Partial | ❌ Broken | 🔲 Not Tested  
 > **Severity:** 🔴 Critical | 🟠 Major | 🟡 Minor | 🔵 Cosmetic
 
@@ -114,6 +114,23 @@
 | 9.2 | Add / configure providers (API keys) | ✅ | | `POST /api/models/providers` + Codex OAuth flow |
 | 9.3 | List available models | ✅ | | `GET /api/models` + `GET /api/models/local` + `GET /api/models/recommendations` |
 | 9.4 | Test provider connection | ✅ | | `POST /api/models/verify` validates provider health |
+| 9.5 | OpenRouter provider | ✅ | | OpenAI-compat provider at `openrouter.ai/api/v1`; env `OPENROUTER_API_KEY` |
+
+### Supported LLM Providers
+
+| Provider | Type | Default Model | Auth |
+|----------|------|---------------|------|
+| GGUF (Local) | Auto-bootstrap llama.cpp | qwen2.5-0.5b | None (local) |
+| Ollama | Local | llama3.2 | None (local) |
+| OpenAI | Cloud API | gpt-4o | API key |
+| Anthropic | Cloud API | claude-sonnet-4 | API key |
+| OpenRouter | Cloud API (OpenAI-compat) | openai/gpt-4o | API key |
+| Groq | Cloud API (OpenAI-compat) | llama-3.3-70b | API key |
+| Together AI | Cloud API (OpenAI-compat) | llama-3.1-70b | API key |
+| Codex | OpenAI via Codex auth | gpt-4o-mini | OAuth |
+| Codex OAuth | ChatGPT session | gpt-4o | OAuth |
+| oh-my-codex | CLI + API fallback | gpt-4o | OAuth |
+| OpenAI Compatible | Custom endpoint | (user-defined) | API key |
 
 ## 10. Terminal
 
@@ -323,11 +340,14 @@
 
 | # | Feature | Status | Severity | Bug Description |
 |---|---------|--------|----------|-----------------|
-| 31.1 | Telegram bot long-polling | ✅ | | `gateway/telegram.rs` (32KB) — robust long-polling with auto-reconnect |
+| 31.1 | Telegram bot long-polling | ✅ | | `gateway/telegram.rs` — robust long-polling with auto-reconnect |
 | 31.2 | Kanban commands via Telegram | ✅ | | Direct-execution slash commands for task management |
 | 31.3 | Token encryption (AES-256-GCM) | ✅ | | `core/secrets.rs` with per-install key derivation |
 | 31.4 | Session isolation per chat | ✅ | | Context scoping via chat_id |
 | 31.5 | Gateway status monitoring | ✅ | | `GatewayState` with atomic counters (messages_received/sent) |
+| 31.6 | Provider sync before agent tasks | ✅ | | `sync_agent_provider_from_llm()` called before ALL `process_with_agent` calls (research, shield, generic chat) — **fixed: was only syncing on /model_switch** |
+| 31.7 | `/research` — deep autonomous researcher | ✅ | | 5-phase methodology: discovery (multi-angle search) → deep reading → cross-reference → CRAAP evaluation → cited report. 300s timeout. |
+| 31.8 | `/research_shield` — deep research via Shield Browser | ✅ | | Same 5-phase methodology but uses `shield_browse` (anti-detect headless browser) for page reads. Bypasses bot detection. 300s timeout. |
 
 ## 32. Agent Runtime
 
@@ -336,10 +356,12 @@
 | 32.1 | AgentManager lifecycle (boot/recover) | ✅ | | `on_boot()` recovers crashed tasks, starts heartbeat |
 | 32.2 | Task spawn + SSE streaming | ✅ | | `POST /api/agent/tasks` → spawn; `GET .../stream` → SSE |
 | 32.3 | Task cancel | ✅ | | `POST /api/agent/tasks/{id}/cancel` |
-| 32.4 | Provider auto-sync on model switch | ✅ | | `sync_agent_provider()` called after every switch/add/OAuth |
+| 32.4 | Provider auto-sync on model switch | ✅ | | `sync_agent_provider()` called after every switch/add/OAuth + before all gateway agent calls |
 | 32.5 | Chat autocomplete | ✅ | | `POST /api/agent/autocomplete` |
-| 32.6 | Tool registry | ✅ | | `GET /api/agent/tools` from `core/tools/builtin` |
+| 32.6 | Tool registry (34 tools) | ✅ | | `GET /api/agent/tools` — filesystem (6), shell (1), code (3), memory (4), knowledge (2), web (4 incl. shield_browse), git (1), kanban (6), system (7) |
 | 32.7 | Audit trail | ✅ | | Audit dir at `base_dir/audit` for task execution logs |
+| 32.8 | Shield Browse tool in agent | ✅ | | `shield_browse` added to `enabled_tools` — **fixed: was registered in ToolRegistry but missing from agent config** |
+| 32.9 | Deep research methodology | ✅ | | 5-phase pipeline: multi-angle discovery → deep reading (5-7 sources) → cross-referencing → CRAAP source evaluation → cited synthesis with confidence markers (✅/⚠️/❌) |
 
 ## 33. Security
 

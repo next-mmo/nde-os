@@ -119,6 +119,17 @@ pub fn run() {
             commands::shield::remove_shield_engine,
             commands::shield::resolve_engine_version,
             commands::shield::get_available_engines,
+            // shield android devices
+            commands::shield::shield_adb_status,
+            commands::shield::shield_list_android_devices,
+            commands::shield::shield_list_avds,
+            commands::shield::shield_launch_avd,
+            commands::shield::shield_stop_device,
+            commands::shield::shield_adb_connect,
+            commands::shield::shield_configure_proxy,
+            commands::shield::shield_clear_proxy,
+            commands::shield::shield_device_screenshot,
+            commands::shield::shield_open_url_on_device,
             // figma json
             commands::figma_json::convert_figma_json,
             commands::figma_json::resolve_document_styles,

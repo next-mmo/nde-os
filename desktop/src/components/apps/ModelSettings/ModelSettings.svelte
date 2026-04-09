@@ -42,6 +42,7 @@
     { value: "anthropic", label: "Anthropic", icon: "🧠" },
     { value: "groq", label: "Groq", icon: "⚡" },
     { value: "together", label: "Together AI", icon: "🤝" },
+    { value: "openrouter", label: "OpenRouter", icon: "🌐" },
     { value: "codex", label: "Codex", icon: "💻" },
     { value: "codex_oauth", label: "Codex (ChatGPT)", icon: "💻" },
     { value: "omx", label: "oh-my-codex (OMX)", icon: "🚀" },
@@ -55,6 +56,7 @@
     anthropic: { model: "claude-sonnet-4-20250514", baseUrl: "https://api.anthropic.com" },
     groq: { model: "llama-3.3-70b-versatile", baseUrl: "https://api.groq.com" },
     together: { model: "meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo", baseUrl: "https://api.together.xyz" },
+    openrouter: { model: "openai/gpt-4o", baseUrl: "https://openrouter.ai/api" },
     codex: { model: "gpt-4o-mini", baseUrl: "https://api.openai.com" },
     omx: { model: "gpt-4o", baseUrl: "" },
   };

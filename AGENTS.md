@@ -30,6 +30,39 @@ Monorepo: `core/` (Rust sandbox), `server/` (Rust API), `desktop/` (Tauri+Svelte
 - shadcn-svelte + Tailwind only. No custom `<style>` or raw CSS.
 - macOS Ventura aesthetic: blur, traffic-light controls (`@neodrag/svelte`), dock animations.
 
+### 2.1 State Management — Zustand (Mandatory)
+
+All **new** frontend state must use `zustand/vanilla` with the modular slice pattern. Do NOT use Svelte `writable()` or raw `$state()` for new stores. Legacy stores (`src/lib/stores/state.ts`, `src/state/desktop.svelte.ts`) are frozen — they may be consumed but not extended.
+
+**Modular slice pattern** (one file per domain):
+
+```ts
+// stores/my-feature.ts
+import { createStore } from 'zustand/vanilla';
+
+export interface MyFeatureState { /* readonly state fields */ }
+export interface MyFeatureActions { /* action methods */ }
+
+export const myFeatureStore = createStore<MyFeatureState & MyFeatureActions>()(
+  (set, get) => ({
+    // State
+    count: 0,
+    // Actions
+    increment: () => set((s) => ({ count: s.count + 1 })),
+  })
+);
+```
+
+**Rules**:
+
+1. **One slice per file** — e.g. `stores/playback.ts`, `stores/selection.ts`. No god-stores.
+2. **Barrel export** — every `stores/` directory must have an `index.ts` re-exporting all stores and types.
+3. **State ↔ Actions split** — always define separate `FooState` and `FooActions` interfaces, then merge in `createStore<FooState & FooActions>()`.
+4. **Svelte 5 bridge** — use `useStore(store)` from `lib/use-store.svelte.ts` inside `.svelte` components to get reactive proxy access. Never mutate state directly; always go through store actions.
+5. **No side-effects in stores** — API calls, localStorage, and Tauri IPC go in separate service modules. Stores only hold client state and synchronous logic.
+6. **Selectors for derived data** — use `useStore(store, selector)` or `subscribe` with a selector, not Svelte `$derived()` wrapping Zustand state.
+7. **Testable** — `zustand/vanilla` stores are framework-agnostic. Write unit tests that call `store.getState()` / `store.setState()` without any Svelte runtime.
+
 ## 3. Cross-Platform (No WSL)
 
 - Paths: `PathBuf::join()` only, never hardcode separators.

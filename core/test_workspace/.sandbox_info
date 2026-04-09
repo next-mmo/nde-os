@@ -1,7 +1,7 @@
 {
-  "arch": "aarch64",
-  "created_at": "2026-04-04T12:39:50.855672+00:00",
-  "platform": "macos",
+  "arch": "x86_64",
+  "created_at": "2026-04-09T17:49:49.137421800+00:00",
+  "platform": "windows",
   "readonly_paths": [],
-  "sandbox_root": "/Users/silarim/Documents/GitHub/nde-os/core/test_workspace"
+  "sandbox_root": "\\\\?\\C:\\Users\\dila\\Downloads\\ai-launcher-v0.2\\ai-launcher\\core\\test_workspace"
 }

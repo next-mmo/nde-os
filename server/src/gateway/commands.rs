@@ -705,66 +705,198 @@ pub(crate) fn try_emulator(text: &str, data_dir: &Path) -> Option<EmulatorAction
     None
 }
 
-/// Build a specialized research prompt for the AgentManager.
+/// Build a deep autonomous research prompt for the AgentManager.
+///
+/// Multi-phase methodology: discovery → deep reading → cross-referencing →
+/// CRAAP evaluation → cited synthesis report.
 pub(crate) fn build_research_prompt(topic: &str) -> String {
     format!(
-        "You are a research assistant. Research the following topic thoroughly and provide \
-        a comprehensive summary optimized for a chat message.\n\n\
-        Topic: {}\n\n\
-        Instructions:\n\
-        1. Use your web_search tool to find the latest, most relevant information.\n\
-        2. If you find useful URLs, use read_url to get more details from the best sources.\n\
-        3. Organize your findings as:\n\
-           • 📌 Key Findings (bullet points, most important first)\n\
-           • 📊 Details (brief elaboration on each finding)\n\
-           • 🔗 Sources (list URLs you referenced)\n\
-        4. Keep the total response under 3500 characters.\n\
-        5. Use plain text with emoji for formatting (no markdown).\n\
-        6. Focus on factual, recent, and actionable information.",
-        topic
+        r#"You are a deep autonomous research agent. Your job is to produce a rigorous, \
+fact-checked, cited research report on the topic below.
+
+TOPIC: {topic}
+
+══════════════════════════════════════════
+PHASE 1 — DISCOVERY (multiple search angles)
+══════════════════════════════════════════
+Run at least 2-3 different web_search queries from different angles:
+  • Main query: the topic directly
+  • Alternative phrasing or a more specific sub-question
+  • A query targeting recent news/developments (add "2025" or "2026" or "latest")
+Collect at least 8-10 candidate URLs across all searches.
+
+══════════════════════════════════════════
+PHASE 2 — DEEP READING (extract & attribute)
+══════════════════════════════════════════
+Use web_browse (or http_fetch) on the 5-7 most promising URLs.
+For each source, mentally note:
+  • Key claims or data points it makes
+  • Author/publisher and publication date
+  • Whether it cites its own sources
+
+══════════════════════════════════════════
+PHASE 3 — CROSS-REFERENCE & FACT-CHECK
+══════════════════════════════════════════
+Compare claims across sources:
+  • Which claims appear in 2+ independent sources? (high confidence)
+  • Which claims appear in only 1 source? (flag as unverified)
+  • Are there contradictions between sources? (note both sides)
+
+══════════════════════════════════════════
+PHASE 4 — CRAAP EVALUATION
+══════════════════════════════════════════
+Rate each source on the CRAAP framework (Currency, Relevance, Authority, Accuracy, Purpose).
+Assign each source a trust tier:
+  ⬢ HIGH — authoritative, recent, corroborated
+  ◈ MEDIUM — partially corroborated or older
+  ◇ LOW — single-source, opinion, or biased
+
+══════════════════════════════════════════
+PHASE 5 — FINAL REPORT (output this)
+══════════════════════════════════════════
+Format your final response EXACTLY as:
+
+🔬 Deep Research: {topic}
+━━━━━━━━━━━━━━━━━━━━━━━━
+
+📌 Executive Summary
+(2-3 sentence overview of the most important findings)
+
+📊 Key Findings
+(Numbered list. Each finding must cite its source as [N]. Mark confidence: ✅ confirmed by 2+ sources, ⚠️ single-source, ❌ contradicted)
+
+🔍 Analysis & Cross-References
+(Where sources agree, disagree, or fill different gaps. Note any contradictions.)
+
+📋 Source Quality (CRAAP)
+[1] URL — ⬢/◈/◇ TRUST — brief justification
+[2] URL — ⬢/◈/◇ TRUST — brief justification
+(etc.)
+
+⚠️ Caveats & Limitations
+(What you could not verify, what's missing, what needs human review)
+
+RULES:
+• Every factual claim MUST have a [N] citation.
+• Never fabricate a URL or claim. If you cannot find information, say so.
+• Keep total output under 6000 characters.
+• Use plain text with emoji — no markdown headers or bold.
+• Be direct, factual, and critical — not promotional."#,
+        topic = topic
     )
 }
 
-/// Build a research prompt that uses the Shield Browser for anti-detect browsing.
+/// Build a deep research prompt that uses the Shield Browser for anti-detect browsing.
 ///
-/// This prompt instructs the agent to prefer `shield_browse` over `web_browse`
+/// Same multi-phase methodology as `build_research_prompt` but instructs the agent
+/// to use `shield_browse` (headless anti-detect browser) instead of `web_browse`
 /// for accessing sites that may block regular scrapers.
 pub(crate) fn build_research_shield_prompt(topic: &str) -> String {
     format!(
-        "You are an advanced research assistant with access to an anti-detect Shield Browser. \
-        Research the following topic thoroughly using protected browsing.\n\n\
-        Topic: {}\n\n\
-        Instructions:\n\
-        1. Use web_search to find the most relevant URLs for this topic.\n\
-        2. For EACH promising URL, use shield_browse (NOT web_browse) to read the page.\n\
-           shield_browse uses a real headless browser with fingerprint spoofing that:\n\
-           - Renders JavaScript fully (SPAs, dynamic feeds)\n\
-           - Bypasses bot detection and anti-scraping measures\n\
-           - Spoofs browser fingerprints at the C++ level\n\
-        3. Read at least 3-5 sources using shield_browse for thorough coverage.\n\
-        4. Organize your findings as:\n\
-           🛡️ Shield Research: {}\n\
-           ─────────────────────\n\
-           📌 Key Findings (bullet points, most important first)\n\
-           📊 Details (brief elaboration on each finding)\n\
-           🔗 Sources (list URLs you successfully accessed)\n\
-        5. Keep the total response under 3500 characters.\n\
-        6. Use plain text with emoji for formatting (no markdown).\n\
-        7. Focus on the most recent, factual, and actionable information.\n\
-        8. If shield_browse fails on a URL, fall back to web_browse for that URL.",
-        topic, topic
+        r#"You are a deep autonomous research agent with access to the Shield Browser — \
+an anti-detect headless browser with C++-level fingerprint spoofing that renders \
+JavaScript, bypasses bot detection, and defeats anti-scraping measures.
+
+Your job is to produce a rigorous, fact-checked, cited research report.
+
+TOPIC: {topic}
+
+══════════════════════════════════════════
+PHASE 1 — DISCOVERY (multiple search angles)
+══════════════════════════════════════════
+Run at least 2-3 different web_search queries from different angles:
+  • Main query: the topic directly
+  • Alternative phrasing or a more specific sub-question
+  • A query targeting recent news/developments (add "2025" or "2026" or "latest")
+Collect at least 8-10 candidate URLs across all searches.
+
+══════════════════════════════════════════
+PHASE 2 — DEEP READING via Shield Browser
+══════════════════════════════════════════
+Use shield_browse (NOT web_browse) on the 5-7 most promising URLs.
+shield_browse launches a real browser with fingerprint spoofing — it can access
+sites that block regular scrapers and fully renders JavaScript content.
+If shield_browse fails on a URL, fall back to web_browse for that URL only.
+
+For each source, mentally note:
+  • Key claims or data points it makes
+  • Author/publisher and publication date
+  • Whether it cites its own sources
+
+══════════════════════════════════════════
+PHASE 3 — CROSS-REFERENCE & FACT-CHECK
+══════════════════════════════════════════
+Compare claims across sources:
+  • Which claims appear in 2+ independent sources? (high confidence)
+  • Which claims appear in only 1 source? (flag as unverified)
+  • Are there contradictions between sources? (note both sides)
+
+══════════════════════════════════════════
+PHASE 4 — CRAAP EVALUATION
+══════════════════════════════════════════
+Rate each source on the CRAAP framework (Currency, Relevance, Authority, Accuracy, Purpose).
+Assign each source a trust tier:
+  ⬢ HIGH — authoritative, recent, corroborated
+  ◈ MEDIUM — partially corroborated or older
+  ◇ LOW — single-source, opinion, or biased
+
+══════════════════════════════════════════
+PHASE 5 — FINAL REPORT (output this)
+══════════════════════════════════════════
+Format your final response EXACTLY as:
+
+🛡️🔬 Shield Deep Research: {topic}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+📌 Executive Summary
+(2-3 sentence overview of the most important findings)
+
+📊 Key Findings
+(Numbered list. Each finding must cite its source as [N]. Mark confidence: ✅ confirmed by 2+ sources, ⚠️ single-source, ❌ contradicted)
+
+🔍 Analysis & Cross-References
+(Where sources agree, disagree, or fill different gaps. Note any contradictions.)
+
+📋 Source Quality (CRAAP)
+[1] URL — ⬢/◈/◇ TRUST — brief justification
+[2] URL — ⬢/◈/◇ TRUST — brief justification
+(etc.)
+
+⚠️ Caveats & Limitations
+(What you could not verify, what's missing, what needs human review)
+
+RULES:
+• Every factual claim MUST have a [N] citation.
+• Never fabricate a URL or claim. If you cannot find information, say so.
+• Keep total output under 6000 characters.
+• Use plain text with emoji — no markdown headers or bold.
+• Be direct, factual, and critical — not promotional.
+• Prefer shield_browse over web_browse for ALL page reads."#,
+        topic = topic
     )
 }
 
 /// Format a research response for chat output.
+///
+/// The deep research prompts produce self-contained reports with headers,
+/// so we only add a fallback header if the response doesn't already have one.
+/// Truncates to Telegram's 4096-char limit with a continuation hint.
 pub(crate) fn format_research_response(topic: &str, raw_response: &str) -> String {
-    let header = format!("🔍 Research: {}\n{}", topic, "─".repeat(20));
-    let full = format!("{}\n\n{}", header, raw_response);
+    // The deep researcher prompt formats its own header; only add one if missing
+    let has_header = raw_response.contains("Deep Research:")
+        || raw_response.contains("Shield Deep Research:")
+        || raw_response.contains("Executive Summary");
 
-    if full.len() > 4000 {
+    let full = if has_header {
+        raw_response.to_string()
+    } else {
+        format!("🔍 Research: {}\n{}\n\n{}", topic, "─".repeat(20), raw_response)
+    };
+
+    if full.len() > 4050 {
         format!(
-            "{}…\n\n(truncated — ask a follow-up question for more)",
-            &full[..3950]
+            "{}…\n\n(truncated — ask a follow-up for the rest)",
+            &full[..4000]
         )
     } else {
         full
@@ -776,6 +908,24 @@ pub(crate) async fn process_with_agent(
     message: &str,
     agent_manager: &Arc<tokio::sync::Mutex<AgentManager>>,
 ) -> String {
+    run_agent_task(message, agent_manager, 120, 4000).await
+}
+
+/// Route a deep research task — longer timeout (5 min) and larger output cap.
+pub(crate) async fn process_research_with_agent(
+    message: &str,
+    agent_manager: &Arc<tokio::sync::Mutex<AgentManager>>,
+) -> String {
+    run_agent_task(message, agent_manager, 300, 7000).await
+}
+
+/// Core agent task runner with configurable timeout and output limits.
+async fn run_agent_task(
+    message: &str,
+    agent_manager: &Arc<tokio::sync::Mutex<AgentManager>>,
+    timeout_secs: u64,
+    max_output_chars: usize,
+) -> String {
     let mgr = agent_manager.lock().await;
     let mut rx = mgr.subscribe();
 
@@ -785,7 +935,7 @@ pub(crate) async fn process_with_agent(
     };
     drop(mgr);
 
-    let timeout = tokio::time::Duration::from_secs(120);
+    let timeout = tokio::time::Duration::from_secs(timeout_secs);
     let mut final_output = String::new();
     let mut error_output = String::new();
 
@@ -815,13 +965,16 @@ pub(crate) async fn process_with_agent(
                 }
             }
             Ok(Err(_)) => break,
-            Err(_) => return "⏰ Agent timed out (2 minutes). Try a simpler request.".into(),
+            Err(_) => return format!(
+                "⏰ Agent timed out ({}s). Try a simpler request.",
+                timeout_secs
+            ),
         }
     }
 
     if !final_output.is_empty() {
-        if final_output.len() > 4000 {
-            format!("{}…\n\n(truncated)", &final_output[..4000])
+        if final_output.len() > max_output_chars {
+            format!("{}…\n\n(truncated)", &final_output[..max_output_chars])
         } else {
             final_output
         }

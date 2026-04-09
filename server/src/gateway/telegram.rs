@@ -334,7 +334,7 @@ pub fn start_telegram_gateway(
                                             &client,
                                             &token,
                                             chat_id,
-                                            &format!("🛡️⏳ Researching \"{}\" via Shield Browser… this may take 30-60s.", topic),
+                                            &format!("🛡️🔬 Deep researching \"{}\" via Shield Browser… cross-referencing sources, this may take 2-5 min.", topic),
                                         )
                                         .await;
                                         super::log::log_info(
@@ -348,7 +348,7 @@ pub fn start_telegram_gateway(
                                             &llm_manager,
                                         )
                                         .await;
-                                        let raw = commands::process_with_agent(&prompt, &agent_manager).await;
+                                        let raw = commands::process_research_with_agent(&prompt, &agent_manager).await;
                                         commands::format_research_response(topic, &raw)
                                     }
                                 } else if let Some(topic) =
@@ -361,7 +361,7 @@ pub fn start_telegram_gateway(
                                             &client,
                                             &token,
                                             chat_id,
-                                            &format!("⏳ Researching \"{}\"… please wait.", topic),
+                                            &format!("🔬⏳ Deep researching \"{}\"… cross-referencing sources, this may take 1-3 min.", topic),
                                         )
                                         .await;
                                         super::log::log_info(
@@ -375,7 +375,7 @@ pub fn start_telegram_gateway(
                                             &llm_manager,
                                         )
                                         .await;
-                                        let raw = commands::process_with_agent(&prompt, &agent_manager).await;
+                                        let raw = commands::process_research_with_agent(&prompt, &agent_manager).await;
                                         commands::format_research_response(topic, &raw)
                                     }
                                 } else {

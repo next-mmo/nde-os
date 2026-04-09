@@ -76,6 +76,7 @@ fn default_tools() -> Vec<String> {
         "web_browse".into(),
         "web_search".into(),
         "http_fetch".into(),
+        "shield_browse".into(),
         // Git (Phase 3)
         "git".into(),
         // Kanban
@@ -207,7 +208,7 @@ mod tests {
         let config = AgentConfig::default();
         assert_eq!(config.max_iterations, 25);
         assert_eq!(config.model_provider, "gguf");
-        assert_eq!(config.enabled_tools.len(), 33);
+        assert_eq!(config.enabled_tools.len(), 34);
     }
 
     #[test]

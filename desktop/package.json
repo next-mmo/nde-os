@@ -25,7 +25,8 @@
   },
   "devDependencies": {
     "@fontsource-variable/inter": "^5.2.8",
-    "@lucide/svelte": "^0.577.0",
+    "@internationalized/date": "^3.12.0",
+    "@lucide/svelte": "^1.8.0",
     "@playwright/test": "^1.58.2",
     "@sveltejs/vite-plugin-svelte": "^7.0.0",
     "@tailwindcss/vite": "^4.2.2",
@@ -50,6 +51,7 @@
     "@json-render/svelte": "^0.15.0",
     "@neodrag/core": "3.0.0-next.8",
     "@neodrag/svelte": "3.0.0-next.8",
+    "@tanstack/svelte-table": "^8.21.3",
     "@tauri-apps/api": "^2.10.1",
     "@tauri-apps/plugin-autostart": "^2.5.1",
     "@tauri-apps/plugin-dialog": "~2",

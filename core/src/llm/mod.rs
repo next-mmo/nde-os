@@ -209,6 +209,14 @@ pub fn create_provider(
                 .ok_or_else(|| anyhow::anyhow!("API key required for Together (set TOGETHER_API_KEY or api_key)"))?;
             Ok(Box::new(openai_compat::OpenAiCompatProvider::new(url, model, &key)))
         }
+        "openrouter" => {
+            let url = base_url.unwrap_or("https://openrouter.ai/api/v1");
+            let key = api_key
+                .map(|k| k.to_string())
+                .or_else(|| std::env::var("OPENROUTER_API_KEY").ok())
+                .ok_or_else(|| anyhow::anyhow!("API key required for OpenRouter (set OPENROUTER_API_KEY or api_key)"))?;
+            Ok(Box::new(openai_compat::OpenAiCompatProvider::new(url, model, &key)))
+        }
         "openai_compat" | "openai-compat" | "custom" => {
             let url = base_url.ok_or_else(|| anyhow::anyhow!("base_url required for openai_compat provider"))?;
             let key = api_key.ok_or_else(|| anyhow::anyhow!("api_key required for openai_compat provider"))?;
@@ -252,7 +260,7 @@ pub fn create_provider(
             Ok(Box::new(codex_oauth::OmxProvider::new(model, &data_dir, base_url)?))
         }
         other => Err(anyhow::anyhow!(
-            "Unknown LLM provider: '{}'. Supported: gguf, ollama, openai, anthropic, codex, codex_oauth, omx, groq, together, openai_compat",
+            "Unknown LLM provider: '{}'. Supported: gguf, ollama, openai, anthropic, codex, codex_oauth, omx, groq, together, openrouter, openai_compat",
             other
         )),
     }

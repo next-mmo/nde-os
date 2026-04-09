@@ -1,7 +1,7 @@
 <svelte:options runes={true} />
 
 <script lang="ts">
-  import { invoke } from "@tauri-apps/api/core";
+  import { invoke, convertFileSrc } from "@tauri-apps/api/core";
   import { listen } from "@tauri-apps/api/event";
   import { open, save } from "@tauri-apps/plugin-dialog";
   import { onMount, onDestroy } from "svelte";
@@ -154,6 +154,12 @@
   let exportCodec = $state("h264");
   let hwEncoders = $state<{ name: string; codec: string; device: string }[]>([]);
   let exportHwAccel = $state<string | null>(null);
+
+  // Pointer-based media-to-timeline drag (HTML5 DragEvent is unreliable in WebView2)
+  let pendingDragPayload: { source: string; media?: MediaItem } | null = null;
+  let isPointerDragging = $state(false);
+  let pointerDragGhostX = $state(0);
+  let pointerDragGhostY = $state(0);
 
   // Timeline interaction
   let isDraggingClip = $state(false);
@@ -839,99 +845,192 @@
     playbackStore.getState().setCurrentFrame(Math.max(0, Math.min(frame, totalFrames)));
   }
 
-  // ─── Drag to Timeline & Cross Track Drag ──────────────────────────────
-  function handleDragStartMedia(e: DragEvent, media: MediaItem) {
-    e.dataTransfer?.setData("application/json", JSON.stringify({ source: "media", media }));
-    e.dataTransfer!.effectAllowed = "copy";
+  // ─── Convert file path to Tauri 2 asset URL ─────────────────────────────
+  function assetUrl(path: string | null | undefined): string {
+    if (!path) return "";
+    return convertFileSrc(path);
   }
 
-  function handleDragStartText(e: DragEvent) {
-    e.dataTransfer?.setData("application/json", JSON.stringify({ source: "text" }));
-    e.dataTransfer!.effectAllowed = "copy";
-  }
-
-  function handleTimelineDragOver(e: DragEvent) {
-    e.preventDefault(); // needed to allow drop
-    if (e.dataTransfer) {
-      e.dataTransfer.dropEffect = "copy";
-    }
-  }
-
-  function handleTimelineDrop(e: DragEvent) {
+  // ─── Pointer-based Drag to Timeline (WebView2-safe) ───────────────────
+  // HTML5 DragEvent is unreliable in WebView2. We use pointer events instead.
+  function startMediaPointerDrag(e: MouseEvent, media: MediaItem) {
     e.preventDefault();
-    const dataStr = e.dataTransfer?.getData("application/json");
-    if (!dataStr) return;
+    e.stopPropagation();
+    console.log("[FreeCut] startMediaPointerDrag:", media.fileName, "at", e.clientX, e.clientY);
+    pendingDragPayload = { source: "media", media };
+    const startX = e.clientX;
+    const startY = e.clientY;
+    let activated = false;
 
-    try {
-      const data = JSON.parse(dataStr);
-
-      const tracksContainer = document.getElementById("tracks-container");
-      if (!tracksContainer) return;
-      const rect = tracksContainer.getBoundingClientRect();
-      const dropX = e.clientX - rect.left + ti.scrollLeft;
-      const dropY = e.clientY - rect.top + tracksContainer.scrollTop;
-      let fromFrame = Math.max(0, pixelToFrame(dropX));
-
-      let trackId = "";
-      let yAcc = 0;
-      for (const t of itemsStore.getState().tracks) {
-        if (dropY >= yAcc && dropY < yAcc + t.height) { trackId = t.id; break; }
-        yAcc += t.height;
+    const onMove = (ev: MouseEvent) => {
+      const dx = ev.clientX - startX;
+      const dy = ev.clientY - startY;
+      // Threshold before entering drag mode
+      if (!activated && Math.abs(dx) < 5 && Math.abs(dy) < 5) return;
+      if (!activated) {
+        activated = true;
+        isPointerDragging = true;
+        document.body.style.cursor = "copy";
+        document.body.style.userSelect = "none";
+        console.log("[FreeCut] drag activated for:", media.fileName);
       }
-      
-      if (!trackId) {
-        const targetKind = (data.source === "media" && data.media.mediaType === "audio") ? "audio" : "video";
-        trackId = createDefaultTrack(targetKind);
+      pointerDragGhostX = ev.clientX;
+      pointerDragGhostY = ev.clientY;
+    };
+
+    const onUp = (ev: MouseEvent) => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+
+      if (!activated) {
+        // Was just click, not drag — ignore
+        pendingDragPayload = null;
+        console.log("[FreeCut] drag not activated (click), ignoring");
+        return;
       }
+      isPointerDragging = false;
+      console.log("[FreeCut] mouseup at", ev.clientX, ev.clientY, "→ handlePointerDrop");
+      handlePointerDrop(ev.clientX, ev.clientY);
+    };
 
-      historyStore.getState().push();
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  }
 
-      if (data.source === "media") {
-        const media = data.media as MediaItem;
-        const duration = media.durationSecs ? Math.round(media.durationSecs * fps) : fps * 5;
-        const item: TimelineItem = {
-          id: crypto.randomUUID(),
-          trackId,
-          from: fromFrame,
-          durationInFrames: duration,
-          label: media.fileName,
-          type: media.mediaType as any,
-          mediaId: media.id,
-          src: media.filePath,
-          sourceWidth: media.width,
-          sourceHeight: media.height,
-          sourceDuration: duration,
-          sourceFps: media.fps ?? fps,
-          sourceStart: 0,
-          sourceEnd: duration,
-          speed: 1,
-          volume: media.mediaType === "audio" ? 1 : 0,
-        };
-        itemsStore.getState().addItem(item);
-      } else if (data.source === "text") {
-        const duration = fps * 3;
-        const width = currentProject?.metadata.width ?? 1920;
-        const height = currentProject?.metadata.height ?? 1080;
-        const item: TimelineItem = {
-          id: crypto.randomUUID(),
-          trackId,
-          from: fromFrame,
-          durationInFrames: duration,
-          label: "Title Text",
-          type: "text",
-          text: "Add Title Here",
-          fontSize: 72,
-          fontFamily: "Inter",
-          color: "#ffffff",
-          textAlign: "center",
-          fillColor: "#ffffff",
-          transform: { x: width / 2, y: height / 2, rotation: 0, opacity: 1 },
-        };
-        itemsStore.getState().addItem(item);
+  function startTextPointerDrag(e: MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    console.log("[FreeCut] startTextPointerDrag");
+    pendingDragPayload = { source: "text" };
+    const startX = e.clientX;
+    const startY = e.clientY;
+    let activated = false;
+
+    const onMove = (ev: MouseEvent) => {
+      const dx = ev.clientX - startX;
+      const dy = ev.clientY - startY;
+      if (!activated && Math.abs(dx) < 5 && Math.abs(dy) < 5) return;
+      if (!activated) {
+        activated = true;
+        isPointerDragging = true;
+        document.body.style.cursor = "copy";
+        document.body.style.userSelect = "none";
       }
+      pointerDragGhostX = ev.clientX;
+      pointerDragGhostY = ev.clientY;
+    };
 
-    } catch (err) {
-      console.error("Drop Parse Error", err);
+    const onUp = (ev: MouseEvent) => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      if (!activated) {
+        pendingDragPayload = null;
+        return;
+      }
+      isPointerDragging = false;
+      handlePointerDrop(ev.clientX, ev.clientY);
+    };
+
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  }
+
+  function handlePointerDrop(clientX: number, clientY: number) {
+    const data = pendingDragPayload;
+    pendingDragPayload = null;
+    if (!data) return;
+
+    // Accept drops on the entire timeline section (preview + transport + timeline)
+    // by looking for the tracks-container. If it doesn't exist, try the broader
+    // timeline wrapper.
+    const tracksContainer = document.getElementById("tracks-container");
+    if (!tracksContainer) {
+      console.warn("[FreeCut] tracks-container not found for drop");
+      return;
+    }
+    const rect = tracksContainer.getBoundingClientRect();
+
+    // Be lenient: allow drops that are somewhat near the timeline area.
+    // This prevents drops from failing when cursor is slightly outside.
+    const padding = 40;
+    if (
+      clientX < rect.left - padding || clientX > rect.right + padding ||
+      clientY < rect.top - padding || clientY > rect.bottom + padding
+    ) {
+      console.log("[FreeCut] drop outside timeline area", { clientX, clientY, rect: { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom } });
+      return;
+    }
+
+    // The tracks-container has a 120px track header on each row.
+    // Clips are rendered starting from `left: 120px` within each track row.
+    // So subtract the header width from the X calculation.
+    const TRACK_HEADER_WIDTH = 120;
+    const dropX = Math.max(0, clientX - rect.left - TRACK_HEADER_WIDTH + ti.scrollLeft);
+    const dropY = Math.max(0, clientY - rect.top + tracksContainer.scrollTop);
+    let fromFrame = Math.max(0, pixelToFrame(dropX));
+
+    let trackId = "";
+    let yAcc = 0;
+    for (const t of itemsStore.getState().tracks) {
+      if (dropY >= yAcc && dropY < yAcc + t.height) { trackId = t.id; break; }
+      yAcc += t.height;
+    }
+
+    if (!trackId) {
+      const targetKind = (data.source === "media" && data.media?.mediaType === "audio") ? "audio" : "video";
+      trackId = createDefaultTrack(targetKind);
+    }
+
+    historyStore.getState().push();
+
+    if (data.source === "media" && data.media) {
+      const media = data.media;
+      const duration = media.durationSecs ? Math.round(media.durationSecs * fps) : fps * 5;
+      const item: TimelineItem = {
+        id: crypto.randomUUID(),
+        trackId,
+        from: fromFrame,
+        durationInFrames: duration,
+        label: media.fileName,
+        type: media.mediaType as any,
+        mediaId: media.id,
+        src: media.filePath,
+        sourceWidth: media.width,
+        sourceHeight: media.height,
+        sourceDuration: duration,
+        sourceFps: media.fps ?? fps,
+        sourceStart: 0,
+        sourceEnd: duration,
+        speed: 1,
+        volume: media.mediaType === "audio" ? 1 : 0,
+      };
+      itemsStore.getState().addItem(item);
+      console.log("[FreeCut] Added media to timeline:", item.label, "at frame", fromFrame, "on track", trackId);
+    } else if (data.source === "text") {
+      const duration = fps * 3;
+      const width = currentProject?.metadata.width ?? 1920;
+      const height = currentProject?.metadata.height ?? 1080;
+      const item: TimelineItem = {
+        id: crypto.randomUUID(),
+        trackId,
+        from: fromFrame,
+        durationInFrames: duration,
+        label: "Title Text",
+        type: "text",
+        text: "Add Title Here",
+        fontSize: 72,
+        fontFamily: "Inter",
+        color: "#ffffff",
+        textAlign: "center",
+        fillColor: "#ffffff",
+        transform: { x: width / 2, y: height / 2, rotation: 0, opacity: 1 },
+      };
+      itemsStore.getState().addItem(item);
+      console.log("[FreeCut] Added text to timeline at frame", fromFrame, "on track", trackId);
     }
   }
 
@@ -1873,16 +1972,22 @@
               <div class="px-2 pb-2 space-y-0.5">
                 {#each mediaLibrary as media (media.id)}
                   {@const MediaIcon = getMediaIcon(media.mediaType)}
+                  <!-- svelte-ignore a11y_no_static_element_interactions -->
                   <div
-                    draggable="true"
-                    ondragstart={(e) => handleDragStartMedia(e, media)}
                     role="button"
                     tabindex="0"
                     class="cursor-grab active:cursor-grabbing w-full flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-white/5 transition-colors text-left group"
+                    onmousedown={(e) => { if (e.button === 0) startMediaPointerDrag(e, media); }}
                     ondblclick={() => addMediaToTimeline(media)}
                   >
                     <div class="w-10 h-7 rounded bg-white/5 grid place-items-center shrink-0 overflow-hidden">
-                      <MediaIcon class="w-4 h-4 text-white/20" />
+                      {#if media.thumbnailPath}
+                        <img src={assetUrl(media.thumbnailPath)} alt="" class="w-full h-full object-cover" />
+                      {:else if media.mediaType === "image"}
+                        <img src={assetUrl(media.filePath)} alt="" class="w-full h-full object-cover" />
+                      {:else}
+                        <MediaIcon class="w-4 h-4 text-white/20" />
+                      {/if}
                     </div>
                     <div class="min-w-0 flex-1 pointer-events-none">
                       <p class="text-[11px] text-white/70 truncate">{media.fileName}</p>
@@ -2205,11 +2310,11 @@
               </div>
             {:else if ed.activeTab === "text"}
               <div class="p-2 space-y-2">
+                <!-- svelte-ignore a11y_no_static_element_interactions -->
                 <div 
-                  draggable="true"
                   role="button"
                   tabindex="0"
-                  ondragstart={handleDragStartText}
+                  onmousedown={(e) => { if (e.button === 0) startTextPointerDrag(e); }}
                   class="cursor-grab flex flex-col items-center justify-center p-4 border border-white/10 rounded-lg hover:border-white/30 hover:bg-white/5 transition-colors group"
                 >
                   <Type class="w-8 h-8 text-white/40 group-hover:text-white/80 transition-colors mb-2" />
@@ -2242,7 +2347,7 @@
             style:height="100%"
           >
             {#if renderedFramePath}
-              <img src="asset://localhost/{renderedFramePath}" alt="Preview" class="w-full h-full object-contain" />
+              <img src={assetUrl(renderedFramePath)} alt="Preview" class="w-full h-full object-contain" />
             {:else}
               <div class="w-full h-full flex items-center justify-center text-white/10">
                 <Film class="w-12 h-12" />
@@ -2421,8 +2526,6 @@
             id="tracks-container"
             class="flex-1 overflow-y-auto overflow-x-hidden relative"
             onwheel={handleTimelineWheel}
-            ondragover={handleTimelineDragOver}
-            ondrop={handleTimelineDrop}
             onmousemove={handleTrackMouseMove}
             onmouseleave={handleTrackMouseLeave}
           >
@@ -2698,5 +2801,19 @@
         </div>
       {/if}
     </div>
+  </div>
+{/if}
+
+{#if isPointerDragging && pendingDragPayload}
+  <div
+    class="fixed z-[9999] pointer-events-none px-3 py-1.5 rounded-lg bg-violet-600/90 text-white text-xs font-medium shadow-xl backdrop-blur-sm border border-violet-400/30 whitespace-nowrap"
+    style:left="{pointerDragGhostX + 14}px"
+    style:top="{pointerDragGhostY + 14}px"
+  >
+    {#if pendingDragPayload.source === "media" && pendingDragPayload.media}
+      {pendingDragPayload.media.fileName}
+    {:else}
+      Title Text
+    {/if}
   </div>
 {/if}
