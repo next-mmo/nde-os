@@ -566,7 +566,7 @@ export function toggleFullscreen(window_id: string) {
   saveWindowFullscreen(window.app_id, window.fullscreen);
 }
 
-export function openStaticApp(app_id: StaticAppID) {
+export function openStaticApp(app_id: StaticAppID, data?: any) {
   if (app_id === "launchpad") {
     toggleLaunchpad();
     return;
@@ -578,6 +578,7 @@ export function openStaticApp(app_id: StaticAppID) {
 
   const existing = desktop.windows.find((item) => item.app_id === app_id);
   if (existing) {
+    if (data) existing.data = data;
     focusWindow(existing.id);
     return existing;
   }
@@ -586,6 +587,7 @@ export function openStaticApp(app_id: StaticAppID) {
   const window = createWindow(app_id, config.title, config.width!, config.height!);
   window.resizable = config.resizable!;
   window.expandable = config.expandable!;
+  if (data) window.data = data;
   assignWindowFocus(window);
   desktop.windows.push(window);
   saveOpenWindows();

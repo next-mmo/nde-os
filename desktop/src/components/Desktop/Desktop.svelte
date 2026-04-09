@@ -148,7 +148,7 @@
     { kind: "divider" },
     { kind: "action", icon: "⏭️", label: "Next Wallpaper", action: () => { handleNextWallpaper(); } },
     { kind: "action", icon: "🎲", label: "Random Wallpaper", action: () => { handleRandomWallpaper(); } },
-    { kind: "action", icon: "🖼️", label: "Wallpaper Settings…", action: () => { openStaticApp("settings"); } },
+    { kind: "action", icon: "🖼️", label: "Wallpaper Settings…", action: () => { openStaticApp("settings", { tab: "appearance" }); } },
     { kind: "action", icon: "🌗", label: "Toggle Dark Mode", action: () => toggleTheme(), shortcut: "⌘D" },
     { kind: "divider" },
     { kind: "action", icon: "🫥", label: "Toggle Dock Auto-Hide", action: () => toggleDockAutoHide() },
