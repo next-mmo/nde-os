@@ -5,6 +5,7 @@
 use crate::gateway::commands::{self, EmulatorAction};
 use crate::gateway::session::{self, ChatSessions};
 use crate::gateway::GatewayState;
+use crate::router::DesktopActionQueue;
 use ai_launcher_core::agent::manager::AgentManager;
 use ai_launcher_core::llm::manager::LlmManager;
 use serde::Deserialize;
@@ -81,6 +82,7 @@ struct TgResponse<T> {
 struct TgUpdate {
     update_id: i64,
     message: Option<TgMessage>,
+    callback_query: Option<TgCallbackQuery>,
 }
 
 #[derive(Deserialize)]
@@ -90,6 +92,21 @@ struct TgMessage {
     from: Option<TgUser>,
     chat: TgChat,
     text: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct TgCallbackQuery {
+    id: String,
+    from: TgUser,
+    message: Option<TgCallbackMessage>,
+    data: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct TgCallbackMessage {
+    #[allow(dead_code)]
+    message_id: i64,
+    chat: TgChat,
 }
 
 #[derive(Deserialize)]
@@ -114,6 +131,7 @@ pub fn start_telegram_gateway(
     handle: tokio::runtime::Handle,
     state: Arc<GatewayState>,
     log_buffer: super::log::SharedLogBuffer,
+    desktop_actions: DesktopActionQueue,
 ) {
     if state.running.load(Ordering::SeqCst) {
         println!("  Telegram:    gateway already running, skipping");
@@ -162,6 +180,47 @@ pub fn start_telegram_gateway(
                                 }
 
                                 offset = update.update_id + 1;
+
+                                // ── Handle callback queries (inline button presses) ──
+                                if let Some(cb) = update.callback_query {
+                                    let cb_chat_id = cb
+                                        .message
+                                        .as_ref()
+                                        .map(|m| m.chat.id)
+                                        .unwrap_or(0);
+                                    let cb_user_id = cb.from.id;
+
+                                    // Auth check
+                                    if !allowed_user_ids.is_empty()
+                                        && !allowed_user_ids.contains(&cb_user_id)
+                                    {
+                                        let _ = answer_callback_query(
+                                            &client,
+                                            &token,
+                                            &cb.id,
+                                            Some("⛔ Unauthorized"),
+                                        )
+                                        .await;
+                                        continue;
+                                    }
+
+                                    if let Some(data) = &cb.data {
+                                        let response =
+                                            handle_callback_query(data, &llm_manager, &agent_manager, &desktop_actions)
+                                                .await;
+                                        let _ = answer_callback_query(
+                                            &client, &token, &cb.id, None,
+                                        )
+                                        .await;
+                                        if cb_chat_id != 0 {
+                                            let _ = send_telegram_message(
+                                                &client, &token, cb_chat_id, &response,
+                                            )
+                                            .await;
+                                        }
+                                    }
+                                    continue;
+                                }
 
                                 let Some(msg) = update.message else {
                                     continue;
@@ -232,10 +291,28 @@ pub fn start_telegram_gateway(
 
                                 let response = if let Some(result) = commands::try_kanban(&text) {
                                     result
+                                } else if text.trim() == "/apps" {
+                                    // Interactive app list with inline keyboard
+                                    let keyboard = build_apps_keyboard();
+                                    let _ = send_telegram_message_with_keyboard(
+                                        &client, &token, chat_id, &keyboard.0, &keyboard.1,
+                                    )
+                                    .await;
+                                    continue;
+                                } else if let Some(result) = commands::try_desktop_commands(&text, &desktop_actions) {
+                                    result
                                 } else if let Some(result) = commands::try_shield(&text, &data_dir) {
                                     result
                                 } else if let Some(action) = commands::try_emulator(&text, &data_dir) {
                                     handle_emulator_action(&client, &token, chat_id, action).await
+                                } else if text.trim() == "/models" {
+                                    // Interactive model list with inline keyboard
+                                    let keyboard = build_models_keyboard(&llm_manager);
+                                    let _ = send_telegram_message_with_keyboard(
+                                        &client, &token, chat_id, &keyboard.0, &keyboard.1,
+                                    )
+                                    .await;
+                                    continue;
                                 } else if let Some((result, model_changed)) =
                                     commands::try_llm(&text, &llm_manager)
                                 {
@@ -334,6 +411,185 @@ async fn handle_emulator_action(
     }
 }
 
+/// Build an interactive inline keyboard listing all providers & models.
+fn build_models_keyboard(
+    llm_manager: &Arc<Mutex<LlmManager>>,
+) -> (String, serde_json::Value) {
+    let mgr = match llm_manager.lock() {
+        Ok(m) => m,
+        Err(_) => {
+            return (
+                "❌ LLM manager lock failed".into(),
+                serde_json::json!({ "inline_keyboard": [] }),
+            )
+        }
+    };
+
+    let configs = mgr.configs();
+    let active_name = mgr.active_name().to_string();
+
+    if configs.is_empty() {
+        return (
+            "🧠 No LLM providers configured.\nAdd one from Settings → Models.".into(),
+            serde_json::json!({ "inline_keyboard": [] }),
+        );
+    }
+
+    let mut text = format!("🧠 LLM Providers ({})\n", configs.len());
+    text.push_str("Tap a provider to switch:\n\n");
+
+    let mut rows: Vec<serde_json::Value> = Vec::new();
+
+    for cfg in configs {
+        let is_active = cfg.name == active_name;
+        let marker = if is_active { " ✅" } else { "" };
+        text.push_str(&format!(
+            "  {} {} — {} ({}){marker}\n",
+            if is_active { "▸" } else { "•" },
+            cfg.name,
+            cfg.model,
+            cfg.provider_type,
+        ));
+
+        let label = if is_active {
+            format!("✅ {} — {}", cfg.name, cfg.model)
+        } else {
+            format!("⬜ {} — {}", cfg.name, cfg.model)
+        };
+
+        rows.push(serde_json::json!([
+            { "text": label, "callback_data": format!("model_switch:{}", cfg.name) }
+        ]));
+    }
+
+    let keyboard = serde_json::json!({ "inline_keyboard": rows });
+    (text, keyboard)
+}
+
+/// Build an interactive inline keyboard listing all desktop apps.
+fn build_apps_keyboard() -> (String, serde_json::Value) {
+    use crate::gateway::commands::STATIC_APP_IDS;
+
+    let mut text = format!("🖥️ Desktop Apps ({})\n", STATIC_APP_IDS.len());
+    text.push_str("Tap to open on desktop:\n");
+
+    let mut rows: Vec<serde_json::Value> = Vec::new();
+
+    // Group apps into rows of 2 buttons each for compact layout
+    let mut row_pair: Vec<serde_json::Value> = Vec::new();
+    for (id, title) in STATIC_APP_IDS {
+        row_pair.push(serde_json::json!({
+            "text": title, "callback_data": format!("app_open:{}", id)
+        }));
+        if row_pair.len() == 2 {
+            rows.push(serde_json::Value::Array(row_pair.clone()));
+            row_pair.clear();
+        }
+    }
+    if !row_pair.is_empty() {
+        rows.push(serde_json::Value::Array(row_pair));
+    }
+
+    let keyboard = serde_json::json!({ "inline_keyboard": rows });
+    (text, keyboard)
+}
+
+/// Handle a callback query from an inline keyboard press.
+async fn handle_callback_query(
+    data: &str,
+    llm_manager: &Arc<Mutex<LlmManager>>,
+    agent_manager: &Arc<tokio::sync::Mutex<AgentManager>>,
+    desktop_actions: &DesktopActionQueue,
+) -> String {
+    if let Some(provider_name) = data.strip_prefix("model_switch:") {
+        let result = {
+            let mut mgr = match llm_manager.lock() {
+                Ok(m) => m,
+                Err(_) => return "❌ LLM manager lock failed".into(),
+            };
+
+            // Fuzzy match provider name
+            let target = {
+                let names = mgr.provider_names();
+                if names.iter().any(|n| n == provider_name) {
+                    Some(provider_name.to_string())
+                } else {
+                    let lower = provider_name.to_lowercase();
+                    names.into_iter().find(|n| n.to_lowercase() == lower)
+                }
+            };
+
+            match target {
+                Some(name) => match mgr.switch(&name) {
+                    Ok(()) => Ok(name),
+                    Err(e) => Err(format!("❌ Failed to switch: {}", e)),
+                },
+                None => Err(format!("❌ Provider '{}' not found.", provider_name)),
+            }
+        };
+
+        match result {
+            Ok(name) => {
+                commands::sync_agent_provider_from_llm(agent_manager, llm_manager).await;
+                // Build updated status
+                let model = {
+                    let mgr = llm_manager.lock().ok();
+                    mgr.and_then(|m| {
+                        m.configs()
+                            .iter()
+                            .find(|c| c.name == name)
+                            .map(|c| c.model.clone())
+                    })
+                    .unwrap_or_default()
+                };
+                format!("✅ Switched to: {} ({})", name, model)
+            }
+            Err(msg) => msg,
+        }
+    } else if let Some(app_id) = data.strip_prefix("app_open:") {
+        // Handle desktop app open from inline keyboard
+        use crate::router::DesktopAction;
+        use crate::gateway::commands::STATIC_APP_IDS;
+
+        let lower = app_id.to_lowercase();
+        let matched = STATIC_APP_IDS
+            .iter()
+            .find(|(id, _)| id.to_lowercase() == lower);
+
+        match matched {
+            Some((canonical_id, title)) => {
+                if let Ok(mut q) = desktop_actions.lock() {
+                    q.push(DesktopAction {
+                        kind: "open_app".to_string(),
+                        app_id: canonical_id.to_string(),
+                    });
+                }
+                format!("✅ Opening {} on desktop…", title)
+            }
+            None => format!("❌ Unknown app '{}'", app_id),
+        }
+    } else if let Some(model_name) = data.strip_prefix("model_set:") {
+        let result = {
+            let mut mgr = match llm_manager.lock() {
+                Ok(m) => m,
+                Err(_) => return "❌ LLM manager lock failed".into(),
+            };
+            mgr.update_active_model(model_name)
+        };
+
+        match result {
+            Ok(()) => {
+                commands::sync_agent_provider_from_llm(agent_manager, llm_manager).await;
+                format!("✅ Model changed to: {}", model_name)
+            }
+            Err(e) => format!("❌ Failed to change model: {}", e),
+        }
+    } else {
+        format!("❓ Unknown action: {}", data)
+    }
+}
+
+/// Send a text message via Telegram Bot API.
 async fn send_telegram_message(
     client: &reqwest::Client,
     token: &str,
@@ -352,6 +608,57 @@ async fn send_telegram_message(
         .send()
         .await
         .map_err(|e| format!("Failed to send Telegram message: {}", e))?;
+
+    Ok(())
+}
+
+/// Send a message with an inline keyboard via Telegram Bot API.
+async fn send_telegram_message_with_keyboard(
+    client: &reqwest::Client,
+    token: &str,
+    chat_id: i64,
+    text: &str,
+    reply_markup: &serde_json::Value,
+) -> Result<(), String> {
+    let url = format!("https://api.telegram.org/bot{}/sendMessage", token);
+    let body = serde_json::json!({
+        "chat_id": chat_id,
+        "text": text,
+        "reply_markup": reply_markup,
+    });
+
+    client
+        .post(&url)
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("Failed to send Telegram message: {}", e))?;
+
+    Ok(())
+}
+
+/// Acknowledge a callback query to dismiss the loading spinner.
+async fn answer_callback_query(
+    client: &reqwest::Client,
+    token: &str,
+    callback_query_id: &str,
+    text: Option<&str>,
+) -> Result<(), String> {
+    let url = format!("https://api.telegram.org/bot{}/answerCallbackQuery", token);
+    let mut body = serde_json::json!({
+        "callback_query_id": callback_query_id,
+    });
+    if let Some(t) = text {
+        body["text"] = serde_json::Value::String(t.to_string());
+        body["show_alert"] = serde_json::Value::Bool(true);
+    }
+
+    client
+        .post(&url)
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("Failed to answer callback query: {}", e))?;
 
     Ok(())
 }

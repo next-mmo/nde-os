@@ -206,7 +206,8 @@ function getSavedIsLocked(): boolean {
 function getSavedWallpaper(): string {
   try {
     const saved = localStorage.getItem("ai-launcher:wallpaper");
-    if (saved) return saved;
+    // Blob URLs are session-scoped — they die on page unload, never restore them
+    if (saved && !saved.includes("blob:")) return saved;
   } catch {}
   return 'url("/wallpapers/ventura-1.webp")';
 }
@@ -297,9 +298,13 @@ export function toggleStartExpanded() {
 
 export function setWallpaper(bg: string) {
   desktop.wallpaper = bg;
-  try {
-    localStorage.setItem("ai-launcher:wallpaper", bg);
-  } catch {}
+  // Blob URLs are session-scoped — never persist them to storage or they will
+  // produce broken wallpapers on the next boot session.
+  if (!bg.includes("blob:")) {
+    try {
+      localStorage.setItem("ai-launcher:wallpaper", bg);
+    } catch {}
+  }
 }
 
 export function lockScreen() {

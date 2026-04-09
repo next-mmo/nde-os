@@ -17,6 +17,17 @@ use crate::gateway::{GatewayState, SharedLogBuffer};
 use crate::response::*;
 use crate::{actors, agent, apps, gateway, kanban, models, openapi, plugins, subsystems};
 
+/// Thread-safe queue for desktop actions pushed by gateways (Telegram, etc).
+/// The frontend polls `GET /api/desktop/pending-actions` to drain and execute.
+pub type DesktopActionQueue = Arc<Mutex<Vec<DesktopAction>>>;
+
+/// A pending desktop action (e.g. open an app window).
+#[derive(Clone, serde::Serialize)]
+pub struct DesktopAction {
+    pub kind: String,
+    pub app_id: String,
+}
+
 /// Bundles all shared server state into a single struct.
 pub struct AppState {
     pub mgr: Arc<AppManager>,
@@ -30,6 +41,7 @@ pub struct AppState {
     pub tg_state: Arc<GatewayState>,
     pub log_buffer: SharedLogBuffer,
     pub actor_runner: Arc<tokio::sync::Mutex<ActorRunner>>,
+    pub desktop_actions: DesktopActionQueue,
 }
 
 impl AppState {
@@ -85,6 +97,14 @@ pub fn route(req: &mut Request, state: &AppState) -> HttpResponse {
         (Method::Get, "/api/system") => return apps::system_info(&state.mgr),
         (Method::Get, "/api/system/resources") => return apps::system_resources(&state.mgr),
         (Method::Get, "/api/catalog") => return apps::catalog(&state.mgr),
+        // Desktop remote actions (polled by the Svelte frontend)
+        (Method::Get, "/api/desktop/pending-actions") => {
+            let actions: Vec<DesktopAction> = {
+                let mut q = state.desktop_actions.lock().unwrap();
+                q.drain(..).collect()
+            };
+            return ok(&format!("{} actions", actions.len()), actions);
+        }
         // Apps
         (Method::Get, "/api/apps") => return apps::list_apps(&state.mgr),
         (Method::Post, "/api/apps") => return apps::install_app(req, &state.mgr),
@@ -298,6 +318,7 @@ pub fn route(req: &mut Request, state: &AppState) -> HttpResponse {
                         state.rt.handle().clone(),
                         state.tg_state.clone(),
                         state.log_buffer.clone(),
+                        state.desktop_actions.clone(),
                     );
                 } else {
                     state.tg_state.shutdown();

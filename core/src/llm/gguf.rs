@@ -605,10 +605,10 @@ impl GgufProvider {
         tracing::info!(
             url = %self.download_url,
             path = %self.model_path.display(),
-            "Downloading GGUF model (first run)..."
+            "Downloading GGUF model (streaming)..."
         );
 
-        let resp = self
+        let mut resp = self
             .client
             .get(&self.download_url)
             .send()
@@ -621,10 +621,32 @@ impl GgufProvider {
             ));
         }
 
-        let bytes = resp.bytes().await.context("Failed to read model data")?;
-        std::fs::write(&self.model_path, &bytes).context("Failed to save model")?;
+        let mut part_path = self.model_path.clone();
+        part_path.set_extension("gguf.part");
 
-        tracing::info!(size_mb = bytes.len() / 1_048_576, "GGUF model downloaded");
+        let mut file = tokio::fs::File::create(&part_path)
+            .await
+            .context("Failed to create temporary download file")?;
+
+        let mut downloaded_bytes: u64 = 0;
+        use tokio::io::AsyncWriteExt;
+
+        while let Some(chunk) = resp.chunk().await.context("Error downloading chunk")? {
+            file.write_all(&chunk)
+                .await
+                .context("Failed to write to part file")?;
+            downloaded_bytes += chunk.len() as u64;
+        }
+
+        file.sync_all().await.context("Failed to flush disk buffer")?;
+        // Need to drop the Tokio File before renaming on Windows
+        drop(file);
+
+        tokio::fs::rename(&part_path, &self.model_path)
+            .await
+            .context("Failed to finalize downloaded model file")?;
+
+        tracing::info!(size_mb = downloaded_bytes / 1_048_576, "GGUF model downloaded successfully");
         Ok(())
     }
 
@@ -1101,7 +1123,45 @@ impl GgufModelRecommendation {
             });
         }
 
-        // 5. Llama-3 8B
+        // 5. Gemma 4 E2B (5B params, Q4_K_M) — lightweight, full GPU on RTX 4070
+        if ram_gb >= 4.0 {
+            models.push(GgufModelRecommendation {
+                id: "gemma-4-e2b".to_string(),
+                name: "Gemma 4 E2B".to_string(),
+                url: "https://huggingface.co/unsloth/gemma-4-E2B-it-GGUF/resolve/main/gemma-4-E2B-it-Q4_K_M.gguf".to_string(),
+                description: "Google Gemma 4 E2B — fast 5B multimodal model. Fits fully in 12GB VRAM.".to_string(),
+                size_gb: 3.11,
+                recommended_ram_gb: 6,
+            });
+        }
+
+        // 6. Gemma 4 E4B (8B params, Q4_K_M) — sweet spot for RTX 4070
+        if ram_gb >= 6.0 {
+            models.push(GgufModelRecommendation {
+                id: "gemma-4-e4b".to_string(),
+                name: "Gemma 4 E4B".to_string(),
+                url: "https://huggingface.co/unsloth/gemma-4-E4B-it-GGUF/resolve/main/gemma-4-E4B-it-Q4_K_M.gguf".to_string(),
+                description: "Google Gemma 4 E4B — best perf/quality for 12GB VRAM. Excellent reasoning.".to_string(),
+                size_gb: 4.98,
+                recommended_ram_gb: 8,
+            });
+        }
+
+        // 7. Gemma 4 26B-A4B MoE (26B total, only 4B active per token, UD-Q4_K_XL)
+        // MoE architecture: massive knowledge but only activates 4B per inference step.
+        // 17.1GB needs partial GPU offload — works great with 64GB RAM.
+        if ram_gb >= 20.0 {
+            models.push(GgufModelRecommendation {
+                id: "gemma-4-26b-a4b".to_string(),
+                name: "Gemma 4 26B-A4B MoE".to_string(),
+                url: "https://huggingface.co/unsloth/gemma-4-26B-A4B-it-GGUF/resolve/main/gemma-4-26B-A4B-it-UD-Q4_K_XL.gguf".to_string(),
+                description: "Google Gemma 4 MoE — 26B brain, 4B active. Near-GPT4 quality. Needs GPU+RAM offload.".to_string(),
+                size_gb: 17.1,
+                recommended_ram_gb: 24,
+            });
+        }
+
+        // 8. Llama-3 8B
         if ram_gb >= 6.5 {
             models.push(GgufModelRecommendation {
                 id: "llama-3-8b".to_string(),
@@ -1110,6 +1170,66 @@ impl GgufModelRecommendation {
                 description: "Heavyweight 8B model. High intelligence for complex chat.".to_string(),
                 size_gb: 4.92,
                 recommended_ram_gb: 8,
+            });
+        }
+
+        // 9. Phi-4 Mini (3.8B, Microsoft) — elite coding & math in tiny package
+        if ram_gb >= 3.0 {
+            models.push(GgufModelRecommendation {
+                id: "phi-4-mini".to_string(),
+                name: "Phi-4 Mini 3.8B".to_string(),
+                url: "https://huggingface.co/unsloth/Phi-4-mini-instruct-GGUF/resolve/main/Phi-4-mini-instruct-Q4_K_M.gguf".to_string(),
+                description: "Microsoft Phi-4 Mini — 3.8B coding & math powerhouse. Fully fits in 12GB VRAM.".to_string(),
+                size_gb: 2.49,
+                recommended_ram_gb: 4,
+            });
+        }
+
+        // 10. Qwen3 8B — Alibaba's thinking model with dual-mode (fast + deep reasoning)
+        if ram_gb >= 6.0 {
+            models.push(GgufModelRecommendation {
+                id: "qwen3-8b".to_string(),
+                name: "Qwen3 8B".to_string(),
+                url: "https://huggingface.co/unsloth/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q4_K_M.gguf".to_string(),
+                description: "Alibaba Qwen3 8B — dual-mode thinking model. Fast chat + deep reasoning. Full GPU.".to_string(),
+                size_gb: 5.03,
+                recommended_ram_gb: 8,
+            });
+        }
+
+        // 11. DeepSeek R1 Qwen3-8B — DeepSeek reasoning distilled into Qwen3
+        if ram_gb >= 6.0 {
+            models.push(GgufModelRecommendation {
+                id: "deepseek-r1-qwen3-8b".to_string(),
+                name: "DeepSeek R1 Qwen3-8B".to_string(),
+                url: "https://huggingface.co/unsloth/DeepSeek-R1-0528-Qwen3-8B-GGUF/resolve/main/DeepSeek-R1-0528-Qwen3-8B-Q4_K_M.gguf".to_string(),
+                description: "DeepSeek R1 reasoning distilled into Qwen3 8B. Top-tier chain-of-thought. Full GPU.".to_string(),
+                size_gb: 5.03,
+                recommended_ram_gb: 8,
+            });
+        }
+
+        // 12. Qwen3 14B — larger Qwen3, fits with partial offload on RTX 4070
+        if ram_gb >= 12.0 {
+            models.push(GgufModelRecommendation {
+                id: "qwen3-14b".to_string(),
+                name: "Qwen3 14B".to_string(),
+                url: "https://huggingface.co/unsloth/Qwen3-14B-GGUF/resolve/main/Qwen3-14B-Q4_K_M.gguf".to_string(),
+                description: "Alibaba Qwen3 14B — strongest open-source reasoning. Partial GPU offload with 64GB RAM.".to_string(),
+                size_gb: 9.0,
+                recommended_ram_gb: 16,
+            });
+        }
+
+        // 13. Gemma 4 31B — Google's largest dense Gemma 4, needs heavy RAM offload
+        if ram_gb >= 24.0 {
+            models.push(GgufModelRecommendation {
+                id: "gemma-4-31b".to_string(),
+                name: "Gemma 4 31B".to_string(),
+                url: "https://huggingface.co/unsloth/gemma-4-31B-it-GGUF/resolve/main/gemma-4-31B-it-UD-Q4_K_XL.gguf".to_string(),
+                description: "Google Gemma 4 31B dense — maximum intelligence. Heavy GPU+RAM offload with 64GB.".to_string(),
+                size_gb: 19.5,
+                recommended_ram_gb: 32,
             });
         }
 

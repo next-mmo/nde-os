@@ -12,6 +12,26 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex};
 
+/// Returns the default NDE-OS data directory for the current platform.
+///
+/// This is the single source of truth for the base directory within `core`.
+/// The server and Tauri desktop may override this with their own config at
+/// startup — but for core modules that need a default (e.g. dubbing.rs),
+/// this provides a consistent fallback.
+pub fn default_base_dir() -> PathBuf {
+    if cfg!(windows) {
+        std::env::var("LOCALAPPDATA")
+            .map(|p| PathBuf::from(p).join("ai-launcher"))
+            .unwrap_or_else(|_| PathBuf::from("C:\\ai-launcher-data"))
+    } else {
+        std::env::var("HOME")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| PathBuf::from("/tmp"))
+            .join(".ai-launcher")
+    }
+}
+
+
 pub struct AppManager {
     base_dir: PathBuf,
     uv_bin: PathBuf,

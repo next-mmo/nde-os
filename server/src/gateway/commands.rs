@@ -11,6 +11,35 @@ use ai_launcher_core::shield::profile::{ProfileManager, ShieldProfile};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
+use crate::router::{DesktopAction, DesktopActionQueue};
+
+/// Canonical list of all static app IDs known to the desktop shell.
+/// Keep in sync with `desktop/src/configs/apps/apps-config.ts`.
+pub(crate) const STATIC_APP_IDS: &[(&str, &str)] = &[
+    ("ai-launcher", "AI Launcher"),
+    ("browser", "Browser"),
+    ("logs", "Logs"),
+    ("settings", "Settings"),
+    ("chat", "NDE Chat"),
+    ("app-store", "App Store"),
+    ("terminal", "Terminal"),
+    ("code-editor", "Code Editor"),
+    ("command-center", "Command Center"),
+    ("model-settings", "LLM Providers"),
+    ("plugins", "Plugins"),
+    ("channels", "Channels"),
+    ("mcp-tools", "MCP Tools"),
+    ("skills", "Skills"),
+    ("knowledge", "Knowledge"),
+    ("architecture", "Architecture"),
+    ("shield-browser", "Shield Browser"),
+    ("file-explorer", "File Explorer"),
+    ("vibe-studio", "Vibe Code Studio"),
+    ("screenshot", "Screenshot Results"),
+    ("service-hub", "Service Hub"),
+    ("freecut", "FreeCut"),
+];
+
 /// Result of an emulator command.
 pub(crate) enum EmulatorAction {
     Reply(String),
@@ -24,6 +53,9 @@ pub(crate) fn welcome_message() -> String {
     /todo_list — List all tasks\n\
     /todo_add <title> — Create task\n\
     /todo_done <file> — Mark done\n\n\
+    🖥️ Desktop Apps:\n\
+    /apps — List all desktop apps\n\
+    /app:<id> — Open an app (e.g. /app:vibe-studio)\n\n\
     🛡️ Shield Browser:\n\
     /profiles — List browser profiles\n\
     /profile <name> — Profile details\n\
@@ -47,6 +79,9 @@ pub(crate) fn help_message() -> String {
     /todo_list — List all tasks\n\
     /todo_add <title> — Create task\n\
     /todo_done <file> — Mark done\n\n\
+    🖥️ Desktop Apps:\n\
+    /apps — List all desktop apps\n\
+    /app:<id> — Open an app (e.g. /app:vibe-studio)\n\n\
     🛡️ Shield Browser:\n\
     /profiles — List all browser profiles\n\
     /profile <name> — Show profile details\n\
@@ -150,6 +185,77 @@ pub(crate) fn try_kanban(text: &str) -> Option<String> {
     } else {
         None
     }
+}
+
+/// Handle desktop app commands: `/apps` and `/app:<id>`.
+pub(crate) fn try_desktop_commands(
+    text: &str,
+    desktop_actions: &DesktopActionQueue,
+) -> Option<String> {
+    let t = text.trim();
+
+    // /apps — list all available desktop apps
+    if t == "/apps" {
+        let mut lines = vec![format!("🖥️ Desktop Apps ({})\n", STATIC_APP_IDS.len())];
+        for (id, title) in STATIC_APP_IDS {
+            lines.push(format!("  • {} — /app:{}", title, id));
+        }
+        lines.push(String::new());
+        lines.push("Tap a command or type /app:<id> to open.".into());
+        return Some(lines.join("\n"));
+    }
+
+    // /app:<id> — open a specific app
+    if let Some(app_id) = t.strip_prefix("/app:") {
+        let app_id = app_id.trim();
+        if app_id.is_empty() {
+            return Some("❌ Usage: /app:<id>\nExample: /app:vibe-studio\nUse /apps to see all available apps.".into());
+        }
+
+        // Validate against known app IDs (case-insensitive)
+        let lower = app_id.to_lowercase();
+        let matched = STATIC_APP_IDS
+            .iter()
+            .find(|(id, _)| id.to_lowercase() == lower);
+
+        return Some(match matched {
+            Some((canonical_id, title)) => {
+                // Push action to the queue for the frontend to pick up
+                if let Ok(mut q) = desktop_actions.lock() {
+                    q.push(DesktopAction {
+                        kind: "open_app".to_string(),
+                        app_id: canonical_id.to_string(),
+                    });
+                }
+                format!("✅ Opening {} on desktop…", title)
+            }
+            None => {
+                // Try fuzzy match
+                let suggestions: Vec<String> = STATIC_APP_IDS
+                    .iter()
+                    .filter(|(id, title)| {
+                        id.contains(&lower) || title.to_lowercase().contains(&lower)
+                    })
+                    .map(|(id, title)| format!("  • {} — /app:{}", title, id))
+                    .collect();
+
+                if suggestions.is_empty() {
+                    format!(
+                        "❌ Unknown app '{}'. Use /apps to see all available apps.",
+                        app_id
+                    )
+                } else {
+                    format!(
+                        "❌ Unknown app '{}'. Did you mean:\n{}\n\nUse /apps for the full list.",
+                        app_id,
+                        suggestions.join("\n")
+                    )
+                }
+            }
+        });
+    }
+
+    None
 }
 
 /// Handle Shield Browser commands.

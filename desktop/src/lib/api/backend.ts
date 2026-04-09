@@ -377,6 +377,27 @@ export async function fetchGatewayLogs(sinceId: number = 0): Promise<GatewayLogE
   }
 }
 
+// ── Desktop Remote Actions ──
+
+export interface DesktopAction {
+  kind: string;
+  app_id: string;
+}
+
+/**
+ * Poll the server for pending desktop actions pushed by gateways (Telegram, etc).
+ * The server drains the queue on each call, so actions are delivered exactly once.
+ */
+export async function fetchPendingDesktopActions(): Promise<DesktopAction[]> {
+  try {
+    const res = await fetch(`${API_BASE}/api/desktop/pending-actions`);
+    const json = await res.json();
+    return json.data ?? [];
+  } catch {
+    return [];
+  }
+}
+
 // ── MCP ──
 
 export async function listMcpTools(): Promise<McpTool[]> {

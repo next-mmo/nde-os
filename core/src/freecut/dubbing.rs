@@ -4,8 +4,13 @@
 //! - local SRT import
 //! - local Whisper transcription
 //! - optional NDE LLM line polish / translation
-//! - Edge TTS synthesis
-//! - optional RVC CLI post-processing
+//! - Edge TTS synthesis (delegates to `core::voice::tts`)
+//! - optional RVC CLI post-processing (delegates to `core::voice::rvc`)
+//!
+//! The voice runtime is now the shared NDE-OS global service managed by
+//! `core::voice::runtime::VoiceRuntime`. This file no longer contains any
+//! duplicated helpers for command resolution or synthesis — those live in
+//! the `voice` module and are reused by any NDE-OS app.
 
 use anyhow::{anyhow, bail, Context, Result};
 use chrono::Utc;
@@ -19,6 +24,15 @@ use std::process::Command;
 use super::project::{
     DubbingIngestMode, DubbingLlmConfig, DubbingSegment, DubbingSession, DubbingSpeaker,
 };
+
+use crate::voice::{
+    rvc as voice_rvc,
+    runtime::{resolve_python, resolve_system_command, run_checked_command, VoiceRuntime},
+    tts as voice_tts,
+    types::{RvcConvertRequest, TtsSynthesizeRequest},
+};
+
+// ─── Public result types ──────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
@@ -74,40 +88,36 @@ struct NdeEnvelope<T> {
 #[derive(Debug, Deserialize)]
 struct NdeAgentChatData {
     response: String,
+    #[allow(dead_code)]
     conversation_id: String,
 }
 
-pub fn detect_local_tools() -> Result<DubbingToolReport> {
-    let whisper_available = resolve_command("whisper").is_some();
-    let edge_tts_available = resolve_command("edge-tts").is_some();
-    let nde_llm_status = detect_nde_llm().ok();
-    let python_available = resolve_python().is_some();
+// ─── Public API ───────────────────────────────────────────────────────────────
 
-    let mut details = Vec::new();
-    if !whisper_available {
-        details.push("Whisper CLI not found on PATH".to_string());
-    }
-    if !edge_tts_available {
-        details.push("edge-tts CLI not found on PATH".to_string());
-    }
+/// Detect which dubbing tools are available on this machine.
+///
+/// Delegates to the shared `VoiceRuntime` for tool detection instead of
+/// duplicating `resolve_command` / `list_edge_voices` logic inline.
+pub fn detect_local_tools() -> Result<DubbingToolReport> {
+    // We don't have the base_dir here so we create a runtime that searches
+    // the system PATH and the standard NDE-OS location.
+    let base_dir = crate::app_manager::default_base_dir();
+    let runtime = VoiceRuntime::new(&base_dir);
+    let status = runtime.detect_status();
+
+    let nde_llm_status = detect_nde_llm().ok();
+    let mut details = status.details.clone();
     if nde_llm_status.is_none() {
         details.push("NDE LLM gateway not reachable on localhost:8080".to_string());
     }
-    if !python_available {
-        details.push("Python not found on PATH (needed for RVC CLI)".to_string());
-    }
 
     Ok(DubbingToolReport {
-        whisper_available,
-        edge_tts_available,
+        whisper_available: status.whisper_available,
+        edge_tts_available: status.edge_tts_available,
         nde_llm_available: nde_llm_status.is_some(),
-        python_available,
-        rvc_available: python_available,
-        edge_voices: if edge_tts_available {
-            list_edge_voices().unwrap_or_default()
-        } else {
-            Vec::new()
-        },
+        python_available: status.python_available,
+        rvc_available: status.rvc_available,
+        edge_voices: status.voices,
         nde_active_model: nde_llm_status,
         details,
     })
@@ -139,6 +149,9 @@ pub fn generate_dubbing_assets<F>(
 where
     F: Fn(DubbingProgressUpdate),
 {
+    let base_dir = crate::app_manager::default_base_dir();
+    let runtime = VoiceRuntime::new(&base_dir);
+
     let output_dir = render_root.join(project_id).join("dubbing");
     fs::create_dir_all(&output_dir).with_context(|| {
         format!(
@@ -177,7 +190,7 @@ where
                     message: "Running local Whisper transcription".to_string(),
                 });
                 let srt_path =
-                    transcribe_with_whisper(Path::new(&source_media_path), &output_dir, whisper)?;
+                    transcribe_with_whisper(Path::new(&source_media_path), &output_dir, whisper, &runtime)?;
                 let imported = import_srt_as_session(&srt_path)?;
                 session.imported_srt_path = Some(imported.imported_srt_path);
                 session.segments = imported.segments;
@@ -256,9 +269,9 @@ where
             .map(|config| config.enabled)
             .unwrap_or(false)
         {
-            synthesize_with_rvc(&final_text, speaker, &out_path)?;
+            synthesize_with_rvc(&final_text, speaker, &out_path, &runtime)?;
         } else {
-            synthesize_with_edge_tts(&final_text, speaker, &out_path, &session.target_language)?;
+            synthesize_with_edge_tts(&final_text, speaker, &out_path, &session.target_language, &runtime)?;
         }
 
         segment.audio_path = Some(out_path.to_string_lossy().to_string());
@@ -279,6 +292,8 @@ where
 
     Ok(session)
 }
+
+// ─── Private implementation ───────────────────────────────────────────────────
 
 fn apply_nde_llm_to_segments<F>(
     segments: &mut [DubbingSegment],
@@ -336,105 +351,96 @@ where
     Ok(())
 }
 
+/// Synthesize a segment using Edge TTS via the shared voice runtime.
 fn synthesize_with_edge_tts(
     text: &str,
     speaker: &DubbingSpeaker,
     out_path: &Path,
     target_language: &str,
+    runtime: &VoiceRuntime,
 ) -> Result<()> {
-    let edge_tts = resolve_command("edge-tts")
-        .ok_or_else(|| anyhow!("edge-tts CLI not found; install it or disable synthesis"))?;
     let voice = if speaker.voice.trim().is_empty() {
-        default_voice_for_language(target_language)
+        voice_tts::default_voice_for_language(target_language)
     } else {
         speaker.voice.clone()
     };
 
-    let mut command = Command::new(edge_tts);
-    command.arg("--voice").arg(voice);
-    command.arg("--text").arg(text);
-    command.arg("--write-media").arg(out_path);
+    let req = TtsSynthesizeRequest {
+        text: text.to_string(),
+        voice: voice.clone(),
+        output_path: Some(out_path.to_string_lossy().to_string()),
+        rate: speaker.rate.clone(),
+        pitch: speaker.pitch.clone(),
+        volume: speaker.volume.clone(),
+    };
 
-    if let Some(rate) = speaker
-        .rate
-        .as_deref()
-        .filter(|value| !value.trim().is_empty())
-    {
-        command.arg(format!("--rate={rate}"));
-    }
-    if let Some(pitch) = speaker
-        .pitch
-        .as_deref()
-        .filter(|value| !value.trim().is_empty())
-    {
-        command.arg(format!("--pitch={pitch}"));
-    }
-    if let Some(volume) = speaker
-        .volume
-        .as_deref()
-        .filter(|value| !value.trim().is_empty())
-    {
-        command.arg(format!("--volume={volume}"));
-    }
-
-    run_checked_command(command, "edge-tts synthesis")
+    voice_tts::synthesize(&req, runtime).map(|_| ())
 }
 
-fn synthesize_with_rvc(text: &str, speaker: &DubbingSpeaker, out_path: &Path) -> Result<()> {
-    let rvc = speaker
+/// Synthesize a segment using RVC (TTS then voice conversion) via the shared voice runtime.
+fn synthesize_with_rvc(
+    text: &str,
+    speaker: &DubbingSpeaker,
+    out_path: &Path,
+    runtime: &VoiceRuntime,
+) -> Result<()> {
+    let rvc_cfg = speaker
         .rvc
         .as_ref()
         .ok_or_else(|| anyhow!("RVC requested but configuration is missing"))?;
-    let python = rvc
-        .python_path
-        .clone()
-        .map(PathBuf::from)
-        .or_else(resolve_python)
-        .ok_or_else(|| anyhow!("Python not found for RVC CLI invocation"))?;
-    let cli_path = rvc
-        .cli_path
-        .clone()
-        .ok_or_else(|| anyhow!("RVC CLI path is required when RVC is enabled"))?;
-    let model_path = rvc
+
+    let model_path = rvc_cfg
         .model_path
         .clone()
         .ok_or_else(|| anyhow!("RVC model path is required when RVC is enabled"))?;
-    let index_path = rvc
+    let index_path = rvc_cfg
         .index_path
         .clone()
         .ok_or_else(|| anyhow!("RVC index path is required when RVC is enabled"))?;
 
+    // Step 1: synthesize via TTS into a temp file
+    let tts_voice = if speaker.voice.trim().is_empty() {
+        "en-US-AriaNeural".to_string()
+    } else {
+        speaker.voice.clone()
+    };
     let temp_tts_path = out_path.with_extension("edge.mp3");
-    let mut command = Command::new(python);
-    command.arg(cli_path);
-    command.arg("tts_infer");
-    command.arg("--tts_text").arg(text);
-    command
-        .arg("--tts_voice")
-        .arg(if speaker.voice.trim().is_empty() {
-            "en-US-AriaNeural"
-        } else {
-            speaker.voice.as_str()
-        });
-    command.arg("--output_tts_path").arg(&temp_tts_path);
-    command.arg("--output_rvc_path").arg(out_path);
-    command.arg("--pth_path").arg(model_path);
-    command.arg("--index_path").arg(index_path);
-    command.arg("--export_format").arg("MP3");
-    if let Some(pitch_shift) = rvc.pitch_shift {
-        command.arg("--pitch").arg(pitch_shift.to_string());
-    }
+    let tts_req = TtsSynthesizeRequest {
+        text: text.to_string(),
+        voice: tts_voice,
+        output_path: Some(temp_tts_path.to_string_lossy().to_string()),
+        rate: speaker.rate.clone(),
+        pitch: speaker.pitch.clone(),
+        volume: speaker.volume.clone(),
+    };
+    voice_tts::synthesize(&tts_req, runtime)?;
 
-    run_checked_command(command, "RVC synthesis")
+    // Step 2: run RVC conversion on the TTS output
+    let req = RvcConvertRequest {
+        input_audio: temp_tts_path.to_string_lossy().to_string(),
+        model_path,
+        index_path,
+        output_path: Some(out_path.to_string_lossy().to_string()),
+        pitch_shift: rvc_cfg.pitch_shift,
+        python_path: rvc_cfg.python_path.clone(),
+        cli_path: rvc_cfg.cli_path.clone(),
+        output_format: "MP3".to_string(),
+    };
+
+    voice_rvc::convert(&req, runtime).map(|_| ())
 }
 
+/// Transcribe source media using the Whisper CLI from the shared voice runtime.
 fn transcribe_with_whisper(
     source_media_path: &Path,
     output_dir: &Path,
     whisper: WhisperSettings,
+    runtime: &VoiceRuntime,
 ) -> Result<PathBuf> {
-    let whisper_cli = resolve_command("whisper")
-        .ok_or_else(|| anyhow!("Whisper CLI not found; install it or switch to SRT import"))?;
+    let whisper_cli = runtime
+        .resolve_tool("whisper")
+        .ok_or_else(|| anyhow!("Whisper CLI not found; install the voice runtime via Service Hub or switch to SRT import"))?;
+
     let model = whisper.model.unwrap_or_else(|| "base".to_string());
     let task = whisper.task.unwrap_or_else(|| "transcribe".to_string());
 
@@ -454,6 +460,7 @@ fn transcribe_with_whisper(
 
     run_checked_command(command, "Whisper transcription")?;
 
+    // Find the generated SRT file
     if let Some(stem) = source_media_path
         .file_stem()
         .and_then(|value| value.to_str())
@@ -483,6 +490,8 @@ fn transcribe_with_whisper(
 
     fallback.ok_or_else(|| anyhow!("Whisper completed but no SRT output was found"))
 }
+
+// ─── SRT parsing ─────────────────────────────────────────────────────────────
 
 fn parse_srt(content: &str) -> Result<Vec<DubbingSegment>> {
     let normalized = content.replace("\r\n", "\n");
@@ -541,6 +550,8 @@ fn parse_timestamp(raw: &str) -> Result<f64> {
     let seconds: f64 = parts[2].parse().context("invalid seconds value")?;
     Ok((hours * 3600.0) + (minutes * 60.0) + seconds)
 }
+
+// ─── Speaker management ───────────────────────────────────────────────────────
 
 fn build_speakers_from_segments(segments: &mut [DubbingSegment]) -> Vec<DubbingSpeaker> {
     let mut labels = BTreeSet::new();
@@ -606,7 +617,7 @@ fn ensure_default_speakers(session: &mut DubbingSession) {
         session.speakers.push(DubbingSpeaker {
             id: "speaker-narrator".to_string(),
             label: "Narrator".to_string(),
-            voice: default_voice_for_language(&session.target_language),
+            voice: voice_tts::default_voice_for_language(&session.target_language),
             rate: Some("+0%".to_string()),
             pitch: None,
             volume: None,
@@ -621,6 +632,8 @@ fn ensure_default_speakers(session: &mut DubbingSession) {
         }
     }
 }
+
+// ─── Text helpers ─────────────────────────────────────────────────────────────
 
 fn extract_speaker_label(text: &str) -> (Option<String>, String) {
     let trimmed = text.trim();
@@ -648,115 +661,6 @@ fn extract_speaker_label(text: &str) -> (Option<String>, String) {
     }
 
     (None, trimmed.to_string())
-}
-
-fn list_edge_voices() -> Result<Vec<String>> {
-    let edge_tts =
-        resolve_command("edge-tts").ok_or_else(|| anyhow!("edge-tts CLI not found on PATH"))?;
-    let output = Command::new(edge_tts)
-        .arg("--list-voices")
-        .output()
-        .context("failed to list edge-tts voices")?;
-    if !output.status.success() {
-        return Ok(Vec::new());
-    }
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let mut voices = Vec::new();
-    for line in stdout.lines() {
-        let trimmed = line.trim();
-        if trimmed.is_empty() || trimmed.starts_with('-') {
-            continue;
-        }
-        if let Some(name) = trimmed.split_whitespace().next() {
-            if name.contains('-') && name.ends_with("Neural") {
-                voices.push(name.to_string());
-            }
-        }
-        if voices.len() >= 60 {
-            break;
-        }
-    }
-    voices.sort();
-    voices.dedup();
-    Ok(voices)
-}
-
-fn detect_nde_llm() -> Result<String> {
-    let client = Client::new();
-    let response = client
-        .get("http://127.0.0.1:8080/api/agent/config")
-        .send()
-        .context("failed to reach NDE agent config endpoint")?
-        .error_for_status()
-        .context("NDE agent config endpoint returned an error")?;
-    let body: NdeEnvelope<serde_json::Value> = response
-        .json()
-        .context("invalid NDE agent config response")?;
-    if !body.success {
-        bail!("NDE agent config request failed: {}", body.message);
-    }
-
-    let model = body
-        .data
-        .get("model")
-        .and_then(|value| value.as_str())
-        .unwrap_or("")
-        .trim()
-        .to_string();
-    if model.is_empty() {
-        bail!("NDE agent config does not have an active model");
-    }
-    Ok(model)
-}
-
-fn resolve_command(program: &str) -> Option<PathBuf> {
-    let output = if cfg!(windows) {
-        Command::new("cmd")
-            .args(["/C", "where", program])
-            .output()
-            .ok()?
-    } else {
-        Command::new("sh")
-            .args(["-c", &format!("command -v {program}")])
-            .output()
-            .ok()?
-    };
-    if !output.status.success() {
-        return None;
-    }
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    stdout
-        .lines()
-        .map(str::trim)
-        .find(|line| !line.is_empty())
-        .map(PathBuf::from)
-}
-
-fn resolve_python() -> Option<PathBuf> {
-    resolve_command("python").or_else(|| resolve_command("python3"))
-}
-
-fn run_checked_command(mut command: Command, label: &str) -> Result<()> {
-    let output = command
-        .output()
-        .with_context(|| format!("failed to execute {label}"))?;
-    if output.status.success() {
-        return Ok(());
-    }
-    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-    bail!("{label} failed: {stderr}");
-}
-
-fn default_voice_for_language(language: &str) -> String {
-    match language.to_ascii_lowercase().as_str() {
-        "ja" | "jp" => "ja-JP-NanamiNeural".to_string(),
-        "ko" => "ko-KR-SunHiNeural".to_string(),
-        "zh" | "zh-cn" => "zh-CN-XiaoxiaoNeural".to_string(),
-        "es" => "es-ES-ElviraNeural".to_string(),
-        "fr" => "fr-FR-DeniseNeural".to_string(),
-        "de" => "de-DE-KatjaNeural".to_string(),
-        _ => "en-US-AriaNeural".to_string(),
-    }
 }
 
 fn slugify(raw: &str) -> String {
@@ -797,32 +701,117 @@ fn prettify_speaker_label(speaker_id: &str, index: usize) -> String {
     }
 }
 
+fn detect_nde_llm() -> Result<String> {
+    let client = Client::new();
+    let response = client
+        .get("http://127.0.0.1:8080/api/agent/config")
+        .send()
+        .context("failed to reach NDE agent config endpoint")?
+        .error_for_status()
+        .context("NDE agent config endpoint returned an error")?;
+    let body: NdeEnvelope<serde_json::Value> = response
+        .json()
+        .context("invalid NDE agent config response")?;
+    if !body.success {
+        bail!("NDE agent config request failed: {}", body.message);
+    }
+
+    let model = body
+        .data
+        .get("model")
+        .and_then(|value| value.as_str())
+        .unwrap_or("")
+        .trim()
+        .to_string();
+    if model.is_empty() {
+        bail!("NDE agent config does not have an active model");
+    }
+    Ok(model)
+}
+
+// ─── Tests ────────────────────────────────────────────────────────────────────
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn parses_srt_and_detects_speakers() {
-        let srt = "1\n00:00:01,000 --> 00:00:03,000\n[hero] We have to move.\n\n2\n00:00:03,500 --> 00:00:05,000\nvillain: Too late.\n";
-        let mut segments = parse_srt(srt).expect("parse srt");
+    fn parse_srt_basic() {
+        let srt = "1\n00:00:01,000 --> 00:00:04,000\nHello world\n\n2\n00:00:05,000 --> 00:00:08,000\nSecond line";
+        let segments = parse_srt(srt).expect("should parse");
         assert_eq!(segments.len(), 2);
-        assert_eq!(segments[0].speaker_id.as_deref(), Some("hero"));
-        assert_eq!(segments[0].text, "We have to move.");
-        let speakers = build_speakers_from_segments(&mut segments);
-        assert_eq!(speakers.len(), 2);
+        assert_eq!(segments[0].text, "Hello world");
+        assert_eq!(segments[1].text, "Second line");
     }
 
     #[test]
-    fn builds_default_narrator_when_no_speaker_labels() {
-        let srt = "1\n00:00:01,000 --> 00:00:03,000\nHello there.\n";
-        let mut segments = parse_srt(srt).expect("parse srt");
+    fn parse_srt_with_speaker_labels() {
+        let srt = "1\n00:00:01,000 --> 00:00:04,000\n[Alice]: Hello there\n\n2\n00:00:05,000 --> 00:00:08,000\nNarrator: Once upon a time";
+        let segments = parse_srt(srt).expect("should parse");
+        assert_eq!(segments.len(), 2);
+        assert_eq!(segments[0].speaker_id.as_deref(), Some("alice"));
+        assert_eq!(segments[0].text, "Hello there");
+        assert_eq!(segments[1].speaker_id.as_deref(), Some("narrator"));
+    }
+
+    #[test]
+    fn slugify_handles_special_chars() {
+        assert_eq!(slugify("Hello World!"), "hello-world");
+        assert_eq!(slugify("  foo--bar  "), "foo-bar");
+    }
+
+    #[test]
+    fn build_speakers_defaults_to_narrator() {
+        let mut segments = vec![DubbingSegment {
+            id: "seg-0001".to_string(),
+            start_secs: 0.0,
+            end_secs: 1.0,
+            text: "hi".to_string(),
+            output_text: None,
+            speaker_id: None,
+            audio_path: None,
+            status: None,
+        }];
         let speakers = build_speakers_from_segments(&mut segments);
+        assert_eq!(speakers.len(), 1);
         assert_eq!(speakers[0].label, "Narrator");
-        assert_eq!(segments[0].speaker_id.as_deref(), Some("speaker-narrator"));
     }
 
     #[test]
-    fn parses_subtitle_timestamps() {
-        assert_eq!(parse_timestamp("00:01:05,500").expect("timestamp"), 65.5);
+    fn merge_speakers_preserves_existing() {
+        let existing = vec![DubbingSpeaker {
+            id: "alice".to_string(),
+            label: "Alice".to_string(),
+            voice: "en-US-AriaNeural".to_string(),
+            rate: None,
+            pitch: None,
+            volume: None,
+            rvc: None,
+        }];
+        let imported = vec![
+            DubbingSpeaker {
+                id: "alice".to_string(),
+                label: "Imported Alice".to_string(),
+                voice: "en-US-JennyNeural".to_string(),
+                rate: None,
+                pitch: None,
+                volume: None,
+                rvc: None,
+            },
+            DubbingSpeaker {
+                id: "bob".to_string(),
+                label: "Bob".to_string(),
+                voice: "en-US-GuyNeural".to_string(),
+                rate: None,
+                pitch: None,
+                volume: None,
+                rvc: None,
+            },
+        ];
+        let merged = merge_speakers(&existing, &imported);
+        assert_eq!(merged.len(), 2);
+        // Existing alice should be preserved, not overwritten
+        let alice = merged.iter().find(|s| s.id == "alice").unwrap();
+        assert_eq!(alice.voice, "en-US-AriaNeural");
     }
 }

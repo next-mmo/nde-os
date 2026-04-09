@@ -62,7 +62,9 @@ test.describe('Desktop Interactions', () => {
     await expect(contextMenu.getByRole('menuitem', { name: 'New Folder' })).toBeVisible();
     await expect(contextMenu.getByRole('menuitem', { name: 'Sort By Name' })).toBeVisible();
     await expect(contextMenu.getByRole('menuitem', { name: 'Clean Up' })).toBeVisible();
-    await expect(contextMenu.getByRole('menuitem', { name: 'Change Wallpaper…' })).toBeVisible();
+    await expect(contextMenu.getByRole('menuitem', { name: 'Next Wallpaper' })).toBeVisible();
+    await expect(contextMenu.getByRole('menuitem', { name: 'Random Wallpaper' })).toBeVisible();
+    await expect(contextMenu.getByRole('menuitem', { name: 'Wallpaper Settings…' })).toBeVisible();
     await expect(contextMenu.getByRole('menuitem', { name: 'Toggle Dark Mode' })).toBeVisible();
     await expect(contextMenu.getByRole('menuitem', { name: 'Open Launchpad' })).toBeVisible();
     await expect(contextMenu.getByRole('menuitem', { name: 'Spotlight Search' })).toBeVisible();

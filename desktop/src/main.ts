@@ -1,12 +1,32 @@
 import { mount } from "svelte";
 import Desktop from "🍎/components/Desktop/Desktop.svelte";
 import { initScreenshotHotkeys } from "🍎/lib/tauri/screenshot";
-import { openStaticApp, openServiceHub, addNotification, desktop, setVikingInstalled } from "🍎/state/desktop.svelte";
+import { openStaticApp, openServiceHub, addNotification, desktop, setVikingInstalled, type StaticAppID } from "🍎/state/desktop.svelte";
+import { fetchPendingDesktopActions } from "$lib/api/backend";
+import { apps_config } from "🍎/configs/apps/apps-config";
 import { invoke } from "@tauri-apps/api/core";
 import { emit, listen } from "@tauri-apps/api/event";
 import "🍎/css/global.css";
 
 initScreenshotHotkeys();
+
+// ── Remote Desktop Action Poller ──
+// Polls the server every 3s for actions pushed by gateways (Telegram /app:vibe-studio).
+const POLL_INTERVAL_MS = 3000;
+const validAppIds = new Set(Object.keys(apps_config));
+
+setInterval(async () => {
+  try {
+    const actions = await fetchPendingDesktopActions();
+    for (const action of actions) {
+      if (action.kind === "open_app" && validAppIds.has(action.app_id)) {
+        openStaticApp(action.app_id as StaticAppID);
+      }
+    }
+  } catch {
+    // Silently ignore — server may be offline
+  }
+}, POLL_INTERVAL_MS);
 
 // Suppress default browser context menu globally — the app uses its own Svelte context menus
 document.addEventListener("contextmenu", (e) => e.preventDefault());

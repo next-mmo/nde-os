@@ -238,6 +238,9 @@ fn main() {
     // Shared gateway log buffer
     let log_buffer = gateway::new_shared();
 
+    // Desktop action queue (shared between gateway and REST API)
+    let desktop_actions: router::DesktopActionQueue = Arc::new(Mutex::new(Vec::new()));
+
     // Telegram gateway
     let tg_state = Arc::new(gateway::GatewayState::new());
 
@@ -249,6 +252,7 @@ fn main() {
             rt.handle().clone(),
             tg_state.clone(),
             log_buffer.clone(),
+            desktop_actions.clone(),
         );
     } else {
         println!("  Telegram:    not configured (set via Channels settings)");
@@ -278,6 +282,7 @@ fn main() {
         tg_state,
         log_buffer,
         actor_runner,
+        desktop_actions,
     });
 
     let server = Server::http("0.0.0.0:8080").expect("Failed to bind :8080");

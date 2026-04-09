@@ -30,7 +30,15 @@
     selectIcon,
     collapseDesktop,
     selectLauncherSection,
+    setWallpaper,
+    openStaticApp,
   } from "🍎/state/desktop.svelte";
+  import {
+    wallpaperSettings,
+    fetchWallpaper,
+    startRotation,
+    stopRotation,
+  } from "🍎/state/wallpaper.svelte";
 
   const queryClient = new QueryClient({
     defaultOptions: {
@@ -48,10 +56,21 @@
     desktop.fullscreen_session_id ? getSessionById(desktop.fullscreen_session_id) : null,
   );
 
+  // Apply cached online wallpaper on boot (before fetch)
   onMount(() => {
     bootDesktop();
     refreshAll();
     startLogPolling(3000);
+
+    // If online wallpapers were enabled, fetch a fresh one and start rotation
+    if (wallpaperSettings.enabled) {
+      fetchWallpaper().then((url) => {
+        if (url) {
+          setWallpaper(`url("${url}")`);
+        }
+      });
+      startRotation((cssValue) => setWallpaper(cssValue));
+    }
 
     const refreshTimer = window.setInterval(() => {
       refreshAll();
@@ -65,6 +84,7 @@
       window.clearInterval(refreshTimer);
       window.clearInterval(resourceTimer);
       stopLogPolling();
+      stopRotation();
     };
   });
 
@@ -72,17 +92,49 @@
     document.body.classList.toggle("dark", desktop.theme === "dark");
   });
 
-  $effect(() => {
-    document.documentElement.style.setProperty("--system-wallpaper", desktop.wallpaper);
-  });
+  // Build the wallpaper background style reactively
+  const wallpaperBg = $derived(
+    desktop.wallpaper.includes('url')
+      ? `center / cover no-repeat ${desktop.wallpaper}`
+      : desktop.wallpaper
+  );
 
   /* ---- Desktop right-click context menu ---- */
   let desktopCtx = $state<{ x: number; y: number } | null>(null);
+  let fetchingWallpaper = $state(false);
 
   function handleDesktopContextMenu(e: MouseEvent) {
     e.preventDefault();
     selectIcon(null);
     desktopCtx = { x: e.clientX, y: e.clientY };
+  }
+
+  async function handleNextWallpaper() {
+    if (fetchingWallpaper) return;
+    fetchingWallpaper = true;
+    try {
+      const url = await fetchWallpaper();
+      if (url) {
+        setWallpaper(`url("${url}")`);
+      }
+    } finally {
+      fetchingWallpaper = false;
+    }
+  }
+
+  async function handleRandomWallpaper() {
+    if (fetchingWallpaper) return;
+    fetchingWallpaper = true;
+    try {
+      const categories = ["nature", "space", "abstract", "landscape", "ocean", "mountains", "forest", "city", "sunset", "animals", "flowers", "winter"] as const;
+      const randomCat = categories[Math.floor(Math.random() * categories.length)];
+      const url = await fetchWallpaper(randomCat);
+      if (url) {
+        setWallpaper(`url("${url}")`);
+      }
+    } finally {
+      fetchingWallpaper = false;
+    }
   }
 
   const desktopMenuItems: ContextMenuItem[] = [
@@ -94,10 +146,12 @@
     { kind: "divider" },
     { kind: "action", icon: "👁️", label: "Show View Options", action: () => {}, disabled: true },
     { kind: "divider" },
-    { kind: "action", icon: "🖼️", label: "Change Wallpaper…", action: () => { selectLauncherSection("overview"); } },
+    { kind: "action", icon: "⏭️", label: "Next Wallpaper", action: () => { handleNextWallpaper(); } },
+    { kind: "action", icon: "🎲", label: "Random Wallpaper", action: () => { handleRandomWallpaper(); } },
+    { kind: "action", icon: "🖼️", label: "Wallpaper Settings…", action: () => { openStaticApp("settings"); } },
     { kind: "action", icon: "🌗", label: "Toggle Dark Mode", action: () => toggleTheme(), shortcut: "⌘D" },
     { kind: "divider" },
-    { kind: "action", icon: desktop.dock_auto_hide ? "👁️" : "🫥", label: desktop.dock_auto_hide ? "Show Dock" : "Auto-Hide Dock", action: () => toggleDockAutoHide() },
+    { kind: "action", icon: "🫥", label: "Toggle Dock Auto-Hide", action: () => toggleDockAutoHide() },
     { kind: "divider" },
     { kind: "action", icon: "🚀", label: "Open Launchpad", action: () => toggleLaunchpad(true) },
     { kind: "action", icon: "🔍", label: "Spotlight Search", action: () => toggleSpotlight(true), shortcut: "⌘Space" },
@@ -137,7 +191,7 @@
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div
       class="absolute inset-0 scale-[1.04] saturate-[1.05]"
-      style="background: linear-gradient(180deg, hsla(215 85% 80% / 0.18), transparent 18%), linear-gradient(135deg, hsla(8 100% 76% / 0.16), transparent 32%), center / cover no-repeat var(--system-wallpaper);"
+      style="background: linear-gradient(180deg, hsla(215 85% 80% / 0.18), transparent 18%), linear-gradient(135deg, hsla(8 100% 76% / 0.16), transparent 32%), {wallpaperBg};"
       aria-hidden="true"
       data-testid="desktop-wallpaper"
       oncontextmenu={handleDesktopContextMenu}
