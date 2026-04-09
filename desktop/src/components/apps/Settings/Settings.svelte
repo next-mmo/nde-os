@@ -19,6 +19,7 @@
     setWallpaperEnabled,
     setWallpaperCategory,
     setWallpaperInterval,
+    persistWallpaperSettings,
     WALLPAPER_CATEGORIES,
     type WallpaperCategory,
     type RotationUnit,
@@ -38,12 +39,24 @@
   }
   let { window }: Props = $props();
 
-  let activeTab = $state("general");
+  function getSavedSettingsTab(): string {
+    try {
+      const saved = localStorage.getItem("ai-launcher:settings-tab");
+      if (saved) return saved;
+    } catch {}
+    return "general";
+  }
+
+  let activeTab = $state(getSavedSettingsTab());
 
   $effect(() => {
     if (window?.data?.tab && window.data.tab !== activeTab) {
       activeTab = window.data.tab;
     }
+  });
+
+  $effect(() => {
+    try { localStorage.setItem("ai-launcher:settings-tab", activeTab); } catch {}
   });
 
   let searchQuery = $state("");
@@ -85,6 +98,11 @@
   ];
 
   let wpFetching = $state(false);
+
+  // Filter out dead blob: URLs from history for gallery display
+  const validHistory = $derived(
+    wpSetSettings.history.filter((h: string) => !h.includes('blob:'))
+  );
 
   // ── Preview State ─────────────────────────────────────────────────────
   // previewUrl: raw image URL of the fetched image (null = no preview pending)
@@ -581,16 +599,44 @@
               </div>
             </div>
 
-            <!-- History Info -->
-            {#if wpSetSettings.history.length > 0}
-              <div class="mt-4 flex items-center justify-between text-[12px] text-gray-500">
-                <span>📜 {wpSetSettings.history.length} wallpapers in history</span>
-                <button
-                  class="text-blue-500 hover:text-blue-600 font-medium transition"
-                  onclick={handleClearHistory}
-                >
-                  Clear History
-                </button>
+            <!-- Recent Wallpapers Gallery -->
+            {#if validHistory.length > 0}
+              <div class="mt-5">
+                <div class="flex items-center justify-between mb-3">
+                  <h3 class="text-[13px] font-medium text-black dark:text-white">📜 Recent Wallpapers</h3>
+                  <button
+                    class="text-[12px] text-blue-500 hover:text-blue-600 font-medium transition"
+                    onclick={handleClearHistory}
+                  >
+                    Clear All
+                  </button>
+                </div>
+                <div class="grid grid-cols-4 gap-2">
+                  {#each [...validHistory].reverse().slice(0, 12) as wp, i}
+                    {@const isActive = desktop.wallpaper === wp}
+                    <!-- svelte-ignore a11y_click_events_have_key_events -->
+                    <!-- svelte-ignore a11y_no_static_element_interactions -->
+                    <div
+                      class="relative h-16 rounded-lg overflow-hidden cursor-pointer border-2 transition-all group {isActive ? 'border-blue-500 shadow-md ring-1 ring-blue-500/30' : 'border-transparent hover:border-white/30 hover:scale-[1.03]'}"
+                      style="background: {wp.includes('url') ? `center / cover no-repeat ${wp}` : wp};"
+                      onclick={() => { setWallpaper(wp); previewUrl = null; previewBg = null; }}
+                    >
+                      <!-- Active check badge -->
+                      {#if isActive}
+                        <div class="absolute top-1 right-1 w-4 h-4 bg-blue-500 rounded-full flex items-center justify-center text-white shadow-sm">
+                          <svg class="w-2.5 h-2.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 13l4 4L19 7"/></svg>
+                        </div>
+                      {/if}
+                      <!-- Hover overlay -->
+                      <div class="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
+                        <span class="text-white text-[10px] font-medium opacity-0 group-hover:opacity-100 transition-opacity drop-shadow-md">Apply</span>
+                      </div>
+                    </div>
+                  {/each}
+                </div>
+                {#if validHistory.length > 12}
+                  <p class="text-[11px] text-gray-500 mt-2 text-center">Showing 12 of {validHistory.length} wallpapers</p>
+                {/if}
               </div>
             {/if}
           {/if}

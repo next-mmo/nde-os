@@ -289,6 +289,111 @@ impl BrowserLauncher {
 
         Ok(())
     }
+
+    /// Launch a headless browser for automated tasks (research, scraping).
+    ///
+    /// Uses a dedicated ephemeral profile directory (no persistent profile).
+    /// Returns `(cdp_port, cleanup_handle)`. Drop the handle to kill the browser.
+    pub async fn launch_headless(
+        &self,
+        engine: &BrowserEngine,
+        engine_version: &str,
+        url: Option<&str>,
+    ) -> Result<HeadlessSession> {
+        let engine_mgr = EngineManager::new(&self.base_dir);
+
+        // Find the engine executable
+        let executable = engine_mgr.get_executable(engine, engine_version)?;
+
+        // Find a free CDP port
+        let cdp_port = Self::find_free_port().await?;
+
+        // Create a temporary profile directory (not a persistent ShieldProfile)
+        let temp_profile_dir = self
+            .base_dir
+            .join("shield-temp")
+            .join(format!("headless-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&temp_profile_dir)
+            .context("Failed to create temporary headless profile directory")?;
+
+        // Build launch args with headless=true
+        let args = browser::build_launch_args(
+            engine,
+            &temp_profile_dir,
+            None,
+            url,
+            Some(cdp_port),
+            true, // headless
+        );
+
+        tracing::info!(
+            "Launching headless {} on CDP port {}",
+            engine.display_name(),
+            cdp_port
+        );
+
+        // Build command
+        let mut cmd = TokioCommand::new(&executable);
+        cmd.args(&args);
+        cmd.stdout(std::process::Stdio::null());
+        cmd.stderr(std::process::Stdio::null());
+
+        // Set environment
+        cmd.env(
+            "DISPLAY",
+            std::env::var("DISPLAY").unwrap_or_else(|_| ":0".into()),
+        );
+
+        if *engine == BrowserEngine::Wayfern {
+            cmd.env("CHROME_NO_SANDBOX", "1");
+        }
+
+        let child = cmd.spawn().with_context(|| {
+            format!(
+                "Failed to spawn headless {} process",
+                engine.display_name()
+            )
+        })?;
+
+        let process_id = child.id().unwrap_or(0);
+        tracing::info!(
+            "Headless {} launched with PID {}",
+            engine.display_name(),
+            process_id
+        );
+
+        Ok(HeadlessSession {
+            cdp_port,
+            process_id,
+            child: Arc::new(Mutex::new(Some(child))),
+            temp_profile_dir,
+        })
+    }
+}
+
+/// A headless browser session for automated tasks.
+///
+/// Kills the browser process and cleans up the temp profile on drop.
+pub struct HeadlessSession {
+    pub cdp_port: u16,
+    pub process_id: u32,
+    child: Arc<Mutex<Option<tokio::process::Child>>>,
+    temp_profile_dir: std::path::PathBuf,
+}
+
+impl HeadlessSession {
+    /// Stop the headless browser and clean up.
+    pub async fn shutdown(&self) {
+        if let Some(mut child) = self.child.lock().await.take() {
+            let _ = child.kill().await;
+            let _ = child.wait().await;
+        }
+        if self.process_id > 0 {
+            kill_process(self.process_id);
+        }
+        let _ = std::fs::remove_dir_all(&self.temp_profile_dir);
+        tracing::info!("Headless session cleaned up (PID {})", self.process_id);
+    }
 }
 
 // ─── Cross-Platform Process Kill ───────────────────────────────────

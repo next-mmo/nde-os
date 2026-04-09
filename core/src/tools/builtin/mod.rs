@@ -29,6 +29,7 @@ mod system_info;
 pub mod screenshot;
 
 // ── Web tools (Phase 3) ─────────────────────────────────────────────────────
+mod shield_browse;
 mod web_browse;
 mod web_search;
 
@@ -86,6 +87,7 @@ pub fn default_registry() -> ToolRegistry {
     reg.register(Box::new(web_browse::WebBrowseTool));
     reg.register(Box::new(web_search::WebSearchTool));
     reg.register(Box::new(http_fetch::HttpFetchTool));
+    reg.register(Box::new(shield_browse::ShieldBrowseTool));
 
     // Git (Phase 3)
     reg.register(Box::new(git_tools::GitTool));

@@ -66,7 +66,8 @@ pub(crate) fn welcome_message() -> String {
     /model <name> — Change model (e.g. gpt-4o)\n\
     /model_switch <name> — Switch provider\n\n\
     🔍 Research:\n\
-    /research <topic> — AI web research\n\n\
+    /research <topic> — AI web research\n\
+    /research_shield <topic> — Research via anti-detect browser\n\n\
     /help — All commands\n\
     Or just type any message → AI agent."
         .into()
@@ -92,7 +93,8 @@ pub(crate) fn help_message() -> String {
     /model <name> — Change model (e.g. gpt-4o)\n\
     /model_switch <name> — Switch provider\n\n\
     🔍 Research:\n\
-    /research <topic> — AI-powered web research\n\n\
+    /research <topic> — AI-powered web research\n\
+    /research_shield <topic> — Research via Shield Browser (anti-detect)\n\n\
     💬 Any other message will be processed by the AI agent with 30+ tools \
     (file I/O, shell, web search, git, and more)."
         .into()
@@ -720,6 +722,37 @@ pub(crate) fn build_research_prompt(topic: &str) -> String {
         5. Use plain text with emoji for formatting (no markdown).\n\
         6. Focus on factual, recent, and actionable information.",
         topic
+    )
+}
+
+/// Build a research prompt that uses the Shield Browser for anti-detect browsing.
+///
+/// This prompt instructs the agent to prefer `shield_browse` over `web_browse`
+/// for accessing sites that may block regular scrapers.
+pub(crate) fn build_research_shield_prompt(topic: &str) -> String {
+    format!(
+        "You are an advanced research assistant with access to an anti-detect Shield Browser. \
+        Research the following topic thoroughly using protected browsing.\n\n\
+        Topic: {}\n\n\
+        Instructions:\n\
+        1. Use web_search to find the most relevant URLs for this topic.\n\
+        2. For EACH promising URL, use shield_browse (NOT web_browse) to read the page.\n\
+           shield_browse uses a real headless browser with fingerprint spoofing that:\n\
+           - Renders JavaScript fully (SPAs, dynamic feeds)\n\
+           - Bypasses bot detection and anti-scraping measures\n\
+           - Spoofs browser fingerprints at the C++ level\n\
+        3. Read at least 3-5 sources using shield_browse for thorough coverage.\n\
+        4. Organize your findings as:\n\
+           🛡️ Shield Research: {}\n\
+           ─────────────────────\n\
+           📌 Key Findings (bullet points, most important first)\n\
+           📊 Details (brief elaboration on each finding)\n\
+           🔗 Sources (list URLs you successfully accessed)\n\
+        5. Keep the total response under 3500 characters.\n\
+        6. Use plain text with emoji for formatting (no markdown).\n\
+        7. Focus on the most recent, factual, and actionable information.\n\
+        8. If shield_browse fails on a URL, fall back to web_browse for that URL.",
+        topic, topic
     )
 }
 

@@ -325,6 +325,28 @@ pub fn start_telegram_gateway(
                                     }
                                     result
                                 } else if let Some(topic) =
+                                    text.strip_prefix("/research_shield ").map(str::trim)
+                                {
+                                    if topic.is_empty() {
+                                        "❌ Usage: /research_shield <topic>\nExample: /research_shield latest AI news".to_string()
+                                    } else {
+                                        let _ = send_telegram_message(
+                                            &client,
+                                            &token,
+                                            chat_id,
+                                            &format!("🛡️⏳ Researching \"{}\" via Shield Browser… this may take 30-60s.", topic),
+                                        )
+                                        .await;
+                                        super::log::log_info(
+                                            &log_buffer,
+                                            "telegram",
+                                            format!("Shield research request: {}", topic),
+                                        );
+                                        let prompt = commands::build_research_shield_prompt(topic);
+                                        let raw = commands::process_with_agent(&prompt, &agent_manager).await;
+                                        commands::format_research_response(topic, &raw)
+                                    }
+                                } else if let Some(topic) =
                                     text.strip_prefix("/research ").map(str::trim)
                                 {
                                     if topic.is_empty() {
