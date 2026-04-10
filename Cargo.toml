@@ -1,3 +1,10 @@
 [workspace]
 members = ["core", "server", "desktop/src-tauri", "cli"]
 resolver = "2"
+
+[profile.release]
+lto = true
+strip = true
+opt-level = "s"
+panic = "abort"
+codegen-units = 1

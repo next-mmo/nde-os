@@ -27,6 +27,86 @@ pub struct RenderedFrame {
     pub height: u32,
 }
 
+use super::project::TimelineKeyframe;
+
+/// Statically evaluate a keyframe property at a specific absolute frame.
+fn eval_keyframe_at(
+    prop: &str,
+    base_val: f64,
+    keyframes: &[TimelineKeyframe],
+    item_start_frame: u32,
+    current_frame: u32,
+) -> f64 {
+    if current_frame < item_start_frame {
+        return base_val;
+    }
+    let frame_offset = current_frame - item_start_frame;
+
+    let mut matching: Vec<_> = keyframes.iter().filter(|k| k.property == prop).collect();
+    if matching.is_empty() {
+        return base_val;
+    }
+    matching.sort_by_key(|k| k.frame_offset);
+
+    if frame_offset <= matching.first().unwrap().frame_offset {
+        return matching.first().unwrap().value;
+    }
+    if frame_offset >= matching.last().unwrap().frame_offset {
+        return matching.last().unwrap().value;
+    }
+
+    for w in matching.windows(2) {
+        let k0 = w[0];
+        let k1 = w[1];
+        if frame_offset >= k0.frame_offset && frame_offset < k1.frame_offset {
+            let dur = (k1.frame_offset - k0.frame_offset) as f64;
+            let ratio = (frame_offset - k0.frame_offset) as f64 / dur;
+            return k0.value + (k1.value - k0.value) * ratio;
+        }
+    }
+    base_val
+}
+
+/// Dynamically build an FFmpeg expression string for properties evaluated across output time `t`.
+fn build_keyframe_expr(
+    prop: &str,
+    base_val: f64,
+    keyframes: &[TimelineKeyframe],
+    fps: f64,
+    item_start_sec: f64,
+) -> String {
+    let mut matching: Vec<_> = keyframes.iter().filter(|k| k.property == prop).collect();
+    if matching.is_empty() {
+        return format!("{:.6}", base_val);
+    }
+    matching.sort_by_key(|k| k.frame_offset);
+
+    let frame_expr = format!("(t-{:.6})*{}", item_start_sec, fps);
+
+    let mut expr = format!("{:.6}", matching.last().unwrap().value);
+    for i in (0..matching.len()).rev() {
+        if i == 0 {
+            let k = &matching[i];
+            expr = format!("if(lt({frame_expr},{}),{:.6},{})", k.frame_offset, k.value, expr);
+        } else {
+            let k0 = &matching[i - 1];
+            let k1 = &matching[i];
+            let duration = k1.frame_offset as f64 - k0.frame_offset as f64;
+            let lerp = if duration > 0.0 {
+                let range = k1.value - k0.value;
+                format!(
+                    "{:.6}+({:.6}*(({frame_expr}-{})/{}))",
+                    k0.value, range, k0.frame_offset, duration
+                )
+            } else {
+                format!("{:.6}", k1.value)
+            };
+            expr = format!("if(lt({frame_expr},{}),{},{})", k1.frame_offset, lerp, expr);
+        }
+    }
+    expr
+}
+
 /// Render a single frame from a project at the given frame number.
 ///
 /// This is the core rendering function. It:
@@ -140,35 +220,37 @@ fn render_composed_frame(
                 if let Some(ref src) = item.src {
                     let src_path = Path::new(src);
                     if src_path.exists() {
-                        // Calculate seek time within source.
-                        let source_fps = item.source_fps.unwrap_or(res.fps as f64);
-                        let item_offset = frame.saturating_sub(item.from);
-                        let speed = item.speed.unwrap_or(1.0);
-                        let source_frame =
-                            item.source_start.unwrap_or(0) as f64 + item_offset as f64 * speed;
-                        let seek_time = source_frame / source_fps;
+                        if item.item_type == ItemType::Video {
+                            // Calculate seek time within source.
+                            let source_fps = item.source_fps.unwrap_or(res.fps as f64);
+                            let item_offset = frame.saturating_sub(item.from);
+                            let speed = item.speed.unwrap_or(1.0);
+                            let source_frame =
+                                item.source_start.unwrap_or(0) as f64 + item_offset as f64 * speed;
+                            let seek_time = source_frame / source_fps;
 
-                        cmd.args(["-ss", &format!("{seek_time:.4}")]);
-                        cmd.args(["-i"]).arg(src_path.as_os_str());
+                            cmd.args(["-ss", &format!("{seek_time:.4}")]);
+                            cmd.args(["-i"]).arg(src_path.as_os_str());
+                        } else {
+                            cmd.args(["-loop", "1", "-i"]).arg(src_path.as_os_str());
+                        }
 
-                        // Get transform values.
-                        let x = item.transform.as_ref().and_then(|t| t.x).unwrap_or(0.0);
-                        let y = item.transform.as_ref().and_then(|t| t.y).unwrap_or(0.0);
-                        let w = item
-                            .transform
-                            .as_ref()
-                            .and_then(|t| t.width)
-                            .unwrap_or(res.width as f64);
-                        let h = item
-                            .transform
-                            .as_ref()
-                            .and_then(|t| t.height)
-                            .unwrap_or(res.height as f64);
-                        let opacity = item
-                            .transform
-                            .as_ref()
-                            .and_then(|t| t.opacity)
-                            .unwrap_or(1.0);
+                        // Get static or keyframe-interpolated transform values.
+                        let base_x = item.transform.as_ref().and_then(|t| t.x).unwrap_or(0.0);
+                        let base_y = item.transform.as_ref().and_then(|t| t.y).unwrap_or(0.0);
+                        let base_op = item.transform.as_ref().and_then(|t| t.opacity).unwrap_or(1.0);
+                        let base_sc = item.transform.as_ref().and_then(|t| t.scale).unwrap_or(1.0);
+
+                        let x = eval_keyframe_at("x", base_x, &item.keyframes, item.from, frame);
+                        let y = eval_keyframe_at("y", base_y, &item.keyframes, item.from, frame);
+                        let opacity = eval_keyframe_at("opacity", base_op, &item.keyframes, item.from, frame);
+                        let scale = eval_keyframe_at("scale", base_sc, &item.keyframes, item.from, frame);
+
+                        let base_w = item.transform.as_ref().and_then(|t| t.width).unwrap_or(res.width as f64);
+                        let base_h = item.transform.as_ref().and_then(|t| t.height).unwrap_or(res.height as f64);
+                        
+                        let w = base_w * scale;
+                        let h = base_h * scale;
 
                         let scaled_label = format!("[s{input_index}]");
                         let overlay_label = format!("[o{input_index}]");
@@ -203,16 +285,12 @@ fn render_composed_frame(
                 let text = item.text.as_deref().unwrap_or("");
                 let font_size = item.font_size.unwrap_or(60.0) as u32;
                 let color = item.color.as_deref().unwrap_or("white");
-                let x = item
-                    .transform
-                    .as_ref()
-                    .and_then(|t| t.x)
-                    .unwrap_or((res.width / 2) as f64);
-                let y = item
-                    .transform
-                    .as_ref()
-                    .and_then(|t| t.y)
-                    .unwrap_or((res.height / 2) as f64);
+                
+                let base_x = item.transform.as_ref().and_then(|t| t.x).unwrap_or((res.width / 2) as f64);
+                let base_y = item.transform.as_ref().and_then(|t| t.y).unwrap_or((res.height / 2) as f64);
+                
+                let x = eval_keyframe_at("x", base_x, &item.keyframes, item.from, frame);
+                let y = eval_keyframe_at("y", base_y, &item.keyframes, item.from, frame);
 
                 let text_label = format!("[t{input_index}]");
                 // Escape single quotes for FFmpeg.
@@ -429,31 +507,33 @@ pub fn export_video(
                     _ => continue,
                 };
 
+                if item.item_type == ItemType::Image {
+                    args.extend(["-loop".into(), "1".into()]);
+                }
                 args.extend(["-i".into(), src.to_string()]);
 
                 let item_start = item.from as f64 / fps as f64;
                 let item_dur = item.duration_in_frames as f64 / fps as f64;
                 let speed = item.speed.unwrap_or(1.0);
                 let sfps = item.source_fps.unwrap_or(fps as f64);
-                let src_start = item.source_start.unwrap_or(0) as f64 / sfps;
+                let src_start = if item.item_type == ItemType::Image {
+                    0.0
+                } else {
+                    item.source_start.unwrap_or(0) as f64 / sfps
+                };
 
-                let w = item
-                    .transform
-                    .as_ref()
-                    .and_then(|t| t.width)
-                    .unwrap_or(res.width as f64);
-                let h = item
-                    .transform
-                    .as_ref()
-                    .and_then(|t| t.height)
-                    .unwrap_or(res.height as f64);
-                let x = item.transform.as_ref().and_then(|t| t.x).unwrap_or(0.0);
-                let y = item.transform.as_ref().and_then(|t| t.y).unwrap_or(0.0);
-                let opacity = item
-                    .transform
-                    .as_ref()
-                    .and_then(|t| t.opacity)
-                    .unwrap_or(1.0);
+                let base_w = item.transform.as_ref().and_then(|t| t.width).unwrap_or(res.width as f64);
+                let base_h = item.transform.as_ref().and_then(|t| t.height).unwrap_or(res.height as f64);
+                let base_x = item.transform.as_ref().and_then(|t| t.x).unwrap_or(0.0);
+                let base_y = item.transform.as_ref().and_then(|t| t.y).unwrap_or(0.0);
+                let opacity = item.transform.as_ref().and_then(|t| t.opacity).unwrap_or(1.0);
+                let scale = item.transform.as_ref().and_then(|t| t.scale).unwrap_or(1.0);
+
+                let x_expr = build_keyframe_expr("x", base_x, &item.keyframes, fps as f64, item_start);
+                let y_expr = build_keyframe_expr("y", base_y, &item.keyframes, fps as f64, item_start);
+
+                let w = base_w * scale;
+                let h = base_h * scale;
 
                 let tr = format!("[vt{input_idx}]");
                 let sc = format!("[vs{input_idx}]");
@@ -468,17 +548,17 @@ pub fn export_video(
                 // Scale + format.
                 filter_parts.push(format!("{tr}scale={w:.0}:{h:.0},format=rgba{sc}"));
 
-                // Overlay with enable timing.
+                // Overlay with enable timing using x/y expressions.
                 let end_t = item_start + item_dur;
                 if opacity < 1.0 {
                     let al = format!("[va{input_idx}]");
                     filter_parts.push(format!("{sc}colorchannelmixer=aa={opacity:.3}{al}"));
                     filter_parts.push(format!(
-                        "{last_video}{al}overlay=x={x:.0}:y={y:.0}:enable='between(t,{item_start:.6},{end_t:.6})':eof_action=pass{ov}"
+                        "{last_video}{al}overlay=x='{x_expr}':y='{y_expr}':enable='between(t,{item_start:.6},{end_t:.6})':eof_action=pass{ov}"
                     ));
                 } else {
                     filter_parts.push(format!(
-                        "{last_video}{sc}overlay=x={x:.0}:y={y:.0}:enable='between(t,{item_start:.6},{end_t:.6})':eof_action=pass{ov}"
+                        "{last_video}{sc}overlay=x='{x_expr}':y='{y_expr}':enable='between(t,{item_start:.6},{end_t:.6})':eof_action=pass{ov}"
                     ));
                 }
                 last_video = ov;
@@ -528,23 +608,20 @@ pub fn export_video(
                 }
                 let fsize = item.font_size.unwrap_or(60.0) as u32;
                 let color = item.color.as_deref().unwrap_or("white");
-                let x = item
-                    .transform
-                    .as_ref()
-                    .and_then(|t| t.x)
-                    .unwrap_or((res.width / 2) as f64);
-                let y = item
-                    .transform
-                    .as_ref()
-                    .and_then(|t| t.y)
-                    .unwrap_or((res.height / 2) as f64);
-                let t0 = item.from as f64 / fps as f64;
+                
+                let base_x = item.transform.as_ref().and_then(|t| t.x).unwrap_or((res.width / 2) as f64);
+                let base_y = item.transform.as_ref().and_then(|t| t.y).unwrap_or((res.height / 2) as f64);
+                
+                let item_start = item.from as f64 / fps as f64;
+                let x_expr = build_keyframe_expr("x", base_x, &item.keyframes, fps as f64, item_start);
+                let y_expr = build_keyframe_expr("y", base_y, &item.keyframes, fps as f64, item_start);
+
                 let t1 = (item.from + item.duration_in_frames) as f64 / fps as f64;
 
                 let escaped = text.replace('\'', "'\\''").replace(':', "\\:");
                 let lbl = format!("[txt{input_idx}]");
                 filter_parts.push(format!(
-                    "{last_video}drawtext=text='{escaped}':fontsize={fsize}:fontcolor={color}:x={x:.0}:y={y:.0}:enable='between(t,{t0:.6},{t1:.6})'{lbl}"
+                    "{last_video}drawtext=text='{escaped}':fontsize={fsize}:fontcolor={color}:x='{x_expr}':y='{y_expr}':enable='between(t,{item_start:.6},{t1:.6})'{lbl}"
                 ));
                 last_video = lbl;
             }
@@ -705,25 +782,32 @@ fn export_video_no_audio(
                     Some(s) if Path::new(s).exists() => s,
                     _ => continue,
                 };
+                if item.item_type == ItemType::Image {
+                    args.extend(["-loop".into(), "1".into()]);
+                }
                 args.extend(["-i".into(), src.to_string()]);
 
                 let item_start = item.from as f64 / fps as f64;
                 let item_dur = item.duration_in_frames as f64 / fps as f64;
                 let speed = item.speed.unwrap_or(1.0);
                 let sfps = item.source_fps.unwrap_or(fps as f64);
-                let src_start = item.source_start.unwrap_or(0) as f64 / sfps;
-                let w = item
-                    .transform
-                    .as_ref()
-                    .and_then(|t| t.width)
-                    .unwrap_or(res.width as f64);
-                let h = item
-                    .transform
-                    .as_ref()
-                    .and_then(|t| t.height)
-                    .unwrap_or(res.height as f64);
-                let x = item.transform.as_ref().and_then(|t| t.x).unwrap_or(0.0);
-                let y = item.transform.as_ref().and_then(|t| t.y).unwrap_or(0.0);
+                let src_start = if item.item_type == ItemType::Image {
+                    0.0
+                } else {
+                    item.source_start.unwrap_or(0) as f64 / sfps
+                };
+                let base_w = item.transform.as_ref().and_then(|t| t.width).unwrap_or(res.width as f64);
+                let base_h = item.transform.as_ref().and_then(|t| t.height).unwrap_or(res.height as f64);
+                let base_x = item.transform.as_ref().and_then(|t| t.x).unwrap_or(0.0);
+                let base_y = item.transform.as_ref().and_then(|t| t.y).unwrap_or(0.0);
+                let opacity = item.transform.as_ref().and_then(|t| t.opacity).unwrap_or(1.0);
+                let scale = item.transform.as_ref().and_then(|t| t.scale).unwrap_or(1.0);
+
+                let x_expr = build_keyframe_expr("x", base_x, &item.keyframes, fps as f64, item_start);
+                let y_expr = build_keyframe_expr("y", base_y, &item.keyframes, fps as f64, item_start);
+
+                let w = base_w * scale;
+                let h = base_h * scale;
 
                 let tr = format!("[vt{input_idx}]");
                 let sc = format!("[vs{input_idx}]");
@@ -735,9 +819,17 @@ fn export_video_no_audio(
                     item_dur / speed
                 ));
                 filter_parts.push(format!("{tr}scale={w:.0}:{h:.0},format=rgba{sc}"));
-                filter_parts.push(format!(
-                    "{last_video}{sc}overlay=x={x:.0}:y={y:.0}:enable='between(t,{item_start:.6},{end_t:.6})':eof_action=pass{ov}"
-                ));
+                if opacity < 1.0 {
+                    let al = format!("[va{input_idx}]");
+                    filter_parts.push(format!("{sc}colorchannelmixer=aa={opacity:.3}{al}"));
+                    filter_parts.push(format!(
+                        "{last_video}{al}overlay=x='{x_expr}':y='{y_expr}':enable='between(t,{item_start:.6},{end_t:.6})':eof_action=pass{ov}"
+                    ));
+                } else {
+                    filter_parts.push(format!(
+                        "{last_video}{sc}overlay=x='{x_expr}':y='{y_expr}':enable='between(t,{item_start:.6},{end_t:.6})':eof_action=pass{ov}"
+                    ));
+                }
                 last_video = ov;
                 input_idx += 1;
             }
@@ -748,22 +840,20 @@ fn export_video_no_audio(
                 }
                 let fsize = item.font_size.unwrap_or(60.0) as u32;
                 let color = item.color.as_deref().unwrap_or("white");
-                let x = item
-                    .transform
-                    .as_ref()
-                    .and_then(|t| t.x)
-                    .unwrap_or((res.width / 2) as f64);
-                let y = item
-                    .transform
-                    .as_ref()
-                    .and_then(|t| t.y)
-                    .unwrap_or((res.height / 2) as f64);
-                let t0 = item.from as f64 / fps as f64;
+                
+                let base_x = item.transform.as_ref().and_then(|t| t.x).unwrap_or((res.width / 2) as f64);
+                let base_y = item.transform.as_ref().and_then(|t| t.y).unwrap_or((res.height / 2) as f64);
+                
+                let item_start = item.from as f64 / fps as f64;
+                let x_expr = build_keyframe_expr("x", base_x, &item.keyframes, fps as f64, item_start);
+                let y_expr = build_keyframe_expr("y", base_y, &item.keyframes, fps as f64, item_start);
+
                 let t1 = (item.from + item.duration_in_frames) as f64 / fps as f64;
+
                 let escaped = text.replace('\'', "'\\''").replace(':', "\\:");
                 let lbl = format!("[txt{input_idx}]");
                 filter_parts.push(format!(
-                    "{last_video}drawtext=text='{escaped}':fontsize={fsize}:fontcolor={color}:x={x:.0}:y={y:.0}:enable='between(t,{t0:.6},{t1:.6})'{lbl}"
+                    "{last_video}drawtext=text='{escaped}':fontsize={fsize}:fontcolor={color}:x='{x_expr}':y='{y_expr}':enable='between(t,{item_start:.6},{t1:.6})'{lbl}"
                 ));
                 last_video = lbl;
             }

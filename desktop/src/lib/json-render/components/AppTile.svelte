@@ -1,18 +1,11 @@
 <script lang="ts">
-  let p = $props();
-  const appStatusColors: Record<string,string> = {
-    available: "var(--system-color-text-muted)",
-    installed: "hsl(40 90% 55%)",
-    running: "hsl(145 65% 55%)",
-    error: "hsl(0 70% 55%)",
-  };
-  let sc = $derived(appStatusColors[p.status] ?? "gray");
+  let { props: p } = $props();
 </script>
-<div style="display:flex;align-items:center;gap:0.75rem;padding:0.75rem;border-radius:0.85rem;border:1px solid var(--system-color-border);background:var(--system-color-panel);cursor:pointer;transition:border-color 0.15s">
-  <span style="font-size:1.5rem">{p.icon ?? "📦"}</span>
-  <div style="flex:1;min-width:0">
-    <strong style="font-size:0.85rem;display:block">{p.name}</strong>
-    <span style="font-size:0.72rem;color:var(--system-color-text-muted)">{p.description}</span>
+<div class="flex items-center gap-3 p-3 rounded-xl border bg-card cursor-pointer transition-colors hover:bg-accent">
+  <span class="text-2xl">{p.icon ?? "📦"}</span>
+  <div class="flex-1 min-w-0">
+    <strong class="text-sm block font-medium">{p.name}</strong>
+    <span class="text-xs text-muted-foreground">{p.description}</span>
   </div>
-  <span style="font-size:0.7rem;font-weight:500;color:{sc};text-transform:uppercase">{p.status}</span>
+  <span class="text-[10px] font-medium uppercase {p.status === 'installed' ? 'text-amber-500' : p.status === 'running' ? 'text-green-500' : p.status === 'error' ? 'text-red-500' : 'text-muted-foreground'}">{p.status}</span>
 </div>

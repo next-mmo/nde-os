@@ -25,6 +25,9 @@ pub fn detect_all(base_dir: &Path) -> Vec<ServiceStatus> {
     let viking_process = VikingProcess::new(viking_config, base_dir);
     let viking_installed = viking_process.is_installed_sync();
 
+    let vision_rt = crate::freecut::vision::VisionRuntime::new(base_dir);
+    let vision_installed = vision_rt.is_installed();
+
     vec![
         ServiceStatus {
             id: "voice-runtime".to_string(),
@@ -134,6 +137,22 @@ pub fn detect_all(base_dir: &Path) -> Vec<ServiceStatus> {
                 Some("Not installed — will auto-install on first boot".to_string())
             },
         },
+        ServiceStatus {
+            id: "ai-vision-runtime".to_string(),
+            name: "AI Vision Runtime".to_string(),
+            description: "On-device AI vision models for automatic background removal and tracking (rembg)".to_string(),
+            group: ServiceGroup::Ai,
+            installed: vision_installed,
+            version: None,
+            path: None,
+            used_by: vec!["FreeCut".to_string()],
+            optional: true,
+            details: if vision_installed { 
+                Some("Ready".to_string()) 
+            } else { 
+                Some("Requires installation via Service Hub".to_string()) 
+            },
+        },
     ]
 }
 
@@ -165,6 +184,11 @@ pub fn install_service(service_id: &str, base_dir: &Path) -> Result<String> {
             };
             result?;
             Ok("OpenViking installed successfully".to_string())
+        }
+        "ai-vision-runtime" => {
+            let rt = crate::freecut::vision::VisionRuntime::new(base_dir);
+            rt.install()?;
+            Ok("AI Vision models installed successfully".to_string())
         }
         "ffmpeg" => {
             anyhow::bail!("FFmpeg must be installed via your system package manager (brew install ffmpeg / apt install ffmpeg / winget install ffmpeg)")

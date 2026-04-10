@@ -46,9 +46,9 @@
     "vitest": "^4.1.1"
   },
   "dependencies": {
-    "@fontsource/inter": "^5.2.8",
-    "@json-render/core": "^0.15.0",
-    "@json-render/svelte": "^0.15.0",
+    "@json-render/core": "^0.16.0",
+    "@json-render/shadcn-svelte": "0.16.0",
+    "@json-render/svelte": "^0.16.0",
     "@neodrag/core": "3.0.0-next.8",
     "@neodrag/svelte": "3.0.0-next.8",
     "@tanstack/svelte-table": "^8.21.3",

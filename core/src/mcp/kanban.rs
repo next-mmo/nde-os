@@ -8,6 +8,7 @@ use super::server::McpServer;
 
 #[derive(Serialize)]
 pub struct KanbanTask {
+    pub id: u32,
     pub filename: String,
     pub title: String,
     pub status: String,
@@ -49,7 +50,7 @@ pub fn register(server: &mut McpServer) {
         json!({
             "type": "object",
             "properties": {
-                "filename": { "type": "string", "description": "The Markdown file name of the task" },
+                "filename": { "type": "string", "description": "Task identifier: either a NDE ID (e.g. 'NDE-5') or the .md filename (e.g. 'my-task.md')" },
                 "status": { "type": "string", "enum": ["Plan", "YOLO mode", "Done by AI", "Verified", "Re-open"], "description": "The new status" }
             },
             "required": ["filename", "status"]
@@ -62,7 +63,7 @@ pub fn register(server: &mut McpServer) {
         json!({
             "type": "object",
             "properties": {
-                "filename": { "type": "string", "description": "The Markdown file name of the task to delete" }
+                "filename": { "type": "string", "description": "Task identifier: either a NDE ID (e.g. 'NDE-5') or the .md filename" }
             },
             "required": ["filename"]
         }),
@@ -74,7 +75,7 @@ pub fn register(server: &mut McpServer) {
         json!({
             "type": "object",
             "properties": {
-                "filename": { "type": "string", "description": "The Markdown file name of the task" }
+                "filename": { "type": "string", "description": "Task identifier: either a NDE ID (e.g. 'NDE-5') or the .md filename" }
             },
             "required": ["filename"]
         }),
@@ -86,7 +87,7 @@ pub fn register(server: &mut McpServer) {
         json!({
             "type": "object",
             "properties": {
-                "filename": { "type": "string", "description": "The Markdown file name of the task" },
+                "filename": { "type": "string", "description": "Task identifier: either a NDE ID (e.g. 'NDE-5') or the .md filename" },
                 "content": { "type": "string", "description": "The new Markdown content for the task" }
             },
             "required": ["filename", "content"]
@@ -166,6 +167,101 @@ fn update_legacy_status_line(content: &str, fm_status: &str) -> String {
     updated
 }
 
+/// Parse `- **ID:** NDE-<n>` from task content. Returns None if not found.
+fn parse_id(content: &str) -> Option<u32> {
+    for line in content.lines() {
+        if let Some(rest) = line.strip_prefix("- **ID:** NDE-") {
+            if let Ok(n) = rest.trim().parse::<u32>() {
+                return Some(n);
+            }
+        }
+    }
+    None
+}
+
+/// Read the next available ID from `.next_id` counter file, increment and save.
+fn next_task_id(tasks_dir: &std::path::Path) -> Result<u32> {
+    let counter_path = tasks_dir.join(".next_id");
+    let current = if counter_path.exists() {
+        fs::read_to_string(&counter_path)?
+            .trim()
+            .parse::<u32>()
+            .unwrap_or(1)
+    } else {
+        1
+    };
+    fs::write(&counter_path, (current + 1).to_string())
+        .map_err(|e| anyhow!("Failed to write .next_id: {e}"))?;
+    Ok(current)
+}
+
+/// Inject `- **ID:** NDE-<n>` after the title line in a task file.
+fn inject_id_into_content(content: &str, id: u32) -> String {
+    let id_line = format!("- **ID:** NDE-{}", id);
+    let mut lines: Vec<&str> = content.lines().collect();
+
+    if let Some(title_pos) = lines.iter().position(|l| l.starts_with("# ")) {
+        let insert_at = if title_pos + 1 < lines.len() && lines[title_pos + 1].is_empty() {
+            title_pos + 2
+        } else {
+            title_pos + 1
+        };
+        lines.insert(insert_at, &id_line);
+    } else {
+        lines.insert(0, &id_line);
+    }
+
+    let mut result = lines.join("\n");
+    if content.ends_with('\n') && !result.ends_with('\n') {
+        result.push('\n');
+    }
+    result
+}
+
+/// Resolve a filename or NDE-ID (e.g. "NDE-5") to the actual .md filename on disk.
+fn resolve_filename(input: &str, tasks_dir: &std::path::Path) -> Result<String> {
+    // If it already looks like a .md filename and exists, use it directly
+    if input.ends_with(".md") {
+        if tasks_dir.join(input).exists() {
+            return Ok(input.to_string());
+        }
+        return Err(anyhow!("Task not found: {}", input));
+    }
+
+    // Try to parse NDE-N or just N as an ID
+    let id_str = input
+        .strip_prefix("NDE-")
+        .or_else(|| input.strip_prefix("nde-"))
+        .unwrap_or(input);
+
+    if let Ok(target_id) = id_str.parse::<u32>() {
+        // Scan all .md files for one containing `- **ID:** NDE-{target_id}`
+        if let Ok(entries) = fs::read_dir(tasks_dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_file() && path.extension().and_then(|e| e.to_str()) == Some("md") {
+                    if let Ok(content) = fs::read_to_string(&path) {
+                        if let Some(id) = parse_id(&content) {
+                            if id == target_id {
+                                return Ok(path.file_name().unwrap_or_default().to_string_lossy().to_string());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        return Err(anyhow!("No task found with ID: NDE-{}", target_id));
+    }
+
+    // Fallback: try appending .md
+    let with_ext = format!("{}.md", input);
+    if tasks_dir.join(&with_ext).exists() {
+        return Ok(with_ext);
+    }
+
+    Err(anyhow!("Task not found: {}", input))
+}
+
 pub fn execute(tool_name: &str, params: &serde_json::Value) -> Result<String> {
     match tool_name {
         "nde_kanban_get_tasks" => {
@@ -175,7 +271,7 @@ pub fn execute(tool_name: &str, params: &serde_json::Value) -> Result<String> {
             }
 
             let mut tasks = Vec::new();
-            if let Ok(entries) = fs::read_dir(dir) {
+            if let Ok(entries) = fs::read_dir(&dir) {
                 for entry in entries.flatten() {
                     let path = entry.path();
                     if path.is_file() && path.extension().and_then(|e| e.to_str()) == Some("md") {
@@ -195,7 +291,19 @@ pub fn execute(tool_name: &str, params: &serde_json::Value) -> Result<String> {
                             let status = parse_status(&content).to_string();
                             let locked = status == "YOLO mode";
 
+                            // Parse or auto-assign ID
+                            let id = match parse_id(&content) {
+                                Some(id) => id,
+                                None => {
+                                    let new_id = next_task_id(&dir).unwrap_or(0);
+                                    let updated = inject_id_into_content(&content, new_id);
+                                    let _ = fs::write(&path, updated);
+                                    new_id
+                                }
+                            };
+
                             tasks.push(KanbanTask {
+                                id,
                                 filename,
                                 title,
                                 status,
@@ -282,8 +390,8 @@ pub fn execute(tool_name: &str, params: &serde_json::Value) -> Result<String> {
             );
 
             let content = format!(
-                "# {}\n\n- **Status:** 🔴 `plan`\n- **Created:** {}\n\n## Description\n\n{}\n\n## Checklist\n\n{}",
-                title, now, desc, checklist_md
+                "# {}\n\n- **ID:** NDE-{}\n- **Status:** 🔴 `plan`\n- **Created:** {}\n\n## Description\n\n{}\n\n## Checklist\n\n{}",
+                title, next_task_id(&dir).unwrap_or(0), now, desc, checklist_md
             );
 
             let filepath = dir.join(&filename);
@@ -300,21 +408,21 @@ pub fn execute(tool_name: &str, params: &serde_json::Value) -> Result<String> {
         "nde_kanban_update_task" => {
             let args = params.get("arguments").unwrap_or(params);
 
-            let filename = args.get("filename").and_then(|v| v.as_str()).unwrap_or("");
+            let raw_filename = args.get("filename").and_then(|v| v.as_str()).unwrap_or("");
             let new_status = args.get("status").and_then(|v| v.as_str()).unwrap_or("");
 
-            if filename.is_empty()
-                || filename.contains("..")
-                || filename.contains("/")
-                || filename.contains("\\")
-            {
+            if raw_filename.is_empty() {
+                return Err(anyhow!("Missing filename or task ID"));
+            }
+
+            let dir = get_tasks_dir();
+            let filename = resolve_filename(raw_filename, &dir)?;
+
+            if filename.contains("..") || filename.contains("/") || filename.contains("\\") {
                 return Err(anyhow!("Invalid filename"));
             }
 
-            let filepath = get_tasks_dir().join(filename);
-            if !filepath.exists() {
-                return Err(anyhow!("File not found"));
-            }
+            let filepath = dir.join(&filename);
 
             let content = fs::read_to_string(&filepath)?;
             let fm_status = match new_status {
@@ -361,17 +469,20 @@ pub fn execute(tool_name: &str, params: &serde_json::Value) -> Result<String> {
         }
         "nde_kanban_delete_task" => {
             let args = params.get("arguments").unwrap_or(params);
-            let filename = args.get("filename").and_then(|v| v.as_str()).unwrap_or("");
+            let raw_filename = args.get("filename").and_then(|v| v.as_str()).unwrap_or("");
 
-            if filename.is_empty()
-                || filename.contains("..")
-                || filename.contains("/")
-                || filename.contains("\\")
-            {
+            if raw_filename.is_empty() {
+                return Err(anyhow!("Missing filename or task ID"));
+            }
+
+            let dir = get_tasks_dir();
+            let filename = resolve_filename(raw_filename, &dir)?;
+
+            if filename.contains("..") || filename.contains("/") || filename.contains("\\") {
                 return Err(anyhow!("Invalid filename"));
             }
 
-            let filepath = get_tasks_dir().join(filename);
+            let filepath = dir.join(&filename);
             if filepath.exists() {
                 fs::remove_file(&filepath)?;
                 Ok(
@@ -384,17 +495,16 @@ pub fn execute(tool_name: &str, params: &serde_json::Value) -> Result<String> {
         }
         "nde_kanban_get_task_content" => {
             let args = params.get("arguments").unwrap_or(params);
-            let filename = args.get("filename").and_then(|v| v.as_str()).unwrap_or("");
+            let raw_filename = args.get("filename").and_then(|v| v.as_str()).unwrap_or("");
 
-            if filename.is_empty()
-                || filename.contains("..")
-                || filename.contains("/")
-                || filename.contains("\\")
-            {
-                return Err(anyhow!("Invalid filename"));
+            if raw_filename.is_empty() {
+                return Err(anyhow!("Missing filename or task ID"));
             }
 
-            let filepath = get_tasks_dir().join(filename);
+            let dir = get_tasks_dir();
+            let filename = resolve_filename(raw_filename, &dir)?;
+
+            let filepath = dir.join(&filename);
             if filepath.exists() {
                 let content = fs::read_to_string(&filepath)?;
                 Ok(content)
@@ -404,21 +514,20 @@ pub fn execute(tool_name: &str, params: &serde_json::Value) -> Result<String> {
         }
         "nde_kanban_update_task_content" => {
             let args = params.get("arguments").unwrap_or(params);
-            let filename = args.get("filename").and_then(|v| v.as_str()).unwrap_or("");
+            let raw_filename = args.get("filename").and_then(|v| v.as_str()).unwrap_or("");
             let new_content = args
                 .get("content")
                 .and_then(|v| v.as_str())
                 .ok_or_else(|| anyhow!("Missing content"))?;
 
-            if filename.is_empty()
-                || filename.contains("..")
-                || filename.contains("/")
-                || filename.contains("\\")
-            {
-                return Err(anyhow!("Invalid filename"));
+            if raw_filename.is_empty() {
+                return Err(anyhow!("Missing filename or task ID"));
             }
 
-            let filepath = get_tasks_dir().join(filename);
+            let dir = get_tasks_dir();
+            let filename = resolve_filename(raw_filename, &dir)?;
+
+            let filepath = dir.join(&filename);
             if !filepath.exists() {
                 return Err(anyhow!("Task not found: {}", filename));
             }

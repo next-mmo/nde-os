@@ -610,3 +610,24 @@ pub async fn freecut_install_dubbing_runtime(
     .await
     .map_err(|e| e.to_string())?
 }
+
+#[tauri::command]
+pub async fn freecut_remove_background(
+    app_state: tauri::State<'_, AppState>,
+    input_path: String,
+    output_path: String,
+) -> Result<(), String> {
+    let base_dir = app_state.base_dir.clone();
+    tokio::task::spawn_blocking(move || {
+        let rt = ai_launcher_core::freecut::vision::VisionRuntime::new(&base_dir);
+        let in_p = std::path::Path::new(&input_path);
+        let out_p = std::path::Path::new(&output_path);
+        if let Some(parent) = out_p.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        rt.remove_background(in_p, out_p)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())
+}

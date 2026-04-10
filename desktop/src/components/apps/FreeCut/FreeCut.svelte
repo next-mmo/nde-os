@@ -155,6 +155,10 @@
   let hwEncoders = $state<{ name: string; codec: string; device: string }[]>([]);
   let exportHwAccel = $state<string | null>(null);
 
+  // AI Background Removal properties
+  let isRemovingBackground = $state(false);
+  let bgRemovalError = $state<string | null>(null);
+
   // Pointer-based media-to-timeline drag (HTML5 DragEvent is unreliable in WebView2)
   let pendingDragPayload: { source: string; media?: MediaItem } | null = null;
   let isPointerDragging = $state(false);
@@ -1405,6 +1409,64 @@
     itemsStore.getState().updateItemTransform(selectedItem.id, updates);
   }
 
+  // ─── Keyframe Operations ────────────────────────────────────────────────
+  function toggleKeyframe(property: string, currentValue: number) {
+    if (!selectedItem) return;
+    const frameOffset = Math.max(0, pb.currentFrame - selectedItem.from);
+    
+    let keyframes = [...(selectedItem.keyframes || [])];
+    const existingIdx = keyframes.findIndex(k => k.property === property && k.frameOffset === frameOffset);
+    
+    if (existingIdx >= 0) {
+      keyframes.splice(existingIdx, 1);
+    } else {
+      keyframes.push({ frameOffset, property, value: currentValue });
+    }
+    
+    updateSelectedItem({ keyframes });
+  }
+
+  function hasKeyframeAtCurrentFrame(property: string) {
+    if (!selectedItem) return false;
+    const frameOffset = pb.currentFrame - selectedItem.from;
+    return (selectedItem.keyframes || []).some(k => k.property === property && k.frameOffset === frameOffset);
+  }
+
+  async function removeBackground() {
+    if (!selectedItem || !currentProject) return;
+    if (selectedItem.type !== "video" && selectedItem.type !== "image") return;
+    
+    isRemovingBackground = true;
+    bgRemovalError = null;
+    
+    try {
+      const srcPath = selectedItem.src;
+      if (!srcPath) throw new Error("No source media found on item.");
+      
+      const maskedPath = srcPath + "_masked.png";
+      await invoke("freecut_remove_background", {
+        inputPath: srcPath,
+        outputPath: maskedPath
+      });
+
+      updateSelectedItem({
+        src: maskedPath,
+        label: `${selectedItem.label} (Masked)`
+      });
+      await saveProject();
+    } catch (e: any) {
+      bgRemovalError = e?.toString?.() ?? "AI Background Removal failed";
+      
+      if (bgRemovalError.includes("not installed")) {
+        import("🍎/state/desktop.svelte").then(({ openServiceHub }) => {
+          openServiceHub({ require: ["ai-vision-runtime"], returnTo: "freecut" });
+        });
+      }
+    } finally {
+      isRemovingBackground = false;
+    }
+  }
+
   // ─── Keyboard & Wheel Handling ─────────────────────────────────────────
 
   function handleKeydown(e: KeyboardEvent) {
@@ -2568,6 +2630,7 @@
                           {@const isSelected = sel.selectedItemIds.includes(item.id)}
                           {@const color = trackColors[trackIndex % trackColors.length]}
                           {@const MediaIcon2 = getMediaIcon(item.type)}
+                          {@const media = item.mediaId ? mediaLibrary.find((m) => m.id === item.mediaId) : null}
                           <div
                             role="button"
                             tabindex="-1"
@@ -2582,9 +2645,21 @@
                             onclick={(e) => handleClipClick(e, item)}
                             onmousedown={(e) => startClipDrag(e, item.id, item.from, item.trackId)}
                           >
-                            <div class="flex items-center gap-1 px-1.5 h-full overflow-hidden pointer-events-none">
-                              <MediaIcon2 class="w-2.5 h-2.5 shrink-0" style="color: {color}80" />
-                              <span class="text-[9px] text-white/60 truncate whitespace-nowrap">{item.label}</span>
+                            {#if media && (item.type === "image" || item.type === "video")}
+                              {@const thumb = item.type === "image" ? media.filePath : (media.thumbnailPath ?? "")}
+                              {#if thumb}
+                                <div 
+                                  class="absolute inset-0 opacity-40 rounded-[2px] pointer-events-none"
+                                  style:background-image="url('{assetUrl(thumb)}')"
+                                  style:background-size="auto 100%"
+                                  style:background-repeat="repeat-x"
+                                ></div>
+                              {/if}
+                            {/if}
+
+                            <div class="relative z-10 flex items-center gap-1 px-1.5 h-full overflow-hidden pointer-events-none bg-gradient-to-r from-black/80 via-black/20 to-transparent w-full">
+                              <MediaIcon2 class="w-2.5 h-2.5 shrink-0" style="color: {color}80; filter: drop-shadow(0 1px 2px rgba(0,0,0,0.8));" />
+                              <span class="text-[9px] font-medium text-white/90 truncate whitespace-nowrap pr-4" style="text-shadow: 0 1px 3px rgba(0,0,0,0.9), 0 1px 1px rgba(0,0,0,1);">{item.label}</span>
                             </div>
                             
                             <!-- Trim Handles -->
@@ -2707,23 +2782,62 @@
                   <span class="block text-[10px] text-white/30 uppercase tracking-wider mb-2">Transform</span>
                   <div class="grid grid-cols-2 gap-2">
                     <div>
-                      <span class="text-[9px] text-white/40 block mb-1">Position X</span>
-                      <input type="number" class="w-full bg-white/5 border border-white/10 rounded px-2 py-1 text-xs text-white font-mono" value={selectedItem.transform?.x ?? 0} onchange={(e) => updateSelectedTransform({ x: parseInt(e.currentTarget.value) })} />
+                      <div class="flex items-center justify-between mb-1">
+                        <span class="text-[9px] text-white/40 block">Position X</span>
+                        <button class="text-[10px] cursor-pointer {hasKeyframeAtCurrentFrame('x') ? 'text-amber-400' : 'text-white/20 hover:text-white/50'}" onclick={() => toggleKeyframe('x', selectedItem?.transform?.x ?? 0)}>♦</button>
+                      </div>
+                      <input type="number" class="w-full bg-white/5 border border-white/10 rounded px-2 py-1 text-xs text-white font-mono" value={selectedItem.transform?.x ?? 0} onchange={(e) => { updateSelectedTransform({ x: parseFloat(e.currentTarget.value) }); if (hasKeyframeAtCurrentFrame('x')) toggleKeyframe('x', parseFloat(e.currentTarget.value)); else { /* allow dragging to auto keyframe later */ } }} />
                     </div>
                     <div>
-                      <span class="text-[9px] text-white/40 block mb-1">Position Y</span>
-                      <input type="number" class="w-full bg-white/5 border border-white/10 rounded px-2 py-1 text-xs text-white font-mono" value={selectedItem.transform?.y ?? 0} onchange={(e) => updateSelectedTransform({ y: parseInt(e.currentTarget.value) })} />
+                      <div class="flex items-center justify-between mb-1">
+                        <span class="text-[9px] text-white/40 block">Position Y</span>
+                        <button class="text-[10px] cursor-pointer {hasKeyframeAtCurrentFrame('y') ? 'text-amber-400' : 'text-white/20 hover:text-white/50'}" onclick={() => toggleKeyframe('y', selectedItem?.transform?.y ?? 0)}>♦</button>
+                      </div>
+                      <input type="number" class="w-full bg-white/5 border border-white/10 rounded px-2 py-1 text-xs text-white font-mono" value={selectedItem.transform?.y ?? 0} onchange={(e) => updateSelectedTransform({ y: parseFloat(e.currentTarget.value) })} />
                     </div>
                     <div>
-                      <span class="text-[9px] text-white/40 block mb-1">Rotation (deg)</span>
-                      <input type="number" class="w-full bg-white/5 border border-white/10 rounded px-2 py-1 text-xs text-white font-mono" value={selectedItem.transform?.rotation ?? 0} onchange={(e) => updateSelectedTransform({ rotation: parseInt(e.currentTarget.value) })} />
+                      <div class="flex items-center justify-between mb-1">
+                        <span class="text-[9px] text-white/40 block">Scale</span>
+                        <button class="text-[10px] cursor-pointer {hasKeyframeAtCurrentFrame('scale') ? 'text-amber-400' : 'text-white/20 hover:text-white/50'}" onclick={() => toggleKeyframe('scale', selectedItem?.transform?.scale ?? 1)}>♦</button>
+                      </div>
+                      <input type="number" step="0.01" class="w-full bg-white/5 border border-white/10 rounded px-2 py-1 text-xs text-white font-mono" value={selectedItem.transform?.scale ?? 1} onchange={(e) => updateSelectedTransform({ scale: parseFloat(e.currentTarget.value) })} />
                     </div>
                     <div>
-                      <span class="text-[9px] text-white/40 block mb-1">Opacity (0-1)</span>
-                      <input type="number" step="0.1" min="0" max="1" class="w-full bg-white/5 border border-white/10 rounded px-2 py-1 text-xs text-white font-mono" value={selectedItem.transform?.opacity ?? 1} onchange={(e) => updateSelectedTransform({ opacity: parseFloat(e.currentTarget.value) })} />
+                      <div class="flex items-center justify-between mb-1">
+                        <span class="text-[9px] text-white/40 block">Rotation (deg)</span>
+                        <button class="text-[10px] cursor-pointer {hasKeyframeAtCurrentFrame('rotation') ? 'text-amber-400' : 'text-white/20 hover:text-white/50'}" onclick={() => toggleKeyframe('rotation', selectedItem?.transform?.rotation ?? 0)}>♦</button>
+                      </div>
+                      <input type="number" class="w-full bg-white/5 border border-white/10 rounded px-2 py-1 text-xs text-white font-mono" value={selectedItem.transform?.rotation ?? 0} onchange={(e) => updateSelectedTransform({ rotation: parseFloat(e.currentTarget.value) })} />
+                    </div>
+                    <div class="col-span-2">
+                      <div class="flex items-center justify-between mb-1">
+                        <span class="text-[9px] text-white/40 block">Opacity (0-1)</span>
+                        <button class="text-[10px] cursor-pointer {hasKeyframeAtCurrentFrame('opacity') ? 'text-amber-400' : 'text-white/20 hover:text-white/50'}" onclick={() => toggleKeyframe('opacity', selectedItem?.transform?.opacity ?? 1)}>♦</button>
+                      </div>
+                      <input type="number" step="0.05" min="0" max="1" class="w-full bg-white/5 border border-white/10 rounded px-2 py-1 text-xs text-white font-mono" value={selectedItem.transform?.opacity ?? 1} onchange={(e) => updateSelectedTransform({ opacity: parseFloat(e.currentTarget.value) })} />
                     </div>
                   </div>
                 </div>
+
+                {#if selectedItem.type === "image"}
+                  <div class="border-t border-white/5 pt-3">
+                    <span class="block text-[10px] text-white/30 uppercase tracking-wider mb-2">AI Effects</span>
+                    <button 
+                      class="w-full flex items-center justify-center gap-2 rounded-lg {isRemovingBackground ? 'bg-amber-600' : 'bg-transparent border border-white/20'} px-3 py-2 text-[11px] text-white transition-colors hover:bg-white/10 shrink-0"
+                      onclick={removeBackground}
+                      disabled={isRemovingBackground}
+                    >
+                      {#if isRemovingBackground}
+                        <div class="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> Processing...
+                      {:else}
+                        ✨ Auto Remove Background
+                      {/if}
+                    </button>
+                    {#if bgRemovalError}
+                      <p class="text-[10px] text-red-400 mt-2">{bgRemovalError}</p>
+                    {/if}
+                  </div>
+                {/if}
 
               </div>
             {:else}

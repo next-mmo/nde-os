@@ -13,3 +13,4 @@ pub mod service_hub;
 pub mod shield;
 pub mod system;
 pub mod viking;
+pub mod workspace;

@@ -3,6 +3,7 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { onMount, onDestroy } from "svelte";
 
 export interface KanbanTask {
+  id: number;
   filename: string;
   title: string;
   status: string;

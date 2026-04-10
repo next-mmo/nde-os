@@ -1,49 +1,78 @@
-/**
- * NDE-OS Component Registry
- *
- * Maps catalog component names to Svelte 5 render functions.
- * These are the actual implementations that @json-render/svelte's
- * <Renderer> uses to turn JSON specs into live UI.
- */
-
 import { defineRegistry } from "@json-render/svelte";
+import { shadcnComponents } from "@json-render/shadcn-svelte";
 import { catalog } from "./catalog";
 
-import Card from "./components/Card.svelte";
-import Stack from "./components/Stack.svelte";
-import Grid from "./components/Grid.svelte";
-import Divider from "./components/Divider.svelte";
-
-import Heading from "./components/Heading.svelte";
-import Text from "./components/Text.svelte";
-import Code from "./components/Code.svelte";
-import Badge from "./components/Badge.svelte";
-
-import Metric from "./components/Metric.svelte";
-import Table from "./components/Table.svelte";
-import List from "./components/List.svelte";
-import Progress from "./components/Progress.svelte";
-import StatusDot from "./components/StatusDot.svelte";
-
-import Button from "./components/Button.svelte";
-import Input from "./components/Input.svelte";
-import Toggle from "./components/Toggle.svelte";
-import Select from "./components/Select.svelte";
-
-import Alert from "./components/Alert.svelte";
-import Spinner from "./components/Spinner.svelte";
-import Empty from "./components/Empty.svelte";
-
+// Custom NDE-OS Components
 import AppTile from "./components/AppTile.svelte";
 import Terminal from "./components/Terminal.svelte";
+import Code from "./components/Code.svelte";
+import StatusDot from "./components/StatusDot.svelte";
+import Metric from "./components/Metric.svelte";
+import Empty from "./components/Empty.svelte";
+import List from "./components/List.svelte";
 
-export const { registry } = defineRegistry(catalog, {
+const { registry, handlers, executeAction } = defineRegistry(catalog, {
   components: {
-    Card, Stack, Grid, Divider,
-    Heading, Text, Code, Badge,
-    Metric, Table, List, Progress, StatusDot,
-    Button, Input, Toggle, Select,
-    Alert, Spinner, Empty,
-    AppTile, Terminal,
+    // Official shadcn-svelte components
+    ...shadcnComponents,
+
+    // Custom NDE-OS components
+    AppTile,
+    Terminal,
+    Code,
+    StatusDot,
+    Metric,
+    Empty,
+    List,
+  },
+  actions: {
+    navigate: async (params, setState) => {
+      console.log("[json-render] Navigation action triggered:", params);
+    },
+    open_app: async (params) => {
+      console.log("[json-render] Open app action:", params);
+    },
+    select_manifest: async (params) => {
+      console.log("[json-render] Select manifest:", params);
+    },
+    install_app: async (params) => {
+      console.log("[json-render] Install app:", params);
+    },
+    launch_app: async (params) => {
+      console.log("[json-render] Launch app:", params);
+    },
+    stop_app: async (params) => {
+      console.log("[json-render] Stop app:", params);
+    },
+    uninstall_app: async (params) => {
+      console.log("[json-render] Uninstall app:", params);
+    },
+    refresh: async () => {
+      console.log("[json-render] Refresh data");
+    },
+    copy_to_clipboard: async (params) => {
+      if (params?.text && typeof params.text === "string") {
+        navigator.clipboard.writeText(params.text);
+      }
+    },
+    open_url: async (params) => {
+      if (params?.url && typeof params.url === "string") {
+        window.open(params.url, "_blank");
+      }
+    },
+    discover_plugins: async () => {
+      console.log("[json-render] Discover plugins");
+    },
+    install_plugin: async (params) => {
+      console.log("[json-render] Install plugin:", params);
+    },
+    start_plugin: async (params) => {
+      console.log("[json-render] Start plugin:", params);
+    },
+    stop_plugin: async (params) => {
+      console.log("[json-render] Stop plugin:", params);
+    },
   },
 });
+
+export { registry, handlers, executeAction };

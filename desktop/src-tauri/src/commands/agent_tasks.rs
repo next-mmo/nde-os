@@ -1,38 +1,16 @@
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Emitter};
+use super::workspace::WorkspaceState;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct AgentTask {
+    pub id: u32,
     pub filename: String,
     pub title: String,
     pub status: String,
     pub locked: bool,
-}
-
-/// Resolve the `.agents/tasks/` directory from CWD.
-/// During `cargo tauri dev`, the binary runs from `desktop/src-tauri/`.
-/// In production the binary runs from wherever it's installed.
-/// We walk up until we find a directory containing `.agents/`.
-fn tasks_dir() -> Result<PathBuf, String> {
-    let current_dir = std::env::current_dir().map_err(|e| e.to_string())?;
-
-    // Walk up the directory tree to find the repo root (contains .agents/)
-    let mut candidate = current_dir.as_path();
-    loop {
-        let agents_path = candidate.join(".agents").join("tasks");
-        if agents_path.is_dir() {
-            return Ok(agents_path);
-        }
-        match candidate.parent() {
-            Some(parent) => candidate = parent,
-            None => break,
-        }
-    }
-
-    // Fallback: use CWD/.agents/tasks (will be created if needed)
-    Ok(current_dir.join(".agents").join("tasks"))
 }
 
 /// Extract the `status:` value from YAML frontmatter (between the first pair of `---` lines).
@@ -75,10 +53,66 @@ fn classify_status(val: &str) -> &'static str {
     }
 }
 
+/// Parse `- **ID:** NDE-<n>` from task content. Returns None if not found.
+fn parse_id(content: &str) -> Option<u32> {
+    for line in content.lines() {
+        if let Some(rest) = line.strip_prefix("- **ID:** NDE-") {
+            if let Ok(n) = rest.trim().parse::<u32>() {
+                return Some(n);
+            }
+        }
+    }
+    None
+}
+
+/// Read the next available ID from `.next_id` counter file, increment and save.
+fn next_task_id(tasks_dir: &std::path::Path) -> Result<u32, String> {
+    let counter_path = tasks_dir.join(".next_id");
+    let current = if counter_path.exists() {
+        fs::read_to_string(&counter_path)
+            .map_err(|e| e.to_string())?
+            .trim()
+            .parse::<u32>()
+            .unwrap_or(1)
+    } else {
+        1
+    };
+    fs::write(&counter_path, (current + 1).to_string())
+        .map_err(|e| format!("Failed to write .next_id: {e}"))?;
+    Ok(current)
+}
+
+/// Inject `- **ID:** NDE-<n>` after the title line in a task file.
+fn inject_id_into_content(content: &str, id: u32) -> String {
+    let id_line = format!("- **ID:** NDE-{}", id);
+    let mut lines: Vec<&str> = content.lines().collect();
+
+    // Find the title line and insert ID right after it (and any blank line)
+    if let Some(title_pos) = lines.iter().position(|l| l.starts_with("# ")) {
+        let insert_at = if title_pos + 1 < lines.len() && lines[title_pos + 1].is_empty() {
+            title_pos + 2
+        } else {
+            title_pos + 1
+        };
+        lines.insert(insert_at, &id_line);
+    } else {
+        // No title found, prepend
+        lines.insert(0, &id_line);
+    }
+
+    let mut result = lines.join("\n");
+    if content.ends_with('\n') && !result.ends_with('\n') {
+        result.push('\n');
+    }
+    result
+}
+
 #[tauri::command]
-pub async fn get_agent_tasks() -> Result<Vec<AgentTask>, String> {
+pub async fn get_agent_tasks(
+    workspace_state: tauri::State<'_, WorkspaceState>,
+) -> Result<Vec<AgentTask>, String> {
     let mut tasks = Vec::new();
-    let tasks_dir = tasks_dir()?;
+    let tasks_dir = workspace_state.tasks_dir();
 
     if !tasks_dir.exists() {
         return Ok(tasks);
@@ -104,7 +138,20 @@ pub async fn get_agent_tasks() -> Result<Vec<AgentTask>, String> {
                 let status = parse_status(&content);
                 let locked = status == "YOLO mode";
 
+                // Parse or auto-assign ID
+                let id = match parse_id(&content) {
+                    Some(id) => id,
+                    None => {
+                        // Auto-assign ID to legacy tasks
+                        let new_id = next_task_id(&tasks_dir)?;
+                        let updated = inject_id_into_content(&content, new_id);
+                        let _ = fs::write(&path, updated);
+                        new_id
+                    }
+                };
+
                 tasks.push(AgentTask {
+                    id,
                     filename,
                     title,
                     status: status.to_string(),
@@ -120,10 +167,11 @@ pub async fn get_agent_tasks() -> Result<Vec<AgentTask>, String> {
 #[tauri::command]
 pub async fn update_agent_task_status(
     app: AppHandle,
+    workspace_state: tauri::State<'_, WorkspaceState>,
     filename: String,
     new_status: String,
 ) -> Result<(), String> {
-    let tasks_dir = tasks_dir()?;
+    let tasks_dir = workspace_state.tasks_dir();
     let file_path = tasks_dir.join(&filename);
 
     // Sandbox: prevent path traversal
@@ -210,12 +258,13 @@ fn update_legacy_status_line(content: &str, fm_status: &str) -> String {
 #[tauri::command]
 pub async fn create_agent_task(
     app: AppHandle,
+    workspace_state: tauri::State<'_, WorkspaceState>,
     title: String,
     description: String,
     checklist: Vec<String>,
     content: Option<String>,
 ) -> Result<AgentTask, String> {
-    let tasks_dir = tasks_dir()?;
+    let tasks_dir = workspace_state.tasks_dir();
     fs::create_dir_all(&tasks_dir).map_err(|e| format!("Failed to create tasks dir: {e}"))?;
 
     // Generate a slug filename from the title
@@ -242,10 +291,10 @@ pub async fn create_agent_task(
         if !c.trim().is_empty() {
             c.clone()
         } else {
-            build_minimal_ticket(&title, &description, &checklist)
+            build_minimal_ticket(&title, &description, &checklist, &tasks_dir)
         }
     } else {
-        build_minimal_ticket(&title, &description, &checklist)
+        build_minimal_ticket(&title, &description, &checklist, &tasks_dir)
     };
 
     let file_path = tasks_dir.join(&filename);
@@ -253,7 +302,11 @@ pub async fn create_agent_task(
 
     let _ = app.emit("tasks://updated", ());
 
+    // Parse the assigned ID from the content we just wrote
+    let id = parse_id(&file_content).unwrap_or(0);
+
     Ok(AgentTask {
+        id,
         filename,
         title,
         status: "Plan".to_string(),
@@ -263,7 +316,7 @@ pub async fn create_agent_task(
 
 /// Minimal fallback ticket template — used ONLY when no LLM-generated content is provided
 /// (e.g. quick-add from the UI + button). The LLM owns the real template format.
-fn build_minimal_ticket(title: &str, description: &str, checklist: &[String]) -> String {
+fn build_minimal_ticket(title: &str, description: &str, checklist: &[String], tasks_dir: &std::path::Path) -> String {
     let desc = if description.is_empty() {
         title
     } else {
@@ -280,15 +333,21 @@ fn build_minimal_ticket(title: &str, description: &str, checklist: &[String]) ->
             + "\n"
     };
 
+    // Assign a sequential ID
+    let id = next_task_id(tasks_dir).unwrap_or(0);
+
     format!(
-        "# {title}\n\n- **Status:** 🔴 `plan`\n\n## Description\n\n{desc}\n\n## Checklist\n\n{checklist_str}"
+        "# {title}\n\n- **ID:** NDE-{id}\n- **Status:** 🔴 `plan`\n\n## Description\n\n{desc}\n\n## Checklist\n\n{checklist_str}"
     )
 }
 
-/// Delete an agent task file.
 #[tauri::command]
-pub async fn delete_agent_task(app: AppHandle, filename: String) -> Result<(), String> {
-    let tasks_dir = tasks_dir()?;
+pub async fn delete_agent_task(
+    app: AppHandle,
+    workspace_state: tauri::State<'_, WorkspaceState>,
+    filename: String,
+) -> Result<(), String> {
+    let tasks_dir = workspace_state.tasks_dir();
     let file_path = tasks_dir.join(&filename);
 
     if !file_path.starts_with(&tasks_dir) {
@@ -304,8 +363,11 @@ pub async fn delete_agent_task(app: AppHandle, filename: String) -> Result<(), S
 }
 
 #[tauri::command]
-pub async fn get_agent_task_content(filename: String) -> Result<String, String> {
-    let tasks_dir = tasks_dir()?;
+pub async fn get_agent_task_content(
+    workspace_state: tauri::State<'_, WorkspaceState>,
+    filename: String,
+) -> Result<String, String> {
+    let tasks_dir = workspace_state.tasks_dir();
     let file_path = tasks_dir.join(&filename);
 
     if !file_path.starts_with(&tasks_dir) {
@@ -322,10 +384,11 @@ pub async fn get_agent_task_content(filename: String) -> Result<String, String> 
 #[tauri::command]
 pub async fn update_agent_task_content(
     app: AppHandle,
+    workspace_state: tauri::State<'_, WorkspaceState>,
     filename: String,
     content: String,
 ) -> Result<(), String> {
-    let tasks_dir = tasks_dir()?;
+    let tasks_dir = workspace_state.tasks_dir();
     let file_path = tasks_dir.join(&filename);
 
     if !file_path.starts_with(&tasks_dir) {
@@ -345,7 +408,10 @@ pub async fn update_agent_task_content(
 static WATCHER_STARTED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 #[tauri::command]
-pub async fn watch_tasks_dir(app: AppHandle) -> Result<(), String> {
+pub async fn watch_tasks_dir(
+    app: AppHandle,
+    workspace_state: tauri::State<'_, WorkspaceState>,
+) -> Result<(), String> {
     use notify::{EventKind, RecursiveMode, Watcher};
     use std::sync::atomic::Ordering;
 
@@ -356,7 +422,7 @@ pub async fn watch_tasks_dir(app: AppHandle) -> Result<(), String> {
         return Ok(()); // Already started
     }
 
-    let tasks_dir = tasks_dir()?;
+    let tasks_dir = workspace_state.tasks_dir();
     fs::create_dir_all(&tasks_dir)
         .map_err(|e| format!("Failed to create tasks dir for watcher: {e}"))?;
 

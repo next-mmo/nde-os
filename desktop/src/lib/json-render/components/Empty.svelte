@@ -1,16 +1,16 @@
 <script lang="ts">
-  let p = $props();
+  let { props: p } = $props();
 </script>
-<div style="display:flex;flex-direction:column;align-items:center;gap:0.5rem;padding:2rem;text-align:center">
+<div class="flex flex-col items-center gap-2 p-8 text-center">
   {#if p.icon}
-    <span style="font-size:2.5rem">{p.icon}</span>
+    <span class="text-4xl">{p.icon}</span>
   {/if}
-  <strong style="font-size:0.92rem">{p.title}</strong>
+  <strong class="text-sm font-semibold">{p.title}</strong>
   {#if p.description}
-    <p style="margin:0;font-size:0.82rem;color:var(--system-color-text-muted);max-width:280px">{p.description}</p>
+    <p class="m-0 text-xs text-muted-foreground max-w-[280px]">{p.description}</p>
   {/if}
   {#if p.actionLabel}
-    <button style="margin-top:0.5rem;padding:0.45rem 1rem;border-radius:999px;background:hsl(215 90% 55%);color:#fff;border:none;font-size:0.8rem;cursor:pointer">
+    <button class="mt-2 px-4 py-2 rounded-full bg-primary text-primary-foreground text-xs cursor-pointer hover:bg-primary/90 transition-colors">
       {p.actionLabel}
     </button>
   {/if}

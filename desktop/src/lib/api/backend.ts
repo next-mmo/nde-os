@@ -465,6 +465,7 @@ export async function setServiceConfig(serviceId: string, values: Record<string,
 // ── Kanban ──
 
 export interface KanbanTask {
+  id: number;
   filename: string;
   title: string;
   status: string;

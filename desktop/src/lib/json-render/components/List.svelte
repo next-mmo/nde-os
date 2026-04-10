@@ -1,16 +1,16 @@
 <script lang="ts">
-  let p = $props();
+  let { props: p } = $props();
 </script>
-<div style="display:flex;flex-direction:column">
+<div class="flex flex-col">
   {#each (p.items ?? []) as item}
-    <div style="display:flex;align-items:center;gap:0.6rem;padding:0.55rem 0.5rem;border-bottom:1px solid var(--system-color-border);cursor:default">
+    <div class="flex items-center gap-2.5 py-2 px-2 border-b border-border last:border-0">
       {#if item.icon}
-        <span style="font-size:1.1rem">{item.icon}</span>
+        <span class="text-lg">{item.icon}</span>
       {/if}
-      <div style="flex:1;min-width:0">
-        <strong style="font-size:0.85rem;display:block">{item.label}</strong>
+      <div class="flex-1 min-w-0">
+        <strong class="text-sm block font-medium">{item.label}</strong>
         {#if item.description}
-          <span style="font-size:0.72rem;color:var(--system-color-text-muted)">{item.description}</span>
+          <span class="text-xs text-muted-foreground">{item.description}</span>
         {/if}
       </div>
     </div>

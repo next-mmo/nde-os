@@ -68,25 +68,23 @@
 <!-- FAB: always visible in bottom-right -->
 {#if !desktop.collapsed && !desktop.is_locked}
   <button
-    class="fixed bottom-20 right-4 z-[8999] w-10 h-10 rounded-full shadow-lg grid place-items-center cursor-pointer border-none transition-all duration-200 pointer-events-auto
-      {desktop.log_drawer_open
-        ? 'bg-white/20 dark:bg-white/10 backdrop-blur-xl scale-90'
-        : 'bg-gradient-to-br from-indigo-500 to-purple-600 hover:scale-110 hover:shadow-xl'}"
+    class="fixed right-0 top-1/2 z-[8999] w-5 h-10 translate-y-[28px] bg-linear-to-b from-[#5856d6] to-[#af52de] rounded-l-lg grid place-items-center cursor-pointer border-none opacity-40 hover:opacity-100 transition-opacity pointer-events-auto
+      {desktop.log_drawer_open ? 'opacity-100' : ''}"
     onclick={() => toggleLogDrawer()}
     aria-label="Toggle log drawer"
     data-testid="log-drawer-fab"
   >
-    <span class="text-white text-sm font-mono leading-none select-none">
+    <span class="text-white text-xs leading-none select-none flex items-center justify-center pointer-events-none">
       {#if desktop.log_drawer_open}
-        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
       {:else}
-        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.376 3.622a1 1 0 0 1 3.002 3.002L7.368 18.635a2 2 0 0 1-.855.506l-2.872.838a.5.5 0 0 1-.62-.62l.838-2.872a2 2 0 0 1 .506-.855z"/></svg>
+        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17l6-6-6-6"/><path d="M12 19h8"/></svg>
       {/if}
     </span>
     {#if !desktop.log_drawer_open && errorCount > 0}
-      <span class="absolute -top-1 -right-1 min-w-[18px] h-[18px] rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center px-1 shadow">{errorCount}</span>
+      <span class="absolute -top-1 -left-1.5 min-w-[14px] h-[14px] rounded-full bg-red-500 text-white text-[9px] font-bold flex items-center justify-center px-0.5 shadow">{errorCount}</span>
     {:else if !desktop.log_drawer_open && $logStore.length > 0}
-      <span class="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-emerald-400 shadow"></span>
+      <span class="absolute top-0 -left-1 w-2 h-2 rounded-full bg-emerald-400 shadow"></span>
     {/if}
   </button>
 {/if}

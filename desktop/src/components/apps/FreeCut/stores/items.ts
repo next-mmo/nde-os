@@ -16,6 +16,7 @@ export interface TransformProperties {
   y?: number;
   width?: number;
   height?: number;
+  scale?: number;
   rotation?: number;
   opacity?: number;
   cornerRadius?: number;
@@ -27,6 +28,13 @@ export interface ItemEffect {
   effectType: string;
   enabled: boolean;
   params: Record<string, unknown>;
+}
+
+export interface Keyframe {
+  frameOffset: number;
+  property: string; // 'x' | 'y' | 'scale' | 'rotation' | 'opacity'
+  value: number;
+  easing?: string;
 }
 
 export interface TimelineItem {
@@ -55,6 +63,7 @@ export interface TimelineItem {
   fadeOut?: number;
   effects?: ItemEffect[];
   blendMode?: string;
+  keyframes?: Keyframe[];
   src?: string;
   thumbnailUrl?: string;
   sourceWidth?: number;

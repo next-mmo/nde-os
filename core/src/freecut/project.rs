@@ -206,6 +206,8 @@ pub struct TimelineItem {
     pub effects: Vec<ItemEffect>,
     #[serde(default)]
     pub blend_mode: Option<String>,
+    #[serde(default)]
+    pub keyframes: Vec<TimelineKeyframe>,
 
     // ── Type-specific fields (flattened for JSON compat with FreeCut) ──
     #[serde(default)]
@@ -281,6 +283,8 @@ pub struct TransformProperties {
     #[serde(default)]
     pub height: Option<f64>,
     #[serde(default)]
+    pub scale: Option<f64>,
+    #[serde(default)]
     pub rotation: Option<f64>,
     #[serde(default)]
     pub opacity: Option<f64>,
@@ -299,6 +303,16 @@ pub struct ItemEffect {
     pub enabled: bool,
     #[serde(default)]
     pub params: serde_json::Value,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct TimelineKeyframe {
+    pub frame_offset: u32,
+    pub property: String, // "x", "y", "scale", "rotation", "opacity"
+    pub value: f64,
+    #[serde(default)]
+    pub easing: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

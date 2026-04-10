@@ -9,6 +9,35 @@
   import IDE from "./ide/IDE.svelte";
   import ResizeHandle from "./panels/ResizeHandle.svelte";
   import { closeWindow } from "🍎/state/desktop.svelte";
+  import { CatalogRenderer, registry } from "$lib/json-render";
+
+  // shadcn-svelte components
+  import { Button } from "$lib/components/ui/button";
+  import { Badge } from "$lib/components/ui/badge";
+  import { Separator } from "$lib/components/ui/separator";
+  import * as Tabs from "$lib/components/ui/tabs";
+  import * as Tooltip from "$lib/components/ui/tooltip";
+
+  // Lucide icons
+  import {
+    Eye,
+    Code2,
+    Columns3,
+    Terminal,
+    X,
+    Minus,
+    Plus,
+    Frame,
+    RectangleHorizontal,
+    Type,
+    Sparkles,
+    Bot,
+    PanelRightClose,
+    PanelRight,
+    Pencil,
+    Globe,
+    SplitSquareHorizontal,
+  } from "@lucide/svelte";
 
   interface Props {
     window?: import("🍎/state/desktop.svelte").DesktopWindow;
@@ -42,10 +71,34 @@
 
   let activeTab = $state<"preview" | "json" | "kanban" | "ide">("preview");
   let chatMode = $state<"scrum" | "dev">("scrum");
+  let showChatPanel = $state(true);
+  let previewMode = $state<"editor" | "preview" | "split">("editor");
+
+  // React to window.data.tab deep-link (e.g. from NDE Chat "Open Kanban" button)
+  $effect(() => {
+    const tab = window?.data?.tab;
+    if (tab && ["preview", "json", "kanban", "ide"].includes(tab)) {
+      activeTab = tab;
+      if (tab === "kanban") chatMode = "scrum";
+      if (tab === "ide") chatMode = "dev";
+    }
+  });
 
   let activeFilePath = $state<string | null>(null);
   let fileContent = $state<string>("");
   let generatedCode = $state<string>("");
+
+  let jsonSpec = $derived.by(() => {
+    if (!generatedCode) return null;
+    let trimmed = generatedCode.trim();
+    if (!trimmed.startsWith("[") && !trimmed.startsWith("{")) return null;
+    try {
+      const parsed = JSON.parse(trimmed);
+      return parsed;
+    } catch {
+      return null;
+    }
+  });
 
   // Shared context files: populated by FileExplorer drag/right-click → AgentChat
   interface ContextFile { path: string; name: string; content?: string; }
@@ -141,9 +194,13 @@
     if (patch.code) {
       generatedCode = patch.code;
       if (!activeFilePath || activeFilePath.endsWith('.json') || activeFilePath.endsWith('.fj')) {
-        activeFilePath = 'C:\\Users\\dila\\Downloads\\ai-launcher-v0.2\\ai-launcher\\desktop\\ui.html'; // Default virtual file for IDE
+        activeFilePath = 'C:\\Users\\dila\\Downloads\\ai-launcher-v0.2\\ai-launcher\\desktop\\ui.html';
       }
       fileContent = patch.code;
+      // Auto-switch to preview when code is generated
+      if (activeTab === "preview" && previewMode === "editor") {
+        previewMode = "preview";
+      }
       return;
     }
 
@@ -246,109 +303,246 @@
 
 <svelte:window onkeydown={handleKeyDown} />
 
-<div bind:this={rootEl} class="flex h-full w-full bg-background/90 backdrop-blur text-foreground overflow-hidden font-sans">
-  
-  <!-- Left Side: Main Area (80%) -->
-  <div class="flex-1 flex flex-col min-w-0 border-r border-white/10">
-    <!-- Header / Tab Bar -->
-    <header class="h-12 border-b border-white/10 flex items-center justify-between px-4 shrink-0 bg-black/20" data-tauri-drag-region>
-      <div class="flex items-center gap-4">
-        <h1 class="text-sm font-semibold tracking-wide flex items-center gap-2 pointer-events-none text-white/90">
-          <div class="w-2 h-2 rounded-full bg-indigo-500 shadow-[0_0_8px_rgba(99,102,241,0.5)]"></div>
-          Vibe Studio
-        </h1>
-        
-        <div class="flex bg-black/40 p-1 rounded-md ml-4">
-          <button 
-            class="px-3 py-1 text-xs font-medium rounded transition-colors {activeTab === 'preview' ? 'bg-white/10 text-white shadow-sm' : 'text-white/50 hover:text-white/80'}"
-            onclick={() => activeTab = "preview"}
-          >
-            Preview
-          </button>
-          <button 
-            class="px-3 py-1 text-xs font-medium rounded transition-colors {activeTab === 'json' ? 'bg-white/10 text-white shadow-sm' : 'text-white/50 hover:text-white/80'}"
-            onclick={() => activeTab = "json"}
-          >
-            JSON
-          </button>
+<div bind:this={rootEl} class="flex h-full w-full bg-background text-foreground overflow-hidden font-sans">
 
-          <button 
-            class="px-3 py-1 text-xs font-medium rounded transition-colors {activeTab === 'kanban' ? 'bg-white/10 text-white shadow-sm' : 'text-white/50 hover:text-white/80'}"
-            onclick={() => {
-              activeTab = "kanban";
-              chatMode = "scrum";
-            }}
-          >
-            Kanban 📋
-          </button>
-          <button 
-            class="px-3 py-1 text-xs font-medium rounded transition-colors {activeTab === 'ide' ? 'bg-white/10 text-white shadow-sm' : 'text-white/50 hover:text-white/80'}"
-            onclick={() => {
-              activeTab = "ide";
-              chatMode = "dev";
-            }}
-          >
-            IDE 💻
-          </button>
+  <!-- ═══ Left Side: Main Area ═══ -->
+  <div class="flex-1 flex flex-col min-w-0">
+
+    <!-- ─── Header / Tab Bar ─── -->
+    <header class="h-11 border-b border-border flex items-center justify-between px-3 shrink-0 bg-muted/30 backdrop-blur-sm" data-tauri-drag-region>
+      <div class="flex items-center gap-3">
+        <!-- Branding -->
+        <div class="flex items-center gap-2 pointer-events-none select-none">
+          <Sparkles class="size-3.5 text-chart-2" />
+          <span class="text-sm font-semibold tracking-tight">Vibe Studio</span>
         </div>
+
+        <Separator orientation="vertical" class="h-5!" />
+
+        <!-- Tab Switcher -->
+        <Tabs.Root bind:value={activeTab} onValueChange={(v) => {
+          if (v === "kanban") chatMode = "scrum";
+          if (v === "ide") chatMode = "dev";
+        }}>
+          <Tabs.List class="h-7">
+            <Tabs.Trigger value="preview" class="gap-1 text-xs px-2.5">
+              <Eye class="size-3" />
+              Preview
+            </Tabs.Trigger>
+            <Tabs.Trigger value="json" class="gap-1 text-xs px-2.5">
+              <Code2 class="size-3" />
+              JSON
+            </Tabs.Trigger>
+            <Tabs.Trigger value="kanban" class="gap-1 text-xs px-2.5">
+              <Columns3 class="size-3" />
+              Kanban
+            </Tabs.Trigger>
+            <Tabs.Trigger value="ide" class="gap-1 text-xs px-2.5">
+              <Terminal class="size-3" />
+              IDE
+            </Tabs.Trigger>
+          </Tabs.List>
+        </Tabs.Root>
       </div>
-      
-      <!-- Window Controls -->
-      <div class="flex gap-2 relative z-50">
+
+      <!-- Right-side controls -->
+      <div class="flex items-center gap-1">
+        <!-- Toggle chat panel -->
+        <Tooltip.Root>
+          <Tooltip.Trigger>
+            <Button variant="ghost" size="icon-xs" onclick={() => showChatPanel = !showChatPanel} class="text-muted-foreground">
+              {#if showChatPanel}
+                <PanelRightClose class="size-3.5" />
+              {:else}
+                <PanelRight class="size-3.5" />
+              {/if}
+            </Button>
+          </Tooltip.Trigger>
+          <Tooltip.Content>{showChatPanel ? 'Hide chat' : 'Show chat'}</Tooltip.Content>
+        </Tooltip.Root>
+
         {#if window}
-          <button aria-label="Close Desktop Window" class="w-8 h-8 rounded-full hover:bg-white/10 flex items-center justify-center transition-colors" onclick={() => closeWindow(window!.id)}>
-            <svg class="w-4 h-4 text-white/70" aria-hidden="true" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
-          </button>
+          <Tooltip.Root>
+            <Tooltip.Trigger>
+              <Button variant="ghost" size="icon-xs" onclick={() => closeWindow(window!.id)} class="text-muted-foreground hover:text-destructive">
+                <X class="size-3.5" />
+              </Button>
+            </Tooltip.Trigger>
+            <Tooltip.Content>Close window</Tooltip.Content>
+          </Tooltip.Root>
         {/if}
       </div>
     </header>
 
-    <!-- Main Content Area -->
-    <main class="flex-1 relative overflow-hidden bg-black/40">
+    <!-- ─── Main Content Area ─── -->
+    <main class="flex-1 relative overflow-hidden bg-background">
       {#if activeTab === "preview"}
-        <div class="absolute inset-0 flex">
-          {#if generatedCode}
-            <!-- v0 Runner Previews actual HTML/Tailwind -->
-            <V0Runner code={generatedCode} />
-          {:else}
-            <LayerTree
-              {document}
-              {selectedNodeId}
-              onSelectNode={(id) => selectedNodeId = id}
-              width={layerTreeWidth}
-            />
+        <div class="absolute inset-0 flex flex-col">
+          <!-- Sub-tab bar: Editor / Preview / Split -->
+          <div class="h-9 border-b border-border flex items-center justify-between px-3 shrink-0 bg-muted/10">
+            <Tabs.Root bind:value={previewMode}>
+              <Tabs.List class="h-6">
+                <Tabs.Trigger value="editor" class="gap-1 text-[11px] px-2 h-5">
+                  <Pencil class="size-3" />
+                  Editor
+                </Tabs.Trigger>
+                <Tabs.Trigger value="preview" class="gap-1 text-[11px] px-2 h-5">
+                  <Globe class="size-3" />
+                  Preview
+                </Tabs.Trigger>
+                <Tabs.Trigger value="split" class="gap-1 text-[11px] px-2 h-5">
+                  <SplitSquareHorizontal class="size-3" />
+                  Split
+                </Tabs.Trigger>
+              </Tabs.List>
+            </Tabs.Root>
 
-            <ResizeHandle onResize={(d) => layerTreeWidth = clampPanel(layerTreeWidth + d)} />
-
-          <!-- Interactive Canvas -->
-          <div class="flex-1 relative min-w-0">
-            <CanvasEditor
-              {document}
-              {selectedNodeId}
-              bind:zoom
-              onSelectNode={(id) => selectedNodeId = id}
-              onUpdateNodePosition={updateNodePosition}
-              onUpdateNodeSize={updateNodeSize}
-            />
-
-            <!-- Toolbar -->
-            {#if !generatedCode}
-            <div class="absolute top-4 left-1/2 -translate-x-1/2 flex items-center gap-1.5 px-3 py-1.5 bg-black/60 border border-white/10 backdrop-blur-md rounded-full text-white/50 shadow-2xl z-50">
-              <button class="w-8 h-8 rounded-full hover:bg-white/10 hover:text-white flex items-center justify-center transition-colors" onclick={() => createNode('FRAME')} title="Add Frame">◰</button>
-              <button class="w-8 h-8 rounded-full hover:bg-white/10 hover:text-white flex items-center justify-center transition-colors" onclick={() => createNode('RECTANGLE')} title="Add Rectangle">▨</button>
-              <button class="w-8 h-8 rounded-full hover:bg-white/10 hover:text-white flex items-center justify-center transition-colors font-serif font-bold" onclick={() => createNode('TEXT')} title="Add Text">T</button>
-            </div>
+            {#if generatedCode}
+              <Badge variant="secondary" class="h-4 px-1.5 text-[10px] gap-1">
+                <span class="size-1.5 rounded-full bg-chart-1 animate-pulse"></span>
+                Live
+              </Badge>
             {/if}
           </div>
 
-          <ResizeHandle onResize={(d) => propertiesWidth = clampPanel(propertiesWidth - d)} />
-          <PropertiesPanel {document} {selectedNodeId} width={propertiesWidth} />
-          {/if}
+          <!-- Sub-tab content -->
+          <div class="flex-1 relative overflow-hidden">
+            {#if previewMode === "editor"}
+              <!-- Figma Canvas Editor -->
+              <div class="absolute inset-0 flex">
+                <LayerTree
+                  {document}
+                  {selectedNodeId}
+                  onSelectNode={(id) => selectedNodeId = id}
+                  width={layerTreeWidth}
+                />
+                <ResizeHandle onResize={(d) => layerTreeWidth = clampPanel(layerTreeWidth + d)} />
+
+                <div class="flex-1 relative min-w-0">
+                  <CanvasEditor
+                    {document}
+                    {selectedNodeId}
+                    bind:zoom
+                    onSelectNode={(id) => selectedNodeId = id}
+                    onUpdateNodePosition={updateNodePosition}
+                    onUpdateNodeSize={updateNodeSize}
+                  />
+
+                  <!-- Floating Toolbar -->
+                  <div class="absolute top-3 left-1/2 -translate-x-1/2 flex items-center gap-1 rounded-lg border border-border bg-popover/90 px-2 py-1 shadow-lg backdrop-blur-md z-50">
+                    <Tooltip.Root>
+                      <Tooltip.Trigger>
+                        <Button variant="ghost" size="icon-xs" onclick={() => createNode('FRAME')} class="text-muted-foreground">
+                          <Frame class="size-3.5" />
+                        </Button>
+                      </Tooltip.Trigger>
+                      <Tooltip.Content>Add Frame</Tooltip.Content>
+                    </Tooltip.Root>
+                    <Tooltip.Root>
+                      <Tooltip.Trigger>
+                        <Button variant="ghost" size="icon-xs" onclick={() => createNode('RECTANGLE')} class="text-muted-foreground">
+                          <RectangleHorizontal class="size-3.5" />
+                        </Button>
+                      </Tooltip.Trigger>
+                      <Tooltip.Content>Add Rectangle</Tooltip.Content>
+                    </Tooltip.Root>
+                    <Tooltip.Root>
+                      <Tooltip.Trigger>
+                        <Button variant="ghost" size="icon-xs" onclick={() => createNode('TEXT')} class="text-muted-foreground">
+                          <Type class="size-3.5" />
+                        </Button>
+                      </Tooltip.Trigger>
+                      <Tooltip.Content>Add Text</Tooltip.Content>
+                    </Tooltip.Root>
+                  </div>
+                </div>
+
+                <ResizeHandle onResize={(d) => propertiesWidth = clampPanel(propertiesWidth - d)} />
+                <PropertiesPanel {document} {selectedNodeId} width={propertiesWidth} />
+              </div>
+
+            {:else if previewMode === "preview"}
+              <!-- Full-width live web preview -->
+              <div class="absolute inset-0">
+                {#if jsonSpec}
+                  <div class="w-full h-full p-6 overflow-auto bg-background">
+                    <CatalogRenderer spec={jsonSpec} {registry} />
+                  </div>
+                {:else}
+                  <V0Runner code={generatedCode} />
+                {/if}
+              </div>
+
+            {:else if previewMode === "split"}
+              <!-- Split: Editor left, Preview right -->
+              <div class="absolute inset-0 flex">
+                <!-- Left half: Canvas editor -->
+                <div class="flex-1 relative min-w-0 flex border-r border-border">
+                  <LayerTree
+                    {document}
+                    {selectedNodeId}
+                    onSelectNode={(id) => selectedNodeId = id}
+                    width={Math.min(layerTreeWidth, 180)}
+                  />
+                  <ResizeHandle onResize={(d) => layerTreeWidth = clampPanel(layerTreeWidth + d)} />
+
+                  <div class="flex-1 relative min-w-0">
+                    <CanvasEditor
+                      {document}
+                      {selectedNodeId}
+                      bind:zoom
+                      onSelectNode={(id) => selectedNodeId = id}
+                      onUpdateNodePosition={updateNodePosition}
+                      onUpdateNodeSize={updateNodeSize}
+                    />
+
+                    <div class="absolute top-3 left-1/2 -translate-x-1/2 flex items-center gap-1 rounded-lg border border-border bg-popover/90 px-2 py-1 shadow-lg backdrop-blur-md z-50">
+                      <Tooltip.Root>
+                        <Tooltip.Trigger>
+                          <Button variant="ghost" size="icon-xs" onclick={() => createNode('FRAME')} class="text-muted-foreground">
+                            <Frame class="size-3.5" />
+                          </Button>
+                        </Tooltip.Trigger>
+                        <Tooltip.Content>Add Frame</Tooltip.Content>
+                      </Tooltip.Root>
+                      <Tooltip.Root>
+                        <Tooltip.Trigger>
+                          <Button variant="ghost" size="icon-xs" onclick={() => createNode('RECTANGLE')} class="text-muted-foreground">
+                            <RectangleHorizontal class="size-3.5" />
+                          </Button>
+                        </Tooltip.Trigger>
+                        <Tooltip.Content>Add Rectangle</Tooltip.Content>
+                      </Tooltip.Root>
+                      <Tooltip.Root>
+                        <Tooltip.Trigger>
+                          <Button variant="ghost" size="icon-xs" onclick={() => createNode('TEXT')} class="text-muted-foreground">
+                            <Type class="size-3.5" />
+                          </Button>
+                        </Tooltip.Trigger>
+                        <Tooltip.Content>Add Text</Tooltip.Content>
+                      </Tooltip.Root>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Right half: Live preview -->
+                <div class="flex-1 relative min-w-0">
+                  {#if jsonSpec}
+                    <div class="w-full h-full p-6 overflow-auto bg-background">
+                      <CatalogRenderer spec={jsonSpec} {registry} />
+                    </div>
+                  {:else}
+                    <V0Runner code={generatedCode} />
+                  {/if}
+                </div>
+              </div>
+            {/if}
+          </div>
         </div>
       {:else if activeTab === "json"}
-        <div class="absolute inset-0 p-4">
-          <textarea 
-            class="w-full h-full bg-black/50 text-emerald-400 font-mono text-sm p-4 rounded-lg focus:outline-none resize-none border border-white/10"
+        <div class="absolute inset-0 p-3">
+          <textarea
+            class="w-full h-full rounded-lg border border-border bg-muted/30 p-4 font-mono text-sm text-chart-1 placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring resize-none"
             value={JSON.stringify(document, null, 2)}
             oninput={(e) => {
               try {
@@ -368,41 +562,58 @@
       {/if}
     </main>
 
-    <!-- Status Bar -->
-    <footer class="h-8 border-t border-white/10 flex items-center justify-between px-4 text-xs text-white/40 bg-black/60 shrink-0">
-      <div class="flex items-center gap-4">
-        {#if generatedCode}
-          <span class="text-emerald-400">v0 Runner Active</span>
-          <span>DOM Ready</span>
-        {:else}
-          <span>Nodes: {document.children.length}</span>
-          <span>Selected: {selectedNodeId ?? 'None'}</span>
-        {/if}
-      </div>
+    <!-- ─── Status Bar ─── -->
+    <footer class="h-7 border-t border-border flex items-center justify-between px-3 text-[11px] text-muted-foreground bg-muted/20 shrink-0">
       <div class="flex items-center gap-3">
-        <button class="hover:text-white transition-colors" onclick={() => zoom = Math.max(0.1, zoom - 0.1)}>-</button>
-        <span class="w-10 text-center">{Math.round(zoom * 100)}%</span>
-        <button class="hover:text-white transition-colors" onclick={() => zoom = Math.min(5, zoom + 0.1)}>+</button>
+        {#if activeTab === "preview" && (previewMode === "preview" || previewMode === "split") && generatedCode}
+          <Badge variant="secondary" class="h-4 px-1.5 text-[10px] gap-1">
+            <span class="size-1.5 rounded-full bg-chart-1 animate-pulse"></span>
+            v0 Runner
+          </Badge>
+          <span>DOM Ready</span>
+          <Separator orientation="vertical" class="h-3!" />
+        {/if}
+        <span>Nodes: {document.children.length}</span>
+        <Separator orientation="vertical" class="h-3!" />
+        <span>Selected: {selectedNodeId ?? 'None'}</span>
+      </div>
+      <div class="flex items-center gap-1">
+        <Button variant="ghost" size="icon-xs" class="size-5 text-muted-foreground" onclick={() => zoom = Math.max(0.1, zoom - 0.1)}>
+          <Minus class="size-3" />
+        </Button>
+        <span class="w-9 text-center tabular-nums">{Math.round(zoom * 100)}%</span>
+        <Button variant="ghost" size="icon-xs" class="size-5 text-muted-foreground" onclick={() => zoom = Math.min(5, zoom + 0.1)}>
+          <Plus class="size-3" />
+        </Button>
       </div>
     </footer>
   </div>
 
-  <!-- Resize handle: Main Area <-> Chat Panel -->
-  <div class="hidden lg:block h-full z-50 relative">
-    <ResizeHandle onResize={(d) => chatWidth = clampPanel(chatWidth - d)} />
-  </div>
-
-  <!-- Right Side: Chat Panel -->
-  <div class="border-l border-white/10 bg-black/20 shrink-0 flex-none hidden lg:flex flex-col" style="width: {chatWidth}px">
-    <div class="h-12 border-b border-white/10 flex items-center justify-between px-4 shrink-0 bg-black/40">
-      <h2 class="text-sm font-medium text-white/80">AI Agent Workspace</h2>
-      <div class="flex bg-black/40 p-1 rounded-md">
-
-        <button class="px-2 py-0.5 text-[10px] font-medium rounded {chatMode === 'scrum' ? 'bg-white/10 text-white' : 'text-white/50 hover:text-white/80'}" onclick={() => chatMode = 'scrum'}>Scrum Master</button>
-        <button class="px-2 py-0.5 text-[10px] font-medium rounded {chatMode === 'dev' ? 'bg-white/10 text-white' : 'text-white/50 hover:text-white/80'}" onclick={() => chatMode = 'dev'}>Agent IDE</button>
-      </div>
+  <!-- ═══ Resize handle: Main Area <-> Chat Panel ═══ -->
+  {#if showChatPanel}
+    <div class="hidden lg:block h-full z-50 relative">
+      <ResizeHandle onResize={(d) => chatWidth = clampPanel(chatWidth - d)} />
     </div>
-    
-    <AgentChat {document} {chatMode} {activeFilePath} {fileContent} bind:contextFiles onApplyPatch={applyChatPatch} />
-  </div>
+  {/if}
+
+  <!-- ═══ Right Side: Chat Panel ═══ -->
+  {#if showChatPanel}
+    <div class="border-l border-border bg-muted/10 shrink-0 flex-none hidden lg:flex flex-col" style="width: {chatWidth}px">
+      <!-- Chat header -->
+      <div class="h-11 border-b border-border flex items-center justify-between px-3 shrink-0 bg-muted/20">
+        <div class="flex items-center gap-2">
+          <Bot class="size-3.5 text-chart-2" />
+          <span class="text-xs font-semibold">AI Agent</span>
+        </div>
+        <Tabs.Root bind:value={chatMode}>
+          <Tabs.List class="h-6">
+            <Tabs.Trigger value="scrum" class="text-[10px] px-2 h-5">Scrum</Tabs.Trigger>
+            <Tabs.Trigger value="dev" class="text-[10px] px-2 h-5">Dev</Tabs.Trigger>
+          </Tabs.List>
+        </Tabs.Root>
+      </div>
+
+      <AgentChat {document} {chatMode} {activeFilePath} {fileContent} bind:contextFiles onApplyPatch={applyChatPatch} />
+    </div>
+  {/if}
 </div>

@@ -8,3 +8,4 @@ pub mod media_probe;
 pub mod project;
 pub mod render_engine;
 pub mod storage;
+pub mod vision;

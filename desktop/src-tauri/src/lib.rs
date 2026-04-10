@@ -7,10 +7,11 @@ use ai_launcher_core::voice::runtime::VoiceRuntime;
 use commands::freecut::FreeCutState;
 use commands::service_hub::{VikingState, VoiceRuntimeState};
 use commands::shield::ShieldLauncherState;
+use commands::workspace::WorkspaceState;
 use state::AppState;
 use std::path::PathBuf;
 use std::sync::Arc;
-use tauri::{Emitter, Manager};
+use tauri::Manager;
 use tokio::sync::Mutex;
 
 /// Cross-platform base directory
@@ -50,6 +51,9 @@ pub fn run() {
         process: Arc::new(Mutex::new(VikingProcess::new(viking_config, &base_dir))),
     };
 
+    // Workspace state — manages active workspace path and recent workspaces
+    let workspace_state = WorkspaceState::new(&base_dir);
+
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
@@ -75,6 +79,7 @@ pub fn run() {
         .manage(voice_runtime_state)
         .manage(freecut_state)
         .manage(viking_state)
+        .manage(workspace_state)
         .manage(commands::pty::PtyState::new())
         .invoke_handler(tauri::generate_handler![
             // system
@@ -174,6 +179,7 @@ pub fn run() {
             commands::freecut::freecut_import_dubbing_srt,
             commands::freecut::freecut_generate_dub_assets,
             commands::freecut::freecut_install_dubbing_runtime,
+            commands::freecut::freecut_remove_background,
             // service hub
             commands::service_hub::service_hub_status,
             commands::service_hub::service_hub_install,
@@ -186,6 +192,17 @@ pub fn run() {
             commands::viking::viking_install,
             commands::viking::viking_start,
             commands::viking::viking_stop,
+            // workspace
+            commands::workspace::get_workspace,
+            commands::workspace::set_workspace,
+            commands::workspace::list_workspaces,
+            // chat persistence
+            commands::workspace::load_chat_history,
+            commands::workspace::save_chat_history,
+            commands::workspace::clear_chat_history,
+            // vibe studio chat persistence
+            commands::workspace::load_vibe_chat_history,
+            commands::workspace::save_vibe_chat_history,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

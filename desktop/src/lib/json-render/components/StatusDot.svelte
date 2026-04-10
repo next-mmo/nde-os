@@ -1,11 +1,9 @@
 <script lang="ts">
-  let p = $props();
-  const statusColorMap: Record<string, string> = { online: "hsl(145 65% 50%)", offline: "hsl(0 0% 55%)", warning: "hsl(40 90% 55%)", busy: "hsl(0 70% 55%)" };
-  let c = $derived(statusColorMap[(p.status as string) || "offline"] ?? "gray");
+  let { props: p } = $props();
 </script>
-<div style="display:inline-flex;align-items:center;gap:0.35rem">
-  <span style="width:8px;height:8px;border-radius:50%;background:{c}"></span>
+<div class="inline-flex items-center gap-1.5">
+  <span class="w-2 h-2 rounded-full {p.status === 'online' ? 'bg-green-500' : p.status === 'offline' ? 'bg-gray-500' : p.status === 'warning' ? 'bg-amber-500' : p.status === 'busy' ? 'bg-red-500' : 'bg-gray-500'}"></span>
   {#if p.label}
-    <span style="font-size:0.78rem">{p.label}</span>
+    <span class="text-xs">{p.label}</span>
   {/if}
 </div>

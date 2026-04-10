@@ -1,8 +1,11 @@
 <svelte:options runes={true} />
 
 <script lang="ts">
+  import { invoke } from "@tauri-apps/api/core";
+  import { listen } from "@tauri-apps/api/event";
   import * as api from "$lib/api/backend";
   import type { ConversationSummary } from "$lib/api/types";
+  import { openStaticApp } from "🍎/state/desktop.svelte";
 
   type ChatMessage = {
     id: number;
@@ -39,8 +42,23 @@
   let slashMenuIndex = $state(0);
   let filteredCommands = $state(SLASH_COMMANDS.slice());
 
+  // ── @mention status definitions ──────────────────────────────────────────
+  const MENTION_STATUSES = [
+    { key: "plan",              emoji: "🔴", label: "Plan",             tag: "@plan" },
+    { key: "yolo",              emoji: "🟡", label: "YOLO mode",       tag: "@yolo" },
+    { key: "done",              emoji: "🟢", label: "Done by AI",      tag: "@done" },
+    { key: "verified",          emoji: "✅", label: "Verified by Human", tag: "@verified" },
+    { key: "reopen",            emoji: "🔁", label: "Re-open",         tag: "@reopen" },
+    { key: "waiting",           emoji: "⏳", label: "Waiting Approval", tag: "@waiting" },
+  ] as const;
 
-  // Load agent config on mount
+  let mentionMenuOpen = $state(false);
+  let mentionMenuIndex = $state(0);
+  let filteredMentions = $state(MENTION_STATUSES.slice());
+  let hydrated = false;
+  let saveTimer: ReturnType<typeof setTimeout> | null = null;
+
+  // Load agent config and restore persisted chat on mount
   $effect(() => {
     api.agentConfig().then((config) => {
       agentInfo = { provider: config.provider, model: config.model, name: config.name };
@@ -49,7 +67,27 @@
     api.agentConversations().then((convs) => {
       conversations = convs;
     }).catch(() => {});
+
+    // Restore persisted chat from workspace .agents/chat/
+    loadChatFromWorkspace();
+
+    // Listen for workspace switches — reload chat
+    listen("workspace://changed", () => {
+      loadChatFromWorkspace();
+    });
   });
+
+  async function loadChatFromWorkspace() {
+    try {
+      const history = await invoke<{ messages: ChatMessage[]; conversation_id: string | null; msg_counter: number }>("load_chat_history");
+      if (history.messages && history.messages.length > 0) {
+        messages = history.messages.map(m => ({ ...m, streaming: false }));
+        conversationId = history.conversation_id ?? null;
+        msgCounter = history.msg_counter ?? 0;
+      }
+    } catch {}
+    hydrated = true;
+  }
 
   // Auto-scroll when messages change or streaming content updates
   $effect(() => {
@@ -62,7 +100,25 @@
     }
   });
 
-  /** Translate slash commands to full agent prompts (for LLM-dependent commands) */
+  // Persist messages to workspace whenever they change (debounced)
+  $effect(() => {
+    const _trigger = messages.length;
+    const _convId = conversationId;
+    if (!hydrated) return;
+    if (saveTimer) clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => {
+      const toSave = messages.filter(m => !m.streaming);
+      invoke("save_chat_history", {
+        history: {
+          messages: toSave,
+          conversation_id: conversationId,
+          msg_counter: msgCounter,
+        }
+      }).catch(() => {});
+    }, 500);
+  });
+
+  /** Translate slash commands and @mentions to full agent prompts */
   function resolveSlashCommand(text: string): string {
     if (text === "/openviking" || text.startsWith("/openviking ")) {
       const sub = text.slice("/openviking".length).trim() || "status";
@@ -84,8 +140,27 @@
     }
     if (text === "/help") {
       const cmdList = SLASH_COMMANDS.map(c => "  " + c.emoji + " " + c.cmd + " — " + c.label + " (example: " + c.example + ")").join("\n");
-      return "The user asked for help. List all available slash commands:\n" + cmdList + "\n\nAlso mention the user can type any natural language question and the agent has 30+ built-in tools including file I/O, shell exec, web search, git, kanban, app management, and more.";
+      const mentionList = MENTION_STATUSES.map(s => "  " + s.emoji + " " + s.tag + " — " + s.label).join("\n");
+      return "The user asked for help. List all available slash commands:\n" + cmdList + "\n\nKanban status @mentions (type @ to autocomplete):\n" + mentionList + "\n\nAlso mention the user can type any natural language question and the agent has 30+ built-in tools including file I/O, shell exec, web search, git, kanban, app management, and more.";
     }
+
+    // @mention status resolution — standalone or inline
+    for (const status of MENTION_STATUSES) {
+      const tag = status.tag; // e.g. "@plan"
+      const label = status.label; // e.g. "Plan"
+
+      // Standalone: just "@plan" by itself
+      if (text.trim().toLowerCase() === tag) {
+        return `List all kanban tasks that have status "${label}". Use the todo_list tool, then filter and show only tasks in the "${label}" column. Format as a clean list with NDE-IDs.`;
+      }
+
+      // Inline: replace "@plan" occurrences with the label for natural language
+      if (text.includes(tag) || text.includes(status.label)) {
+        // The text already contains the status label — pass through with context
+        return text.replace(new RegExp(tag.replace("@", "\\@"), "gi"), `"${label}" status`);
+      }
+    }
+
     return text;
   }
 
@@ -349,11 +424,45 @@
   function newChat() {
     messages = [];
     conversationId = null;
+    msgCounter = 0;
     input = "";
     sidebarOpen = false;
   }
 
+  function clearHistory() {
+    messages = [];
+    conversationId = null;
+    msgCounter = 0;
+    input = "";
+    invoke("clear_chat_history").catch(() => {});
+  }
+
   function handleKeyDown(e: KeyboardEvent) {
+    // @mention status autocomplete navigation
+    if (mentionMenuOpen) {
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        mentionMenuIndex = (mentionMenuIndex + 1) % filteredMentions.length;
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        mentionMenuIndex = (mentionMenuIndex - 1 + filteredMentions.length) % filteredMentions.length;
+        return;
+      }
+      if (e.key === "Tab" || (e.key === "Enter" && !e.shiftKey)) {
+        e.preventDefault();
+        if (filteredMentions.length > 0) {
+          selectMention(filteredMentions[mentionMenuIndex]);
+        }
+        return;
+      }
+      if (e.key === "Escape") {
+        mentionMenuOpen = false;
+        return;
+      }
+    }
+
     // Slash command autocomplete navigation
     if (slashMenuOpen) {
       if (e.key === "ArrowDown") {
@@ -389,8 +498,27 @@
 
   function handleInput() {
     const val = input;
+
+    // Check for @mention at the last word
+    const lastAtIdx = val.lastIndexOf("@");
+    if (lastAtIdx >= 0) {
+      const afterAt = val.slice(lastAtIdx + 1);
+      // Only trigger if the @word has no spaces (typing a single mention)
+      if (!afterAt.includes(" ")) {
+        const query = afterAt.toLowerCase();
+        filteredMentions = MENTION_STATUSES.filter(s => 
+          s.key.startsWith(query) || s.label.toLowerCase().startsWith(query) || s.tag.startsWith("@" + query)
+        );
+        mentionMenuOpen = filteredMentions.length > 0;
+        mentionMenuIndex = 0;
+        // Don't open slash menu when @mention is active
+        slashMenuOpen = false;
+        return;
+      }
+    }
+    mentionMenuOpen = false;
+
     if (val.startsWith("/") && !val.includes(" ")) {
-      // Filter commands matching partial input
       const query = val.toLowerCase();
       filteredCommands = SLASH_COMMANDS.filter(c => c.cmd.startsWith(query));
       slashMenuOpen = filteredCommands.length > 0;
@@ -400,9 +528,34 @@
     }
   }
 
+  function selectMention(mention: typeof MENTION_STATUSES[number]) {
+    // Replace the @partial with the full status label
+    const lastAtIdx = input.lastIndexOf("@");
+    if (lastAtIdx >= 0) {
+      input = input.slice(0, lastAtIdx) + mention.label + " ";
+    } else {
+      input += mention.label + " ";
+    }
+    mentionMenuOpen = false;
+  }
+
   function selectSlashCommand(cmd: string) {
     input = cmd + " ";
     slashMenuOpen = false;
+  }
+
+  /** Check if a message is kanban-related (todo_list, todo_add, todo_done) */
+  function isKanbanMessage(content: string): boolean {
+    return (
+      content.startsWith("📋 **Kanban Board**") ||
+      content.startsWith("📋 **No tasks found.**") ||
+      content.startsWith("✅ **Task created:**") ||
+      content.startsWith("✔️ **Task marked as done:**")
+    );
+  }
+
+  function handleOpenKanban() {
+    openStaticApp("vibe-studio", { tab: "kanban" });
   }
 
   /** Simple markdown-like rendering for assistant messages */
@@ -459,7 +612,14 @@
           <span class="provider-badge">{agentInfo.provider} · {agentInfo.model}</span>
         {/if}
       </div>
-      <button class="new-chat-btn" onclick={newChat}>New Chat</button>
+      <div style="display:flex; gap:6px; align-items:center;">
+        {#if messages.length > 0}
+          <button class="new-chat-btn" style="background:transparent; border:1px solid rgba(255,255,255,0.15); color:rgba(255,255,255,0.5); font-size:11px; padding:4px 10px;" onclick={clearHistory} title="Clear all messages">
+            🗑️ Clear
+          </button>
+        {/if}
+        <button class="new-chat-btn" onclick={newChat}>New Chat</button>
+      </div>
     </div>
 
     <!-- Messages -->
@@ -505,6 +665,11 @@
               </div>
               {#if msg.role === "assistant" && msg.content}
                 <div class="msg-text">{@html renderMarkdown(msg.content)}{#if msg.streaming}<span class="cursor-blink">▊</span>{/if}</div>
+                {#if isKanbanMessage(msg.content) && !msg.streaming}
+                  <button class="open-kanban-btn" onclick={handleOpenKanban}>
+                    📋 Open Kanban Board
+                  </button>
+                {/if}
               {:else}
                 <div class="msg-text">{msg.content}</div>
               {/if}
@@ -528,6 +693,21 @@
 
     <!-- Input -->
     <div class="input-area">
+      {#if mentionMenuOpen}
+        <div class="slash-menu">
+          {#each filteredMentions as mention, i (mention.key)}
+            <button
+              class="slash-item"
+              class:active={i === mentionMenuIndex}
+              onclick={() => selectMention(mention)}
+            >
+              <span class="slash-emoji">{mention.emoji}</span>
+              <span class="slash-cmd">{mention.tag}</span>
+              <span class="slash-desc">{mention.label}</span>
+            </button>
+          {/each}
+        </div>
+      {/if}
       {#if slashMenuOpen}
         <div class="slash-menu">
           {#each filteredCommands as cmd, i (cmd.cmd)}
@@ -545,7 +725,7 @@
       {/if}
       <textarea
         class="chat-input"
-        placeholder="Type a message or / for commands..."
+        placeholder="Type a message, / for commands, @ for statuses..."
         bind:value={input}
         onkeydown={handleKeyDown}
         oninput={handleInput}
@@ -1010,5 +1190,28 @@
   /* Highlight slash commands in user messages */
   .msg.user .msg-text {
     font-family: inherit;
+  }
+
+  .open-kanban-btn {
+    margin-top: 0.6rem;
+    padding: 0.45rem 1rem;
+    border-radius: 999px;
+    border: 1px solid hsla(220 80% 55% / 0.3);
+    background: hsla(220 80% 55% / 0.15);
+    color: hsl(220 80% 70%);
+    font-size: 0.78rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+
+  .open-kanban-btn:hover {
+    background: hsla(220 80% 55% / 0.25);
+    border-color: hsla(220 80% 55% / 0.5);
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px hsla(220 80% 55% / 0.2);
   }
 </style>
