@@ -48,7 +48,32 @@ export interface AvdInfo {
   name: string;
 }
 
-export type ShieldView = "setup" | "profiles" | "create" | "settings" | "devices" | "emulators";
+export type ShieldView = "setup" | "profiles" | "create" | "settings" | "devices" | "emulators" | "extensions";
+
+// ─── Extension Types ──────────────────────────────────────────────
+
+export interface ShieldExtension {
+  id: string;
+  name: string;
+  version: string;
+  description: string;
+  author: string;
+  /** "chromium" | "firefox" */
+  format: string;
+  /** "developer" | "store" */
+  source: string;
+  source_url: string | null;
+  permissions: string[];
+  icon_relative: string | null;
+  installed_at: number;
+  updated_at: number;
+}
+
+export interface ProfileExtensionEntry {
+  extension: ShieldExtension;
+  bound: boolean;
+  enabled: boolean;
+}
 
 // ─── LDPlayer Types ────────────────────────────────────────────────
 

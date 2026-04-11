@@ -28,6 +28,9 @@ pub fn detect_all(base_dir: &Path) -> Vec<ServiceStatus> {
     let vision_rt = crate::freecut::vision::VisionRuntime::new(base_dir);
     let vision_installed = vision_rt.is_installed();
 
+    // LDPlayer: detect if the Android emulator is installed on this system
+    let ld_detection = crate::shield::ldplayer::detect_ldplayer();
+
     vec![
         ServiceStatus {
             id: "voice-runtime".to_string(),
@@ -153,6 +156,25 @@ pub fn detect_all(base_dir: &Path) -> Vec<ServiceStatus> {
                 Some("Requires installation via Service Hub".to_string()) 
             },
         },
+        ServiceStatus {
+            id: "ldplayer".to_string(),
+            name: "LDPlayer".to_string(),
+            description: "Android emulator for mobile testing and anti-detect browsing".to_string(),
+            group: ServiceGroup::Tooling,
+            installed: ld_detection.available,
+            version: ld_detection.version_dir.clone(),
+            path: ld_detection.ldconsole_path.clone(),
+            used_by: vec!["Shield Browser".to_string()],
+            optional: true,
+            details: if ld_detection.available {
+                Some(format!(
+                    "Detected: {}",
+                    ld_detection.version_dir.as_deref().unwrap_or("LDPlayer")
+                ))
+            } else {
+                Some("Install from ldplayer.net — required for emulator management".to_string())
+            },
+        },
     ]
 }
 
@@ -198,6 +220,9 @@ pub fn install_service(service_id: &str, base_dir: &Path) -> Result<String> {
         }
         "rvc" => {
             anyhow::bail!("RVC requires manual setup: clone the RVC repo and configure model paths in the app")
+        }
+        "ldplayer" => {
+            anyhow::bail!("LDPlayer must be installed manually from https://www.ldplayer.net — download and install, then restart NDE-OS")
         }
         _ => anyhow::bail!("Unknown service: {service_id}"),
     }
@@ -249,5 +274,6 @@ mod tests {
         assert!(ids.contains(&"rvc"));
         assert!(ids.contains(&"openviking"));
         assert!(ids.contains(&"ai-vision-runtime"));
+        assert!(ids.contains(&"ldplayer"));
     }
 }

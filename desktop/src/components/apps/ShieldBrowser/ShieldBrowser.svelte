@@ -10,14 +10,49 @@
   import ShieldSettings from "./ShieldSettings.svelte";
   import ShieldCreateProfile from "./ShieldCreateProfile.svelte";
   import ShieldDevices from "./ShieldDevices.svelte";
+  import ShieldExtensions from "./ShieldExtensions.svelte";
   import ProfileTable from "./ProfileTable.svelte";
   import LDPlayerTable from "./LDPlayerTable.svelte";
 
+  import type { DesktopWindow } from "🍎/state/desktop.svelte";
+  import type { ShieldView } from "./types";
+
+  interface Props {
+    window: DesktopWindow;
+  }
+
+  let { window: win }: Props = $props();
+
   const store = useStore(shieldBrowserStore);
 
-  onMount(() => {
-    store.init();
+  onMount(async () => {
+    await store.init();
+    // Deep-link: if returnView is set (e.g. coming back from Service Hub), switch to that view
+    handleReturnView();
   });
+
+  // Reactive deep-link: when window data changes (e.g. user returns from Service Hub to
+  // an already-open Shield Browser), the $effect picks up the new returnView and switches tabs
+  $effect(() => {
+    const returnView = win.data?.returnView;
+    if (returnView && !store.loading) {
+      handleReturnView();
+    }
+  });
+
+  function handleReturnView() {
+    const returnView = win.data?.returnView as ShieldView | undefined;
+    if (returnView) {
+      store.setView(returnView);
+      // Also re-detect LDPlayer in case user just installed it
+      if (returnView === "emulators") {
+        store.detectLdPlayer();
+        store.loadLdInstances();
+      }
+      // Clear the deep-link data so it doesn't persist on subsequent re-focuses
+      win.data = undefined;
+    }
+  }
 
   onDestroy(() => {
     store.stopListenerTracker();
@@ -70,10 +105,18 @@
         >
           🎮 Emulators
         </Button>
-        <Button 
-          variant={store.view === "create" ? "secondary" : "ghost"} 
-          size="sm" 
-          class="h-8 shadow-none gap-1" 
+        <Button
+          variant={store.view === "extensions" ? "secondary" : "ghost"}
+          size="sm"
+          class="h-8 shadow-none"
+          onclick={() => { store.setView("extensions"); store.loadExtensions(); }}
+        >
+          Extensions
+        </Button>
+        <Button
+          variant={store.view === "create" ? "secondary" : "ghost"}
+          size="sm"
+          class="h-8 shadow-none gap-1"
           onclick={() => { store.setView("create"); store.resolveCreateVersion(); }}
         >
           <span class="text-base font-light leading-none">+</span> Create
@@ -115,6 +158,8 @@
         <ShieldDevices />
       {:else if store.view === "emulators"}
         <LDPlayerTable />
+      {:else if store.view === "extensions"}
+        <ShieldExtensions />
       {:else if store.view === "profiles"}
         <ProfileTable />
       {/if}

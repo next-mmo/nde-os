@@ -155,6 +155,17 @@ pub fn run() {
             commands::shield::shield_remove_ldplayer,
             commands::shield::shield_modify_ldplayer,
             commands::shield::shield_update_ldplayer_meta,
+            commands::shield::shield_download_ldplayer,
+            // shield extensions
+            commands::shield::shield_list_extensions,
+            commands::shield::shield_install_extension_from_dir,
+            commands::shield::shield_install_extension_from_file,
+            commands::shield::shield_install_extension_from_url,
+            commands::shield::shield_uninstall_extension,
+            commands::shield::shield_bind_extension_to_profile,
+            commands::shield::shield_unbind_extension_from_profile,
+            commands::shield::shield_set_extension_enabled,
+            commands::shield::shield_list_profile_extensions,
             // figma json
             commands::figma_json::convert_figma_json,
             commands::figma_json::resolve_document_styles,

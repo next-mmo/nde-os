@@ -1,7 +1,7 @@
 <svelte:options runes={true} />
 
 <script lang="ts">
-  import { Settings, CircleCheck, Download, CircleAlert, Loader2, RefreshCw, Info, PanelRight } from "@lucide/svelte";
+  import { Settings, CircleCheck, Download, CircleAlert, Loader2, RefreshCw, Info, PanelRight, ExternalLink } from "@lucide/svelte";
   import type { ServiceStatus } from "../types";
 
   interface Props {
@@ -33,6 +33,21 @@
   }: Props = $props();
 
   let showDetails = $state(false);
+
+  // Official download URLs for externally installed services
+  const downloadUrls: Record<string, { url: string; label: string }> = {
+    ffmpeg: { url: "https://ffmpeg.org/download.html", label: "ffmpeg.org" },
+    python: { url: "https://www.python.org/downloads/", label: "python.org" },
+  };
+
+  let downloadInfo = $derived(downloadUrls[svc.id] ?? null);
+
+  function openDownloadUrl() {
+    if (!downloadInfo) return;
+    import("🍎/state/desktop.svelte").then(({ openGenericBrowserWindow }) => {
+      openGenericBrowserWindow(downloadInfo!.url, `Download ${svc.name}`);
+    });
+  }
 </script>
 
 <div class="rounded-xl border {isRequired ? 'border-violet-400/20 bg-violet-400/5' : 'border-white/6 bg-white/2'} p-3 transition-colors hover:bg-white/4 {viewMode === 'grid' ? 'flex flex-col h-full' : ''}">
@@ -59,6 +74,21 @@
         {/if}
       </div>
       <p class="text-[10px] text-white/45 mt-0.5 leading-relaxed">{svc.description}</p>
+
+      <!-- Official download link for external services -->
+      {#if downloadInfo && !svc.installed}
+        <div class="mt-2 flex items-center gap-2 rounded-lg bg-blue-500/8 border border-blue-500/15 px-2.5 py-1.5">
+          <ExternalLink class="w-3 h-3 text-blue-400 shrink-0" />
+          <span class="text-[10px] text-blue-300/80">Download from</span>
+          <button
+            class="text-[10px] font-semibold text-blue-300 hover:text-blue-200 underline underline-offset-2 transition-colors"
+            onclick={openDownloadUrl}
+          >
+            {downloadInfo.label}
+          </button>
+          <span class="text-[9px] text-blue-300/50">→ install → re-detect</span>
+        </div>
+      {/if}
 
       <!-- Expandable details -->
       {#if showDetails}
@@ -101,7 +131,7 @@
   <!-- ─── 4 Action Buttons (+ 5th drawer when installed) ─── -->
   <div class="{viewMode === 'grid' ? 'flex w-full items-center justify-between pt-2 mt-auto border-t border-white/5' : 'flex items-center gap-1 mt-2 pt-2 border-t border-white/5'}">
     <!-- Action 1: Install / Re-install -->
-    {#if !svc.installed && (svc.id === "voice-runtime" || svc.id === "uv" || svc.id === "ai-vision-runtime")}
+    {#if !svc.installed && (svc.id === "voice-runtime" || svc.id === "uv" || svc.id === "ai-vision-runtime" || svc.id === "ldplayer")}
       <button
         class="flex items-center gap-1.5 rounded-lg bg-violet-600 px-2.5 py-1 text-[10px] font-medium text-white transition-all hover:bg-violet-500 disabled:opacity-50 active:scale-95"
         onclick={onInstall}
@@ -130,6 +160,16 @@
           <Download class="w-3 h-3" />
           Re-install
         {/if}
+      </button>
+    {:else if downloadInfo}
+      <!-- Manual-install services: show download button instead -->
+      <button
+        class="flex items-center gap-1.5 rounded-lg bg-blue-600 px-2.5 py-1 text-[10px] font-medium text-white transition-all hover:bg-blue-500 active:scale-95"
+        onclick={openDownloadUrl}
+        title="Open official download page"
+      >
+        <ExternalLink class="w-3 h-3" />
+        Download
       </button>
     {/if}
 

@@ -7,6 +7,7 @@ pub mod browser;
 pub mod cdp;
 pub mod emulator;
 pub mod engine;
+pub mod extension;
 pub mod launcher;
 pub mod ldplayer;
 pub mod ldplayer_db;

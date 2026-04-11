@@ -2,7 +2,8 @@
 
 <script lang="ts">
   import { invoke } from "@tauri-apps/api/core";
-  import { onMount } from "svelte";
+  import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+  import { onMount, onDestroy } from "svelte";
   import { Download, CircleCheck, CircleAlert, ArrowLeft, Loader2, ExternalLink, Wrench, Mic, Film, Code2, Cpu, Play, Square, RefreshCw, Settings, X, Save, List as ListIcon, LayoutGrid, Search } from "@lucide/svelte";
   import { vikingStatus, vikingInstall, vikingStart, vikingStop, getServiceConfig, setServiceConfig } from "$lib/api/backend";
   import type { VikingStatus, ServiceConfig, ConfigField } from "$lib/api/types";
@@ -30,6 +31,10 @@
   let installing = $state<string | null>(null);
   let installError = $state<string | null>(null);
   let installSuccess = $state<string | null>(null);
+  let dlStage = $state("");
+  let dlPercent = $state(0);
+  let dlMessage = $state("");
+  let ulistenDl: UnlistenFn | null = null;
   let activeTab = $state<string>("All");
   let viewMode = $state<"list" | "grid">("list");
   let drawerService = $state<ServiceStatus | null>(null);
@@ -49,9 +54,30 @@
   };
 
   // ─── Lifecycle ──────────────────────────────────────────────────────────
-  onMount(() => {
+  onMount(async () => {
     refreshStatus();
     fetchVikingStatus();
+    // Deep-link: pre-fill search to navigate directly to the required service
+    if (require.length > 0) {
+      searchQuery = require[0];
+    }
+
+    ulistenDl = await listen("ldplayer-download-progress", (event: any) => {
+      dlStage = event.payload.stage;
+      dlPercent = event.payload.percent;
+      dlMessage = event.payload.message;
+    });
+  });
+
+  onDestroy(() => {
+    ulistenDl?.();
+  });
+
+  // Reactive: update search when deep-link context changes on an already-open window
+  $effect(() => {
+    if (require.length > 0) {
+      searchQuery = require[0];
+    }
   });
 
   async function refreshStatus() {
@@ -80,7 +106,14 @@
       installError = null;
       installSuccess = null;
       logStore.info(`Installing ${serviceId}...`, "service-hub");
-      const message = await invoke<string>("service_hub_install", { serviceId });
+      
+      let message = "";
+      if (serviceId === "ldplayer") {
+        message = await invoke<string>("shield_download_ldplayer");
+      } else {
+        message = await invoke<string>("service_hub_install", { serviceId });
+      }
+      
       installSuccess = message;
       logStore.success(`Installed ${serviceId}`, "service-hub");
       await refreshStatus();
@@ -124,7 +157,10 @@
   function goBack() {
     if (returnTo) {
       import("🍎/state/desktop.svelte").then(({ openStaticApp }) => {
-        openStaticApp(returnTo as any);
+        // Pass deep-link context back to the originating app
+        // For shield-browser, this switches to the emulators tab on return
+        const returnData = win.data?.returnData ?? undefined;
+        openStaticApp(returnTo as any, returnData);
       });
     }
   }
@@ -644,6 +680,23 @@
               >
                 {#if configOpen === svc.id}
                   {@render configPanel()}
+                {/if}
+                {#if installing === "ldplayer" && svc.id === "ldplayer" && dlStage && dlStage !== "done"}
+                  <div class="mt-3 p-3 rounded-xl border border-violet-500/20 bg-violet-500/5">
+                    <div class="flex items-center justify-between text-[10px] font-medium text-violet-300 mb-1.5">
+                      <span>{dlMessage}</span>
+                      <span>{dlPercent}%</span>
+                    </div>
+                    <div class="h-1.5 w-full overflow-hidden rounded-full bg-violet-500/20">
+                      <div 
+                        class="h-full bg-violet-500 transition-all duration-300"
+                        style="width: {dlPercent}%"
+                      ></div>
+                    </div>
+                    {#if dlStage === "installing"}
+                      <p class="text-[9px] text-white/50 text-center mt-2">Follow the setup wizard, then click Refresh.</p>
+                    {/if}
+                  </div>
                 {/if}
               </ServiceCard>
             {/each}

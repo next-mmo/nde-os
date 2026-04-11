@@ -195,12 +195,25 @@ pub fn build_launch_args(
     debugging_port: Option<u16>,
     headless: bool,
 ) -> Vec<String> {
+    build_launch_args_with_extensions(engine, profile_data_dir, proxy, url, debugging_port, headless, &[])
+}
+
+/// Build launch arguments with extension paths included.
+pub fn build_launch_args_with_extensions(
+    engine: &BrowserEngine,
+    profile_data_dir: &Path,
+    proxy: Option<&ProxyConfig>,
+    url: Option<&str>,
+    debugging_port: Option<u16>,
+    headless: bool,
+    extension_dirs: &[std::path::PathBuf],
+) -> Vec<String> {
     match engine {
         BrowserEngine::Wayfern => {
-            build_chromium_args(profile_data_dir, proxy, url, debugging_port, headless)
+            build_chromium_args(profile_data_dir, proxy, url, debugging_port, headless, extension_dirs)
         }
         BrowserEngine::Camoufox => {
-            build_firefox_args(profile_data_dir, proxy, url, debugging_port, headless)
+            build_firefox_args(profile_data_dir, proxy, url, debugging_port, headless, extension_dirs)
         }
     }
 }
@@ -211,6 +224,7 @@ fn build_chromium_args(
     url: Option<&str>,
     debugging_port: Option<u16>,
     headless: bool,
+    extension_dirs: &[std::path::PathBuf],
 ) -> Vec<String> {
     let mut args = vec![
         format!("--user-data-dir={}", profile_data_dir.display()),
@@ -227,6 +241,17 @@ fn build_chromium_args(
         "--use-mock-keychain".into(),
         "--password-store=basic".into(),
     ];
+
+    // Load unpacked extensions via --load-extension and --disable-extensions-except
+    if !extension_dirs.is_empty() {
+        let paths: Vec<String> = extension_dirs
+            .iter()
+            .map(|p| p.display().to_string())
+            .collect();
+        let joined = paths.join(",");
+        args.push(format!("--load-extension={joined}"));
+        args.push(format!("--disable-extensions-except={joined}"));
+    }
 
     if let Some(port) = debugging_port {
         args.push("--remote-debugging-address=127.0.0.1".into());
@@ -254,12 +279,32 @@ fn build_firefox_args(
     url: Option<&str>,
     debugging_port: Option<u16>,
     headless: bool,
+    extension_dirs: &[std::path::PathBuf],
 ) -> Vec<String> {
     let mut args = vec![
         "-profile".into(),
         profile_data_dir.display().to_string(),
         "-no-remote".into(),
     ];
+
+    // For Firefox/Camoufox, copy extension XPIs into the profile's extensions/ dir
+    // so they are loaded on startup. This must happen before the browser launches.
+    if !extension_dirs.is_empty() {
+        let profile_ext_dir = profile_data_dir.join("extensions");
+        let _ = std::fs::create_dir_all(&profile_ext_dir);
+        for ext_dir in extension_dirs {
+            // Copy the unpacked extension into a subdirectory named by the folder name
+            let ext_name = ext_dir
+                .file_name()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .to_string();
+            let target = profile_ext_dir.join(&ext_name);
+            if !target.exists() {
+                let _ = copy_dir_for_firefox(ext_dir, &target);
+            }
+        }
+    }
 
     if let Some(port) = debugging_port {
         args.push("--start-debugger-server".into());
@@ -275,6 +320,22 @@ fn build_firefox_args(
     }
 
     args
+}
+
+/// Recursively copy a directory (used for Firefox extension deployment).
+fn copy_dir_for_firefox(src: &Path, dst: &Path) -> Result<()> {
+    std::fs::create_dir_all(dst)?;
+    for entry in std::fs::read_dir(src)? {
+        let entry = entry?;
+        let src_path = entry.path();
+        let dst_path = dst.join(entry.file_name());
+        if src_path.is_dir() {
+            copy_dir_for_firefox(&src_path, &dst_path)?;
+        } else {
+            std::fs::copy(&src_path, &dst_path)?;
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -320,7 +381,7 @@ mod tests {
     #[test]
     fn test_chromium_args_include_profile_dir() {
         let dir = std::path::PathBuf::from("/profiles/test-uuid/profile");
-        let args = build_chromium_args(&dir, None, None, Some(9222), false);
+        let args = build_chromium_args(&dir, None, None, Some(9222), false, &[]);
         assert!(args.iter().any(|a| a.contains("--user-data-dir=")));
         assert!(args
             .iter()
@@ -328,9 +389,24 @@ mod tests {
     }
 
     #[test]
+    fn test_chromium_args_with_extensions() {
+        let dir = std::path::PathBuf::from("/profiles/test-uuid/profile");
+        let ext_dirs = vec![
+            std::path::PathBuf::from("/extensions/ext1"),
+            std::path::PathBuf::from("/extensions/ext2"),
+        ];
+        let args = build_chromium_args(&dir, None, None, None, false, &ext_dirs);
+        let load_ext = args.iter().find(|a| a.starts_with("--load-extension="));
+        assert!(load_ext.is_some());
+        let val = load_ext.unwrap();
+        assert!(val.contains("ext1"));
+        assert!(val.contains("ext2"));
+    }
+
+    #[test]
     fn test_firefox_args_include_profile_dir() {
         let dir = std::path::PathBuf::from("/profiles/test-uuid/profile");
-        let args = build_firefox_args(&dir, None, Some("https://example.com"), None, false);
+        let args = build_firefox_args(&dir, None, Some("https://example.com"), None, false, &[]);
         assert!(args.contains(&"-profile".to_string()));
         assert!(args.contains(&"https://example.com".to_string()));
     }

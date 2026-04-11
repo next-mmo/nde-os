@@ -7,6 +7,7 @@ use tokio::sync::Mutex;
 
 use super::browser::{self, BrowserEngine, ProxyConfig};
 use super::engine::EngineManager;
+use super::extension::ExtensionManager;
 use super::profile::{ProfileManager, ShieldProfile};
 
 // ─── Running Browser Instance ──────────────────────────────────────
@@ -80,14 +81,21 @@ impl BrowserLauncher {
         std::fs::create_dir_all(&profile_data_dir)
             .context("Failed to create profile data directory")?;
 
-        // Build launch args
-        let args = browser::build_launch_args(
+        // Resolve enabled extensions for this profile
+        let ext_mgr = ExtensionManager::new(&self.base_dir);
+        let extension_dirs = ext_mgr
+            .get_launch_extensions(profile_id, &profile.engine)
+            .unwrap_or_default();
+
+        // Build launch args (with extensions)
+        let args = browser::build_launch_args_with_extensions(
             &profile.engine,
             &profile_data_dir,
             profile.proxy.as_ref(),
             url,
             Some(cdp_port),
             false,
+            &extension_dirs,
         );
 
         tracing::info!(

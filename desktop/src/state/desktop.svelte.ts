@@ -474,6 +474,12 @@ function assignWindowFocus(window: DesktopWindow) {
   window.minimized = false;
 }
 
+function topVisibleWindow(excludeWindowId?: string) {
+  return [...desktop.windows]
+    .filter((item) => !item.minimized && item.id !== excludeWindowId)
+    .sort((left, right) => right.z_index - left.z_index)[0] ?? null;
+}
+
 export function bootDesktop() {
   if (desktop.windows.length > 0) return;
 
@@ -555,7 +561,17 @@ export function closeWindow(window_id: string) {
 export function minimizeWindow(window_id: string) {
   const window = desktop.windows.find((item) => item.id === window_id);
   if (!window) return;
+  const wasActive = activeWindow()?.id === window_id;
   window.minimized = true;
+  if (wasActive) {
+    const nextWindow = topVisibleWindow(window_id);
+    if (nextWindow) {
+      assignWindowFocus(nextWindow);
+      if (nextWindow.session_id) {
+        desktop.selected_session_id = nextWindow.session_id;
+      }
+    }
+  }
 }
 
 export function toggleFullscreen(window_id: string) {
@@ -858,7 +874,7 @@ export function visibleWindows() {
 }
 
 export function activeWindow() {
-  return [...desktop.windows].sort((left, right) => right.z_index - left.z_index)[0] ?? null;
+  return topVisibleWindow();
 }
 
 export function windowForApp(app_id: WindowAppID | "browser" | "chat") {
@@ -931,7 +947,7 @@ export function showDesktopIcon(id: string) {
 }
 
 /** Open the Service Hub with deep-link context (required services + return-to app). */
-export function openServiceHub(options: { require?: string[]; returnTo?: string } = {}) {
+export function openServiceHub(options: { require?: string[]; returnTo?: string; returnData?: any } = {}) {
   const existing = desktop.windows.find((item) => item.app_id === "service-hub");
   if (existing) {
     // Update context on re-open

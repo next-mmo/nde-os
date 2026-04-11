@@ -11,11 +11,19 @@
   import { Badge } from "$lib/components/ui/badge";
   import * as Table from "$lib/components/ui/table";
   import type { LdPlayerInstance } from "./types";
+  import { invoke } from "@tauri-apps/api/core";
+  import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+  import { Download } from "@lucide/svelte";
+
+  let dlStage = $state("");
+  let dlPercent = $state(0);
+  let dlMessage = $state("");
+  let ulistenDl: UnlistenFn | null = null;
 
   const store = useStore(shieldBrowserStore);
   let pollInterval: ReturnType<typeof setInterval>;
 
-  onMount(() => {
+  onMount(async () => {
     store.detectLdPlayer();
     store.loadLdInstances();
     pollInterval = setInterval(() => {
@@ -23,11 +31,32 @@
         store.loadLdInstances();
       }
     }, 5000);
+
+    ulistenDl = await listen("ldplayer-download-progress", (event: any) => {
+      dlStage = event.payload.stage;
+      dlPercent = event.payload.percent;
+      dlMessage = event.payload.message;
+      if (dlStage === "done" || dlStage === "installing") {
+        setTimeout(() => store.detectLdPlayer(), 5000);
+      }
+    });
   });
 
   onDestroy(() => {
     clearInterval(pollInterval);
+    ulistenDl?.();
   });
+
+  async function startDownload() {
+    dlStage = "connecting";
+    dlMessage = "Starting download...";
+    try {
+      await invoke("shield_download_ldplayer");
+    } catch (e: any) {
+      dlStage = "error";
+      dlMessage = e.toString();
+    }
+  }
 
   // ── Local sort state ───────────────────────────────────────────
   let sortKey = $state<"name" | "index" | "is_running">("index");
@@ -107,13 +136,61 @@
 
   {#if !store.ldDetection?.available}
     <!-- Not Installed State -->
-    <div class="flex-1 flex flex-col items-center justify-center gap-4 text-muted-foreground">
+    <div class="flex-1 flex flex-col items-center justify-center gap-5 text-muted-foreground">
       <span class="text-6xl opacity-50">🎮</span>
-      <p class="text-sm max-w-md text-center">
-        LDPlayer is not installed or <code class="text-xs bg-secondary px-1.5 py-0.5 rounded">ldconsole.exe</code> was not found.
-        Install LDPlayer from <span class="text-primary">ldplayer.net</span> and restart.
-      </p>
-      <Button variant="outline" onclick={() => store.detectLdPlayer()}>🔍 Re-detect</Button>
+      <div class="flex flex-col items-center gap-1.5 max-w-md text-center">
+        <p class="text-base font-semibold text-foreground m-0">LDPlayer Not Detected</p>
+        <p class="text-sm text-muted-foreground m-0">
+          <code class="text-xs bg-secondary px-1.5 py-0.5 rounded">ldconsole.exe</code> was not found on this system.
+          Download and install LDPlayer, then click Re-detect.
+        </p>
+      </div>
+      
+      <!-- Auto Download link -->
+      {#if dlStage && dlStage !== "error" && dlStage !== "done"}
+        <div class="w-full max-w-md mt-2 flex flex-col gap-2 rounded-xl border border-primary/20 bg-primary/5 p-4">
+          <div class="flex items-center justify-between text-xs font-medium">
+            <span class="text-primary">{dlMessage}</span>
+            <span class="text-muted-foreground">{dlPercent}%</span>
+          </div>
+          <div class="h-2 w-full overflow-hidden rounded-full bg-secondary/30">
+            <div 
+              class="h-full bg-primary transition-all duration-300"
+              style="width: {dlPercent}%"
+            ></div>
+          </div>
+          {#if dlStage === "installing"}
+            <p class="text-[10px] text-muted-foreground text-center mt-1">Please finish the LDPlayer setup window that appears.</p>
+            <div class="flex items-center justify-center mt-2">
+              <Button variant="outline" size="sm" onclick={() => store.detectLdPlayer()}>🔍 Check Installation</Button>
+            </div>
+          {/if}
+        </div>
+      {:else}
+        <div class="flex items-center gap-3 px-4 py-3 rounded-xl border border-primary/20 bg-primary/5">
+          <div class="flex flex-col gap-0.5">
+            <span class="text-xs font-semibold text-foreground">Automatic Installation</span>
+            <span class="text-[11px] text-muted-foreground">Download & launch the LDPlayer 9 installer</span>
+          </div>
+          <Button variant="default" size="sm" onclick={startDownload}>
+            <Download class="w-4 h-4 mr-1.5" />
+            Install
+          </Button>
+        </div>
+
+        {#if dlStage === "error"}
+          <div class="text-xs text-destructive bg-destructive/10 px-3 py-2 rounded">Format error: {dlMessage}</div>
+        {/if}
+
+        <div class="flex items-center gap-2">
+          <Button variant="outline" onclick={() => store.detectLdPlayer()}>🔍 Re-detect</Button>
+          <Button variant="secondary" onclick={() => {
+            import("🍎/state/desktop.svelte").then(({ openServiceHub }) => {
+              openServiceHub({ require: ["ldplayer"], returnTo: "shield-browser", returnData: { returnView: "emulators" } });
+            });
+          }}>🛠️ Service Hub</Button>
+        </div>
+      {/if}
     </div>
   {:else if store.ldInstances.length === 0 && !store.ldLoading}
     <div class="flex-1 flex flex-col items-center justify-center gap-3 text-muted-foreground border border-dashed border-border/60 rounded-xl bg-secondary/10">

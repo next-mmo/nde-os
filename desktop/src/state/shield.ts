@@ -11,6 +11,8 @@ import type {
   ShieldView,
   LdPlayerDetection,
   LdPlayerInstance,
+  ShieldExtension,
+  ProfileExtensionEntry,
 } from "../components/apps/ShieldBrowser/types";
 
 export interface ShieldBrowserState {
@@ -72,6 +74,16 @@ export interface ShieldBrowserState {
   ldShowCloneDialog: boolean;
   ldCloneSourceName: string;
   ldCloneNewName: string;
+
+  // Extension Management
+  extensions: ShieldExtension[];
+  extensionsLoading: boolean;
+  extensionsError: string;
+  extensionActionBusy: boolean;
+  extensionDevMode: boolean;
+  extensionInstallUrl: string;
+  profileExtensions: ProfileExtensionEntry[];
+  profileExtensionsProfileId: string | null;
 }
 
 export interface ShieldBrowserActions {
@@ -136,6 +148,19 @@ export interface ShieldBrowserActions {
   setLdShowCloneDialog: (show: boolean) => void;
   setLdCloneSourceName: (name: string) => void;
   setLdCloneNewName: (name: string) => void;
+
+  // Extension Actions
+  loadExtensions: () => Promise<void>;
+  installExtensionFromDir: (path: string) => Promise<void>;
+  installExtensionFromFile: (path: string) => Promise<void>;
+  installExtensionFromUrl: () => Promise<void>;
+  uninstallExtension: (extId: string) => Promise<void>;
+  bindExtensionToProfile: (profileId: string, extId: string) => Promise<void>;
+  unbindExtensionFromProfile: (profileId: string, extId: string) => Promise<void>;
+  setExtensionEnabled: (profileId: string, extId: string, enabled: boolean) => Promise<void>;
+  loadProfileExtensions: (profileId: string) => Promise<void>;
+  setExtensionDevMode: (on: boolean) => void;
+  setExtensionInstallUrl: (url: string) => void;
 }
 
 export const shieldBrowserStore = createStore<ShieldBrowserState & ShieldBrowserActions>()((set, get) => {
@@ -203,6 +228,16 @@ export const shieldBrowserStore = createStore<ShieldBrowserState & ShieldBrowser
     ldShowCloneDialog: false,
     ldCloneSourceName: "",
     ldCloneNewName: "",
+
+    // Extensions
+    extensions: [],
+    extensionsLoading: false,
+    extensionsError: "",
+    extensionActionBusy: false,
+    extensionDevMode: false,
+    extensionInstallUrl: "",
+    profileExtensions: [],
+    profileExtensionsProfileId: null,
 
     // ─── Actions ───
     setView: (view) => set({ view }),
@@ -720,6 +755,113 @@ export const shieldBrowserStore = createStore<ShieldBrowserState & ShieldBrowser
         alert(`Failed to update metadata: ${e}`);
       } finally {
         set({ ldActionBusy: false });
+      }
+    },
+
+    // ─── Extension Actions ───
+    setExtensionDevMode: (on) => set({ extensionDevMode: on }),
+    setExtensionInstallUrl: (url) => set({ extensionInstallUrl: url }),
+
+    loadExtensions: async () => {
+      set({ extensionsLoading: true, extensionsError: "" });
+      try {
+        const extensions = await invoke<ShieldExtension[]>("shield_list_extensions");
+        set({ extensions });
+      } catch (e: unknown) {
+        set({ extensionsError: `${e}` });
+      } finally {
+        set({ extensionsLoading: false });
+      }
+    },
+
+    installExtensionFromDir: async (path) => {
+      set({ extensionActionBusy: true });
+      try {
+        await invoke("shield_install_extension_from_dir", { path });
+        await get().loadExtensions();
+      } catch (e: unknown) {
+        alert(`Failed to install extension: ${e}`);
+      } finally {
+        set({ extensionActionBusy: false });
+      }
+    },
+
+    installExtensionFromFile: async (path) => {
+      set({ extensionActionBusy: true });
+      try {
+        await invoke("shield_install_extension_from_file", { path });
+        await get().loadExtensions();
+      } catch (e: unknown) {
+        alert(`Failed to install extension: ${e}`);
+      } finally {
+        set({ extensionActionBusy: false });
+      }
+    },
+
+    installExtensionFromUrl: async () => {
+      const url = get().extensionInstallUrl.trim();
+      if (!url) return;
+      set({ extensionActionBusy: true });
+      try {
+        await invoke("shield_install_extension_from_url", { url });
+        set({ extensionInstallUrl: "" });
+        await get().loadExtensions();
+      } catch (e: unknown) {
+        alert(`Failed to install extension: ${e}`);
+      } finally {
+        set({ extensionActionBusy: false });
+      }
+    },
+
+    uninstallExtension: async (extId) => {
+      set({ extensionActionBusy: true });
+      try {
+        await invoke("shield_uninstall_extension", { extId });
+        await get().loadExtensions();
+        // Refresh profile extensions if viewing one
+        const pid = get().profileExtensionsProfileId;
+        if (pid) await get().loadProfileExtensions(pid);
+      } catch (e: unknown) {
+        alert(`Failed to uninstall extension: ${e}`);
+      } finally {
+        set({ extensionActionBusy: false });
+      }
+    },
+
+    bindExtensionToProfile: async (profileId, extId) => {
+      try {
+        await invoke("shield_bind_extension_to_profile", { profileId, extId });
+        await get().loadProfileExtensions(profileId);
+      } catch (e: unknown) {
+        alert(`Failed to add extension: ${e}`);
+      }
+    },
+
+    unbindExtensionFromProfile: async (profileId, extId) => {
+      try {
+        await invoke("shield_unbind_extension_from_profile", { profileId, extId });
+        await get().loadProfileExtensions(profileId);
+      } catch (e: unknown) {
+        alert(`Failed to remove extension: ${e}`);
+      }
+    },
+
+    setExtensionEnabled: async (profileId, extId, enabled) => {
+      try {
+        await invoke("shield_set_extension_enabled", { profileId, extId, enabled });
+        await get().loadProfileExtensions(profileId);
+      } catch (e: unknown) {
+        alert(`Failed to toggle extension: ${e}`);
+      }
+    },
+
+    loadProfileExtensions: async (profileId) => {
+      set({ profileExtensionsProfileId: profileId });
+      try {
+        const profileExtensions = await invoke<ProfileExtensionEntry[]>("shield_list_profile_extensions", { profileId });
+        set({ profileExtensions });
+      } catch (e: unknown) {
+        set({ profileExtensions: [] });
       }
     },
   };

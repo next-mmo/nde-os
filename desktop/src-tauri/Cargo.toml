@@ -26,3 +26,5 @@ tauri-plugin-dialog = "2"
 tokio = { version = "1", features = ["sync"] }
 portable-pty = "0.9.0"
 notify = "6.1.1"
+reqwest = { version = "0.13.2", features = ["stream"] }
+futures-util = "0.3.32"

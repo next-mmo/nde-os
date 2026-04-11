@@ -27,7 +27,7 @@
     "service-hub": () => import("🍎/components/apps/ServiceHub/ServiceHub.svelte")
   };
 
-  const needsWindowProp = new Set(["browser", "vibe-studio", "screenshot", "terminal", "settings", "service-hub"]);
+  const needsWindowProp = new Set(["browser", "vibe-studio", "screenshot", "terminal", "settings", "service-hub", "shield-browser"]);
 
   const getAppPromise = (app_id: string) => {
     if (app_id in apps) {

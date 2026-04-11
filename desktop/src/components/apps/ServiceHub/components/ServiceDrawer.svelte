@@ -1,7 +1,7 @@
 <svelte:options runes={true} />
 
 <script lang="ts">
-  import { X, CircleCheck, CircleAlert, Download, Settings, Folder, Tag, Info } from "@lucide/svelte";
+  import { X, CircleCheck, CircleAlert, Download, Settings, Folder, Tag, Info, ExternalLink } from "@lucide/svelte";
   import type { ServiceStatus } from "../types";
 
   interface Props {
@@ -13,6 +13,20 @@
 
   let { svc, onClose, onInstall, onConfigOpen }: Props = $props();
 
+  // Official download URLs for externally installed services
+  const downloadUrls: Record<string, { url: string; label: string }> = {
+    ffmpeg: { url: "https://ffmpeg.org/download.html", label: "ffmpeg.org" },
+    python: { url: "https://www.python.org/downloads/", label: "python.org" },
+  };
+
+  let downloadInfo = $derived(svc ? (downloadUrls[svc.id] ?? null) : null);
+
+  function openDownloadUrl() {
+    if (!downloadInfo) return;
+    import("🍎/state/desktop.svelte").then(({ openGenericBrowserWindow }) => {
+      openGenericBrowserWindow(downloadInfo!.url, `Download ${svc?.name ?? "Service"}`);
+    });
+  }
 
 </script>
 
@@ -72,6 +86,25 @@
         <p class="text-[11px] text-white/60 leading-relaxed">{svc.description}</p>
       </div>
 
+      <!-- Official download link for external services -->
+      {#if downloadInfo && !svc.installed}
+        <div class="rounded-xl border border-blue-500/20 bg-blue-500/5 p-3 space-y-2">
+          <p class="text-[10px] font-semibold text-blue-300 uppercase tracking-wider flex items-center gap-1.5">
+            <ExternalLink class="w-3 h-3" /> Official Download
+          </p>
+          <p class="text-[10px] text-white/50 leading-relaxed">
+            This service requires manual installation. Download from the official website, install it, then click Refresh to re-detect.
+          </p>
+          <button
+            class="flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-[10px] font-medium text-white transition-all hover:bg-blue-500 active:scale-95"
+            onclick={openDownloadUrl}
+          >
+            <ExternalLink class="w-3 h-3" />
+            Open {downloadInfo.label}
+          </button>
+        </div>
+      {/if}
+
       <!-- Details -->
       {#if svc.details}
         <div class="space-y-1.5">
@@ -130,6 +163,15 @@
 
     <!-- Footer actions -->
     <div class="px-5 py-3.5 border-t border-white/5 bg-black/20 flex items-center gap-2">
+      {#if downloadInfo && !svc.installed}
+        <button
+          class="flex items-center gap-1.5 rounded-lg bg-blue-600 px-3.5 py-1.5 text-[10px] font-medium text-white transition-all hover:bg-blue-500 active:scale-95"
+          onclick={openDownloadUrl}
+        >
+          <ExternalLink class="w-3.5 h-3.5" />
+          Download from {downloadInfo.label}
+        </button>
+      {/if}
       {#if onInstall}
         <button
           class="flex items-center gap-1.5 rounded-lg bg-violet-600 px-3.5 py-1.5 text-[10px] font-medium text-white transition-all hover:bg-violet-500 active:scale-95"

@@ -602,6 +602,327 @@ pub fn shield_update_ldplayer_meta(
         )
         .map_err(|e| e.to_string())
 }
+// ─── LDPlayer Download & Install ──────────────────────────────────
+
+/// Official LDPlayer 9 offline installer URL.
+/// This is the direct CDN link used by ldplayer.net for the full installer.
+const LDPLAYER_DOWNLOAD_URL: &str = "https://ldcdn.ldmnq.com/download/package/LDPlayer9.0.exe";
+
+#[derive(Clone, Serialize)]
+struct LdPlayerDownloadProgress {
+    stage: String,
+    downloaded: u64,
+    total: u64,
+    percent: u8,
+    message: String,
+}
+
+#[tauri::command]
+pub async fn shield_download_ldplayer(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+) -> Result<String, String> {
+    let downloads_dir = state.base_dir.join("downloads");
+    std::fs::create_dir_all(&downloads_dir).map_err(|e| e.to_string())?;
+
+    let dest_path = downloads_dir.join("LDPlayer9_installer.exe");
+
+    // Emit: starting
+    let _ = app.emit(
+        "ldplayer-download-progress",
+        LdPlayerDownloadProgress {
+            stage: "connecting".to_string(),
+            downloaded: 0,
+            total: 0,
+            percent: 0,
+            message: "Connecting to LDPlayer CDN...".to_string(),
+        },
+    );
+
+    let client = reqwest::Client::builder()
+        .user_agent("NDE-OS/1.0")
+        .redirect(reqwest::redirect::Policy::limited(10))
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    let response = client
+        .get(LDPLAYER_DOWNLOAD_URL)
+        .send()
+        .await
+        .map_err(|e| format!("Failed to connect: {e}"))?;
+
+    if !response.status().is_success() {
+        return Err(format!("Download failed: HTTP {}", response.status()));
+    }
+
+    let total = response.content_length().unwrap_or(0);
+    let mut downloaded: u64 = 0;
+
+    let _ = app.emit(
+        "ldplayer-download-progress",
+        LdPlayerDownloadProgress {
+            stage: "downloading".to_string(),
+            downloaded: 0,
+            total,
+            percent: 0,
+            message: format!(
+                "Downloading LDPlayer installer ({:.1} MB)...",
+                total as f64 / 1_048_576.0
+            ),
+        },
+    );
+
+    // Stream to disk with progress
+    let mut file = tokio::fs::File::create(&dest_path)
+        .await
+        .map_err(|e| format!("Failed to create file: {e}"))?;
+
+    let last_percent = std::sync::Arc::new(std::sync::atomic::AtomicU8::new(255));
+    let mut stream = response.bytes_stream();
+    use tokio::io::AsyncWriteExt;
+    use futures_util::StreamExt;
+
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.map_err(|e| format!("Download stream error: {e}"))?;
+        file.write_all(&chunk)
+            .await
+            .map_err(|e| format!("Write error: {e}"))?;
+        downloaded += chunk.len() as u64;
+
+        let percent = if total > 0 {
+            ((downloaded as f64 / total as f64) * 100.0).min(100.0) as u8
+        } else {
+            0
+        };
+
+        let prev = last_percent.swap(percent, std::sync::atomic::Ordering::Relaxed);
+        if prev != percent {
+            let _ = app.emit(
+                "ldplayer-download-progress",
+                LdPlayerDownloadProgress {
+                    stage: "downloading".to_string(),
+                    downloaded,
+                    total,
+                    percent,
+                    message: format!(
+                        "Downloading... {:.1} / {:.1} MB ({}%)",
+                        downloaded as f64 / 1_048_576.0,
+                        total as f64 / 1_048_576.0,
+                        percent
+                    ),
+                },
+            );
+        }
+    }
+
+    file.flush().await.map_err(|e| format!("Flush error: {e}"))?;
+    drop(file);
+
+    // Emit: launching installer
+    let _ = app.emit(
+        "ldplayer-download-progress",
+        LdPlayerDownloadProgress {
+            stage: "installing".to_string(),
+            downloaded: total,
+            total,
+            percent: 100,
+            message: "Download complete! Launching installer...".to_string(),
+        },
+    );
+
+    // Launch the installer (non-blocking — user interacts with it)
+    let dest_str = dest_path.to_string_lossy().to_string();
+    tokio::task::spawn_blocking(move || {
+        let _ = std::process::Command::new("cmd")
+            .args(["/C", "start", "", &dest_str])
+            .spawn();
+    })
+    .await
+    .map_err(|e| e.to_string())?;
+
+    // Emit: done
+    let _ = app.emit(
+        "ldplayer-download-progress",
+        LdPlayerDownloadProgress {
+            stage: "done".to_string(),
+            downloaded: total,
+            total,
+            percent: 100,
+            message: "Installer launched. Follow the setup wizard, then click Re-detect.".to_string(),
+        },
+    );
+
+    Ok(dest_path.display().to_string())
+}
+
+// ─── Extension Management Commands ────────────────────────────────
+
+#[derive(Serialize)]
+pub struct ExtensionResponse {
+    pub id: String,
+    pub name: String,
+    pub version: String,
+    pub description: String,
+    pub author: String,
+    pub format: String,
+    pub source: String,
+    pub source_url: Option<String>,
+    pub permissions: Vec<String>,
+    pub icon_relative: Option<String>,
+    pub installed_at: u64,
+    pub updated_at: u64,
+}
+
+impl From<ai_launcher_core::shield::extension::ExtensionMeta> for ExtensionResponse {
+    fn from(m: ai_launcher_core::shield::extension::ExtensionMeta) -> Self {
+        Self {
+            id: m.id,
+            name: m.name,
+            version: m.version,
+            description: m.description,
+            author: m.author,
+            format: match m.format {
+                ai_launcher_core::shield::extension::ExtensionFormat::Chromium => "chromium".into(),
+                ai_launcher_core::shield::extension::ExtensionFormat::Firefox => "firefox".into(),
+            },
+            source: match m.source {
+                ai_launcher_core::shield::extension::ExtensionSource::Developer => {
+                    "developer".into()
+                }
+                ai_launcher_core::shield::extension::ExtensionSource::Store => "store".into(),
+            },
+            source_url: m.source_url,
+            permissions: m.permissions,
+            icon_relative: m.icon_relative,
+            installed_at: m.installed_at,
+            updated_at: m.updated_at,
+        }
+    }
+}
+
+#[derive(Serialize)]
+pub struct ProfileExtensionResponse {
+    pub extension: ExtensionResponse,
+    pub bound: bool,
+    pub enabled: bool,
+}
+
+#[tauri::command]
+pub fn shield_list_extensions(
+    state: tauri::State<'_, AppState>,
+) -> Result<Vec<ExtensionResponse>, String> {
+    use ai_launcher_core::shield::extension::ExtensionManager;
+    let mgr = ExtensionManager::new(&state.base_dir);
+    let exts = mgr.list_extensions().map_err(|e| e.to_string())?;
+    Ok(exts.into_iter().map(ExtensionResponse::from).collect())
+}
+
+#[tauri::command]
+pub fn shield_install_extension_from_dir(
+    state: tauri::State<'_, AppState>,
+    path: String,
+) -> Result<ExtensionResponse, String> {
+    use ai_launcher_core::shield::extension::ExtensionManager;
+    let mgr = ExtensionManager::new(&state.base_dir);
+    let meta = mgr
+        .install_from_directory(std::path::Path::new(&path))
+        .map_err(|e| e.to_string())?;
+    Ok(ExtensionResponse::from(meta))
+}
+
+#[tauri::command]
+pub fn shield_install_extension_from_file(
+    state: tauri::State<'_, AppState>,
+    path: String,
+) -> Result<ExtensionResponse, String> {
+    use ai_launcher_core::shield::extension::ExtensionManager;
+    let mgr = ExtensionManager::new(&state.base_dir);
+    let meta = mgr
+        .install_from_packed(std::path::Path::new(&path))
+        .map_err(|e| e.to_string())?;
+    Ok(ExtensionResponse::from(meta))
+}
+
+#[tauri::command]
+pub async fn shield_install_extension_from_url(
+    state: tauri::State<'_, AppState>,
+    url: String,
+) -> Result<ExtensionResponse, String> {
+    use ai_launcher_core::shield::extension::ExtensionManager;
+    let mgr = ExtensionManager::new(&state.base_dir);
+    let meta = mgr
+        .install_from_url(&url)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(ExtensionResponse::from(meta))
+}
+
+#[tauri::command]
+pub fn shield_uninstall_extension(
+    state: tauri::State<'_, AppState>,
+    ext_id: String,
+) -> Result<(), String> {
+    use ai_launcher_core::shield::extension::ExtensionManager;
+    let mgr = ExtensionManager::new(&state.base_dir);
+    mgr.uninstall(&ext_id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn shield_bind_extension_to_profile(
+    state: tauri::State<'_, AppState>,
+    profile_id: String,
+    ext_id: String,
+) -> Result<(), String> {
+    use ai_launcher_core::shield::extension::ExtensionManager;
+    let mgr = ExtensionManager::new(&state.base_dir);
+    mgr.bind_to_profile(&profile_id, &ext_id)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn shield_unbind_extension_from_profile(
+    state: tauri::State<'_, AppState>,
+    profile_id: String,
+    ext_id: String,
+) -> Result<(), String> {
+    use ai_launcher_core::shield::extension::ExtensionManager;
+    let mgr = ExtensionManager::new(&state.base_dir);
+    mgr.unbind_from_profile(&profile_id, &ext_id)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn shield_set_extension_enabled(
+    state: tauri::State<'_, AppState>,
+    profile_id: String,
+    ext_id: String,
+    enabled: bool,
+) -> Result<(), String> {
+    use ai_launcher_core::shield::extension::ExtensionManager;
+    let mgr = ExtensionManager::new(&state.base_dir);
+    mgr.set_extension_enabled(&profile_id, &ext_id, enabled)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn shield_list_profile_extensions(
+    state: tauri::State<'_, AppState>,
+    profile_id: String,
+) -> Result<Vec<ProfileExtensionResponse>, String> {
+    use ai_launcher_core::shield::extension::ExtensionManager;
+    let mgr = ExtensionManager::new(&state.base_dir);
+    let list = mgr
+        .list_extensions_for_profile(&profile_id)
+        .map_err(|e| e.to_string())?;
+    Ok(list
+        .into_iter()
+        .map(|(meta, bound, enabled)| ProfileExtensionResponse {
+            extension: ExtensionResponse::from(meta),
+            bound,
+            enabled,
+        })
+        .collect())
+}
 
 // ─── Managed State ─────────────────────────────────────────────────
 
