@@ -24,6 +24,8 @@ pub enum ActorTemplate {
     ShieldSocialBot,
     /// Android emulator automation via ADB.
     EmulatorBot,
+    /// LDPlayer automation — open URL and grab website title.
+    LdPlayerTitleGrabber,
 }
 
 /// Template metadata for listing in the UI.
@@ -89,6 +91,14 @@ impl ActorTemplate {
                 tags: vec!["android".into(), "emulator".into(), "mobile".into(), "adb".into()],
                 runtime: "python".into(),
             },
+            TemplateInfo {
+                id: "ldplayer_title_grabber".into(),
+                name: "LDPlayer Title Grabber".into(),
+                description: "Automate LDPlayer emulator: launch instance, open URL in browser, extract page title. Uses ldconsole + ADB.".into(),
+                icon: "🎮".into(),
+                tags: vec!["ldplayer".into(), "emulator".into(), "scraping".into(), "title".into(), "adb".into()],
+                runtime: "python".into(),
+            },
         ]
     }
 
@@ -101,6 +111,7 @@ impl ActorTemplate {
             "shield_form_filler" => Ok(ActorTemplate::ShieldFormFiller),
             "shield_social_bot" => Ok(ActorTemplate::ShieldSocialBot),
             "emulator_bot" => Ok(ActorTemplate::EmulatorBot),
+            "ldplayer_title_grabber" => Ok(ActorTemplate::LdPlayerTitleGrabber),
             _ => anyhow::bail!("Unknown actor template: '{}'", s),
         }
     }
@@ -324,6 +335,31 @@ impl ActorTemplate {
                 apify: None, // Emulator actors don't deploy to Apify
                 created_at: now,
             },
+            ActorTemplate::LdPlayerTitleGrabber => ActorManifest {
+                id: actor_id.to_string(),
+                name: actor_name.to_string(),
+                version: "1.0.0".to_string(),
+                description: "Launch LDPlayer instance, open URL, grab website title via ADB"
+                    .to_string(),
+                author: None,
+                tags: vec![
+                    "ldplayer".into(),
+                    "emulator".into(),
+                    "scraping".into(),
+                    "title".into(),
+                ],
+                icon: Some("🎮".into()),
+                input_schema: ldplayer_title_input_schema(),
+                runtime: ActorRuntime::Python {
+                    version: "3.11".to_string(),
+                    pip_deps: vec!["nde-actor-sdk".into()],
+                    entry: "src/main.py".to_string(),
+                },
+                browser: BrowserConfig::default(),
+                output: OutputConfig::default(),
+                apify: None,
+                created_at: now,
+            },
         }
     }
 
@@ -336,13 +372,16 @@ impl ActorTemplate {
             ActorTemplate::ShieldFormFiller => FORM_FILLER_MAIN.to_string(),
             ActorTemplate::ShieldSocialBot => SOCIAL_BOT_MAIN.to_string(),
             ActorTemplate::EmulatorBot => EMULATOR_MAIN.to_string(),
+            ActorTemplate::LdPlayerTitleGrabber => LDPLAYER_TITLE_MAIN.to_string(),
         }
     }
 
     /// Generate requirements.txt for this template.
     fn generate_requirements(&self) -> String {
         match self {
-            ActorTemplate::EmulatorBot => "nde-actor-sdk\n".to_string(),
+            ActorTemplate::EmulatorBot | ActorTemplate::LdPlayerTitleGrabber => {
+                "nde-actor-sdk\n".to_string()
+            }
             _ => "playwright\nnde-actor-sdk\n".to_string(),
         }
     }
@@ -789,6 +828,101 @@ fn emulator_input_schema() -> InputSchema {
         schema_version: 1,
         properties: props,
         required: vec!["deviceSerial".into(), "action".into()],
+    }
+}
+
+fn ldplayer_title_input_schema() -> InputSchema {
+    let mut props = HashMap::new();
+    props.insert(
+        "instanceName".into(),
+        InputProperty {
+            title: "LDPlayer Instance Name".into(),
+            property_type: PropertyType::String,
+            description: Some(
+                "Name of the LDPlayer instance to use. If not running, the actor will launch it."
+                    .into(),
+            ),
+            default: Some(serde_json::json!("LDPlayer")),
+            editor: None,
+            enum_values: None,
+            minimum: None,
+            maximum: None,
+            prefill: None,
+        },
+    );
+    props.insert(
+        "urls".into(),
+        InputProperty {
+            title: "URLs".into(),
+            property_type: PropertyType::Array,
+            description: Some("List of URLs to open and grab the page title from".into()),
+            default: None,
+            editor: Some("requestListSources".into()),
+            enum_values: None,
+            minimum: None,
+            maximum: None,
+            prefill: Some(
+                serde_json::json!([{"url": "https://example.com"}, {"url": "https://github.com"}]),
+            ),
+        },
+    );
+    props.insert(
+        "ldconsolePath".into(),
+        InputProperty {
+            title: "ldconsole Path (optional)".into(),
+            property_type: PropertyType::String,
+            description: Some(
+                "Full path to ldconsole.exe. Leave empty for auto-detection.".into(),
+            ),
+            default: Some(serde_json::json!("")),
+            editor: None,
+            enum_values: None,
+            minimum: None,
+            maximum: None,
+            prefill: None,
+        },
+    );
+    props.insert(
+        "adbPort".into(),
+        InputProperty {
+            title: "ADB Port".into(),
+            property_type: PropertyType::Integer,
+            description: Some(
+                "ADB port for the LDPlayer instance (default: 5555 for index 0, 5557 for index 1, etc)"
+                    .into(),
+            ),
+            default: Some(serde_json::json!(5555)),
+            editor: None,
+            enum_values: None,
+            minimum: Some(5555.0),
+            maximum: Some(5599.0),
+            prefill: None,
+        },
+    );
+    props.insert(
+        "waitSeconds".into(),
+        InputProperty {
+            title: "Wait Seconds".into(),
+            property_type: PropertyType::Integer,
+            description: Some("Seconds to wait after opening URL for page to load".into()),
+            default: Some(serde_json::json!(5)),
+            editor: None,
+            enum_values: None,
+            minimum: Some(1.0),
+            maximum: Some(60.0),
+            prefill: None,
+        },
+    );
+
+    InputSchema {
+        title: "LDPlayer Title Grabber Input".into(),
+        description: Some(
+            "Configuration for LDPlayer website title extraction actor".into(),
+        ),
+        schema_type: "object".into(),
+        schema_version: 1,
+        properties: props,
+        required: vec!["urls".into()],
     }
 }
 
@@ -1258,6 +1392,283 @@ if __name__ == "__main__":
     asyncio.run(main())
 "#;
 
+const LDPLAYER_TITLE_MAIN: &str = r#"""
+NDE-OS LDPlayer Title Grabber Actor
+
+Automates LDPlayer to open URLs and extract website page titles.
+Uses ldconsole for instance lifecycle + ADB for browser interaction.
+"""
+
+import asyncio
+import os
+import re
+import shutil
+import subprocess
+import time
+
+
+try:
+    from nde_actor_sdk import Actor
+except ImportError:
+    # Minimal fallback for standalone execution
+    class Actor:
+        @staticmethod
+        async def init(): pass
+        @staticmethod
+        async def get_input():
+            return {
+                "urls": [{"url": "https://example.com"}],
+                "instanceName": "LDPlayer",
+                "adbPort": 5555,
+                "waitSeconds": 5,
+            }
+        @staticmethod
+        async def push_data(data): print(f"[OUTPUT] {data}")
+        @staticmethod
+        async def exit(): pass
+
+
+# ─── LDPlayer Detection ───────────────────────────────────────
+
+LDPLAYER_DIRS = ["LDPlayer", "LDPlayer9", "LDPlayer4", "LDPlayer5"]
+
+def find_ldconsole(custom_path=""):
+    """Auto-detect ldconsole.exe location."""
+    if custom_path and os.path.isfile(custom_path):
+        return custom_path
+
+    # Check PATH
+    found = shutil.which("ldconsole.exe") or shutil.which("ldconsole")
+    if found:
+        return found
+
+    # Check common Windows paths
+    for env_key in ["ProgramFiles", "ProgramFiles(x86)"]:
+        base = os.environ.get(env_key, "")
+        if base:
+            for d in LDPLAYER_DIRS:
+                candidate = os.path.join(base, d, "ldconsole.exe")
+                if os.path.isfile(candidate):
+                    return candidate
+
+    for drive in ["C:", "D:", "E:"]:
+        for d in LDPLAYER_DIRS:
+            candidate = os.path.join(drive + os.sep, d, "ldconsole.exe")
+            if os.path.isfile(candidate):
+                return candidate
+
+    return None
+
+
+def ldconsole(ldpath, *args):
+    """Run an ldconsole command and return stdout."""
+    result = subprocess.run(
+        [ldpath] + list(args),
+        capture_output=True, text=True, timeout=60
+    )
+    return result.stdout.strip()
+
+
+def is_instance_running(ldpath, name):
+    """Check if an LDPlayer instance is running."""
+    output = ldconsole(ldpath, "isrunning", "--name", name)
+    return output.strip().lower() == "running"
+
+
+# ─── ADB Helpers ───────────────────────────────────────────────
+
+def adb(*args, serial=None):
+    """Execute an ADB command against a specific device."""
+    cmd = ["adb"]
+    if serial:
+        cmd.extend(["-s", serial])
+    cmd.extend(args)
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+    if result.returncode != 0:
+        raise RuntimeError(f"ADB command failed: {result.stderr.strip()}")
+    return result.stdout.strip()
+
+
+def wait_for_device(serial, timeout=60):
+    """Wait until the ADB device is online."""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            output = adb("devices")
+            if serial in output and "device" in output.split(serial)[1].split("\n")[0]:
+                return True
+        except Exception:
+            pass
+        time.sleep(2)
+    return False
+
+
+def get_page_title(serial):
+    """Extract the current browser page title from the emulator.
+
+    Strategy:
+    1. Try `dumpsys window windows` — look for the focused window title.
+    2. Try `dumpsys activity top` — look for Activity label.
+    3. Fallback to the focused window class name.
+    """
+    try:
+        # Strategy 1: dumpsys window — mCurrentFocus or mFocusedWindow
+        output = adb("shell", "dumpsys", "window", "windows", serial=serial)
+        # Look for the focused window title line
+        for line in output.splitlines():
+            if "mCurrentFocus" in line or "mFocusedWindow" in line:
+                # Format: mCurrentFocus=Window{hash u0 com.android.browser/...}
+                match = re.search(r"Window\{[^\s]+\s+\S+\s+(.+?)\}", line)
+                if match:
+                    title = match.group(1)
+                    if "/" in title:
+                        title = title.split("/")[0]
+                    return title
+    except Exception:
+        pass
+
+    try:
+        # Strategy 2: dumpsys activity top
+        output = adb("shell", "dumpsys", "activity", "top", serial=serial)
+        for line in output.splitlines():
+            if "ACTIVITY" in line:
+                match = re.search(r"ACTIVITY\s+(\S+)", line)
+                if match:
+                    return match.group(1)
+    except Exception:
+        pass
+
+    return "(unknown)"
+
+
+def get_browser_url(serial):
+    """Try to get the current URL from the browser.
+
+    Attempts to read from common Android browser content providers.
+    """
+    try:
+        # Try Chrome's tabs content provider
+        output = adb(
+            "shell",
+            "content", "query",
+            "--uri", "content://com.android.chrome.browser/bookmarks",
+            "--projection", "url",
+            serial=serial,
+        )
+        urls = re.findall(r"url=(\S+)", output)
+        if urls:
+            return urls[0]
+    except Exception:
+        pass
+
+    try:
+        # Try default browser content provider
+        output = adb(
+            "shell",
+            "content", "query",
+            "--uri", "content://browser/bookmarks",
+            "--projection", "url",
+            serial=serial,
+        )
+        urls = re.findall(r"url=(\S+)", output)
+        if urls:
+            return urls[0]
+    except Exception:
+        pass
+
+    return None
+
+
+# ─── Main Actor Logic ─────────────────────────────────────────
+
+async def main():
+    await Actor.init()
+
+    input_data = await Actor.get_input()
+
+    instance_name = input_data.get("instanceName", "LDPlayer")
+    urls = input_data.get("urls", [{"url": "https://example.com"}])
+    custom_ldconsole = input_data.get("ldconsolePath", "")
+    adb_port = input_data.get("adbPort", 5555)
+    wait_secs = input_data.get("waitSeconds", 5)
+
+    serial = f"127.0.0.1:{adb_port}"
+    results = []
+
+    # ── Detect ldconsole ─────────────────────────────────────
+    ldpath = find_ldconsole(custom_ldconsole)
+    if not ldpath:
+        print("[ERROR] ldconsole.exe not found. Install LDPlayer or provide ldconsolePath.")
+        await Actor.push_data([{"error": "ldconsole.exe not found"}])
+        await Actor.exit()
+        return
+
+    print(f"[INFO] Using ldconsole: {ldpath}")
+    print(f"[INFO] Instance: {instance_name}, ADB serial: {serial}")
+
+    # ── Launch instance if not running ───────────────────────
+    was_running = is_instance_running(ldpath, instance_name)
+    if not was_running:
+        print(f"[INFO] Launching LDPlayer instance '{instance_name}'...")
+        ldconsole(ldpath, "launch", "--name", instance_name)
+        time.sleep(10)  # Wait for emulator boot
+
+    # ── Connect ADB ──────────────────────────────────────────
+    print(f"[INFO] Connecting ADB to {serial}...")
+    adb("connect", serial)
+    if not wait_for_device(serial, timeout=30):
+        print(f"[ERROR] Device {serial} not online after 30s")
+        await Actor.push_data([{"error": f"Device {serial} not reachable"}])
+        await Actor.exit()
+        return
+
+    print(f"[INFO] Device {serial} is online")
+
+    # ── Process each URL ─────────────────────────────────────
+    for entry in urls:
+        url = entry if isinstance(entry, str) else entry.get("url", "")
+        if not url:
+            continue
+
+        print(f"[INFO] Opening URL: {url}")
+
+        # Open URL in default browser
+        adb(
+            "shell", "am", "start",
+            "-a", "android.intent.action.VIEW",
+            "-d", url,
+            serial=serial,
+        )
+
+        # Wait for page to load
+        time.sleep(wait_secs)
+
+        # Extract title
+        title = get_page_title(serial)
+        browser_url = get_browser_url(serial) or url
+
+        result = {
+            "url": url,
+            "title": title,
+            "browserUrl": browser_url,
+            "device": serial,
+            "instance": instance_name,
+            "success": True,
+        }
+        results.append(result)
+        print(f"[OK] {url} → {title}")
+
+    # ── Push results ─────────────────────────────────────────
+    await Actor.push_data(results)
+
+    print(f"\n[DONE] Grabbed titles from {len(results)} URL(s)")
+    await Actor.exit()
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
+"#;
+
 // ─── Helpers ───────────────────────────────────────────────────────
 
 /// Convert a name to a URL-safe slug: lowercase, spaces→hyphens, strip specials.
@@ -1286,7 +1697,7 @@ mod tests {
     #[test]
     fn test_template_list() {
         let templates = ActorTemplate::all();
-        assert_eq!(templates.len(), 6);
+        assert_eq!(templates.len(), 7);
         assert!(templates.iter().any(|t| t.id == "shield_scraper"));
         assert!(templates.iter().any(|t| t.id == "emulator_bot"));
     }
@@ -1336,6 +1747,7 @@ mod tests {
             ActorTemplate::ShieldFormFiller,
             ActorTemplate::ShieldSocialBot,
             ActorTemplate::EmulatorBot,
+            ActorTemplate::LdPlayerTitleGrabber,
         ];
 
         for template in &templates {

@@ -48,4 +48,30 @@ export interface AvdInfo {
   name: string;
 }
 
-export type ShieldView = "setup" | "profiles" | "create" | "settings" | "devices";
+export type ShieldView = "setup" | "profiles" | "create" | "settings" | "devices" | "emulators";
+
+// ─── LDPlayer Types ────────────────────────────────────────────────
+
+export interface LdPlayerDetection {
+  available: boolean;
+  ldconsole_path: string | null;
+  version_dir: string | null;
+}
+
+export interface LdPlayerInstance {
+  index: number;
+  name: string;
+  is_running: boolean;
+  pid: number;
+  // DB metadata
+  notes: string | null;
+  tags: string[];
+  linked_shield_profile_id: string | null;
+  proxy_host: string | null;
+  proxy_port: number | null;
+  cpu: number | null;
+  memory: number | null;
+  resolution: string | null;
+  created_at: number | null;
+  updated_at: number | null;
+}

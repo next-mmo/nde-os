@@ -37,6 +37,10 @@
     Pencil,
     Globe,
     SplitSquareHorizontal,
+    Braces,
+    RotateCcw,
+    Copy,
+    Check,
   } from "@lucide/svelte";
 
   interface Props {
@@ -88,17 +92,73 @@
   let fileContent = $state<string>("");
   let generatedCode = $state<string>("");
 
-  let jsonSpec = $derived.by(() => {
-    if (!generatedCode) return null;
-    let trimmed = generatedCode.trim();
-    if (!trimmed.startsWith("[") && !trimmed.startsWith("{")) return null;
+  // ── JSON Spec Editor State ──────────────────────────────────────
+  // specEditorText is the raw JSON string the user can edit manually.
+  // It syncs FROM generatedCode when the agent produces output,
+  // and syncs TO liveSpec when the user edits.
+  let specEditorText = $state<string>("");
+  let specParseError = $state<string | null>(null);
+  let copiedSpec = $state(false);
+
+  // When agent produces new code, push it into the editor
+  $effect(() => {
+    if (generatedCode) {
+      const trimmed = generatedCode.trim();
+      if (trimmed.startsWith("[") || trimmed.startsWith("{")) {
+        try {
+          // Pretty-print the spec for the editor
+          specEditorText = JSON.stringify(JSON.parse(trimmed), null, 2);
+          specParseError = null;
+        } catch {
+          // Not valid JSON — keep raw HTML/code
+          specEditorText = "";
+        }
+      }
+    }
+  });
+
+  // Live-parse the editor text into a renderable spec
+  let liveSpec = $derived.by(() => {
+    if (!specEditorText) {
+      // Fallback: try parsing generatedCode directly
+      if (!generatedCode) return null;
+      const trimmed = generatedCode.trim();
+      if (!trimmed.startsWith("[") && !trimmed.startsWith("{")) return null;
+      try { return JSON.parse(trimmed); } catch { return null; }
+    }
     try {
-      const parsed = JSON.parse(trimmed);
-      return parsed;
+      return JSON.parse(specEditorText);
     } catch {
       return null;
     }
   });
+
+  // Whether we are in "spec mode" (JSON-render) vs "code mode" (HTML/V0Runner)
+  let isSpecMode = $derived(!!liveSpec || (specEditorText.trim().startsWith("[") || specEditorText.trim().startsWith("{")));
+
+  function handleSpecEdit(text: string) {
+    specEditorText = text;
+    try {
+      JSON.parse(text);
+      specParseError = null;
+    } catch (e: any) {
+      specParseError = e.message ?? "Invalid JSON";
+    }
+  }
+
+  function resetSpec() {
+    specEditorText = "";
+    specParseError = null;
+    generatedCode = "";
+  }
+
+  async function copySpec() {
+    try {
+      await navigator.clipboard.writeText(specEditorText || generatedCode);
+      copiedSpec = true;
+      setTimeout(() => copiedSpec = false, 1500);
+    } catch {}
+  }
 
   // Shared context files: populated by FileExplorer drag/right-click → AgentChat
   interface ContextFile { path: string; name: string; content?: string; }
@@ -197,9 +257,9 @@
         activeFilePath = 'C:\\Users\\dila\\Downloads\\ai-launcher-v0.2\\ai-launcher\\desktop\\ui.html';
       }
       fileContent = patch.code;
-      // Auto-switch to preview when code is generated
+      // Auto-switch to split when code is generated so user sees editor + preview
       if (activeTab === "preview" && previewMode === "editor") {
-        previewMode = "preview";
+        previewMode = "split";
       }
       return;
     }
@@ -380,109 +440,103 @@
         <div class="absolute inset-0 flex flex-col">
           <!-- Sub-tab bar: Editor / Preview / Split -->
           <div class="h-9 border-b border-border flex items-center justify-between px-3 shrink-0 bg-muted/10">
-            <Tabs.Root bind:value={previewMode}>
-              <Tabs.List class="h-6">
-                <Tabs.Trigger value="editor" class="gap-1 text-[11px] px-2 h-5">
-                  <Pencil class="size-3" />
-                  Editor
-                </Tabs.Trigger>
-                <Tabs.Trigger value="preview" class="gap-1 text-[11px] px-2 h-5">
-                  <Globe class="size-3" />
-                  Preview
-                </Tabs.Trigger>
-                <Tabs.Trigger value="split" class="gap-1 text-[11px] px-2 h-5">
-                  <SplitSquareHorizontal class="size-3" />
-                  Split
-                </Tabs.Trigger>
-              </Tabs.List>
-            </Tabs.Root>
+            <div class="flex items-center gap-2">
+              <Tabs.Root bind:value={previewMode}>
+                <Tabs.List class="h-6">
+                  <Tabs.Trigger value="editor" class="gap-1 text-[11px] px-2 h-5">
+                    {#if isSpecMode}
+                      <Braces class="size-3" />
+                      JSON Editor
+                    {:else}
+                      <Pencil class="size-3" />
+                      Canvas
+                    {/if}
+                  </Tabs.Trigger>
+                  <Tabs.Trigger value="preview" class="gap-1 text-[11px] px-2 h-5">
+                    <Eye class="size-3" />
+                    Preview
+                  </Tabs.Trigger>
+                  <Tabs.Trigger value="split" class="gap-1 text-[11px] px-2 h-5">
+                    <SplitSquareHorizontal class="size-3" />
+                    Split
+                  </Tabs.Trigger>
+                </Tabs.List>
+              </Tabs.Root>
 
-            {#if generatedCode}
-              <Badge variant="secondary" class="h-4 px-1.5 text-[10px] gap-1">
-                <span class="size-1.5 rounded-full bg-chart-1 animate-pulse"></span>
-                Live
-              </Badge>
-            {/if}
+              {#if isSpecMode}
+                <Separator orientation="vertical" class="h-4!" />
+                <Badge variant="secondary" class="h-4 px-1.5 text-[10px] gap-1">
+                  <Braces class="size-2.5" />
+                  Spec Mode
+                </Badge>
+              {/if}
+            </div>
+
+            <div class="flex items-center gap-1">
+              {#if specParseError}
+                <Badge variant="destructive" class="h-4 px-1.5 text-[10px]">
+                  Parse Error
+                </Badge>
+              {:else if generatedCode || specEditorText}
+                <Badge variant="secondary" class="h-4 px-1.5 text-[10px] gap-1">
+                  <span class="size-1.5 rounded-full bg-green-500 animate-pulse"></span>
+                  Live
+                </Badge>
+              {/if}
+
+              {#if specEditorText || generatedCode}
+                <Tooltip.Root>
+                  <Tooltip.Trigger>
+                    <Button variant="ghost" size="icon-xs" onclick={copySpec} class="text-muted-foreground">
+                      {#if copiedSpec}
+                        <Check class="size-3 text-green-500" />
+                      {:else}
+                        <Copy class="size-3" />
+                      {/if}
+                    </Button>
+                  </Tooltip.Trigger>
+                  <Tooltip.Content>Copy spec</Tooltip.Content>
+                </Tooltip.Root>
+
+                <Tooltip.Root>
+                  <Tooltip.Trigger>
+                    <Button variant="ghost" size="icon-xs" onclick={resetSpec} class="text-muted-foreground hover:text-destructive">
+                      <RotateCcw class="size-3" />
+                    </Button>
+                  </Tooltip.Trigger>
+                  <Tooltip.Content>Reset</Tooltip.Content>
+                </Tooltip.Root>
+              {/if}
+            </div>
           </div>
 
           <!-- Sub-tab content -->
           <div class="flex-1 relative overflow-hidden">
             {#if previewMode === "editor"}
-              <!-- Figma Canvas Editor -->
-              <div class="absolute inset-0 flex">
-                <LayerTree
-                  {document}
-                  {selectedNodeId}
-                  onSelectNode={(id) => selectedNodeId = id}
-                  width={layerTreeWidth}
-                />
-                <ResizeHandle onResize={(d) => layerTreeWidth = clampPanel(layerTreeWidth + d)} />
-
-                <div class="flex-1 relative min-w-0">
-                  <CanvasEditor
-                    {document}
-                    {selectedNodeId}
-                    bind:zoom
-                    onSelectNode={(id) => selectedNodeId = id}
-                    onUpdateNodePosition={updateNodePosition}
-                    onUpdateNodeSize={updateNodeSize}
-                  />
-
-                  <!-- Floating Toolbar -->
-                  <div class="absolute top-3 left-1/2 -translate-x-1/2 flex items-center gap-1 rounded-lg border border-border bg-popover/90 px-2 py-1 shadow-lg backdrop-blur-md z-50">
-                    <Tooltip.Root>
-                      <Tooltip.Trigger>
-                        <Button variant="ghost" size="icon-xs" onclick={() => createNode('FRAME')} class="text-muted-foreground">
-                          <Frame class="size-3.5" />
-                        </Button>
-                      </Tooltip.Trigger>
-                      <Tooltip.Content>Add Frame</Tooltip.Content>
-                    </Tooltip.Root>
-                    <Tooltip.Root>
-                      <Tooltip.Trigger>
-                        <Button variant="ghost" size="icon-xs" onclick={() => createNode('RECTANGLE')} class="text-muted-foreground">
-                          <RectangleHorizontal class="size-3.5" />
-                        </Button>
-                      </Tooltip.Trigger>
-                      <Tooltip.Content>Add Rectangle</Tooltip.Content>
-                    </Tooltip.Root>
-                    <Tooltip.Root>
-                      <Tooltip.Trigger>
-                        <Button variant="ghost" size="icon-xs" onclick={() => createNode('TEXT')} class="text-muted-foreground">
-                          <Type class="size-3.5" />
-                        </Button>
-                      </Tooltip.Trigger>
-                      <Tooltip.Content>Add Text</Tooltip.Content>
-                    </Tooltip.Root>
-                  </div>
+              {#if isSpecMode}
+                <!-- ── JSON Spec Editor ── -->
+                <div class="absolute inset-0 flex flex-col">
+                  <textarea
+                    class="flex-1 w-full rounded-none border-none bg-zinc-950 p-4 font-mono text-xs text-emerald-400 placeholder:text-zinc-600 focus:outline-none resize-none leading-relaxed"
+                    placeholder="Paste or type your JSON spec here..."
+                    value={specEditorText}
+                    oninput={(e) => handleSpecEdit(e.currentTarget.value)}
+                    spellcheck="false"
+                  ></textarea>
+                  {#if specParseError}
+                    <div class="shrink-0 px-3 py-1.5 bg-destructive/10 border-t border-destructive/30 text-destructive text-[11px] font-mono truncate">
+                      ⚠ {specParseError}
+                    </div>
+                  {/if}
                 </div>
-
-                <ResizeHandle onResize={(d) => propertiesWidth = clampPanel(propertiesWidth - d)} />
-                <PropertiesPanel {document} {selectedNodeId} width={propertiesWidth} />
-              </div>
-
-            {:else if previewMode === "preview"}
-              <!-- Full-width live web preview -->
-              <div class="absolute inset-0">
-                {#if jsonSpec}
-                  <div class="w-full h-full p-6 overflow-auto bg-background">
-                    <CatalogRenderer spec={jsonSpec} {registry} />
-                  </div>
-                {:else}
-                  <V0Runner code={generatedCode} />
-                {/if}
-              </div>
-
-            {:else if previewMode === "split"}
-              <!-- Split: Editor left, Preview right -->
-              <div class="absolute inset-0 flex">
-                <!-- Left half: Canvas editor -->
-                <div class="flex-1 relative min-w-0 flex border-r border-border">
+              {:else}
+                <!-- ── Figma Canvas Editor (non-spec mode) ── -->
+                <div class="absolute inset-0 flex">
                   <LayerTree
                     {document}
                     {selectedNodeId}
                     onSelectNode={(id) => selectedNodeId = id}
-                    width={Math.min(layerTreeWidth, 180)}
+                    width={layerTreeWidth}
                   />
                   <ResizeHandle onResize={(d) => layerTreeWidth = clampPanel(layerTreeWidth + d)} />
 
@@ -496,6 +550,7 @@
                       onUpdateNodeSize={updateNodeSize}
                     />
 
+                    <!-- Floating Toolbar -->
                     <div class="absolute top-3 left-1/2 -translate-x-1/2 flex items-center gap-1 rounded-lg border border-border bg-popover/90 px-2 py-1 shadow-lg backdrop-blur-md z-50">
                       <Tooltip.Root>
                         <Tooltip.Trigger>
@@ -523,16 +578,84 @@
                       </Tooltip.Root>
                     </div>
                   </div>
+
+                  <ResizeHandle onResize={(d) => propertiesWidth = clampPanel(propertiesWidth - d)} />
+                  <PropertiesPanel {document} {selectedNodeId} width={propertiesWidth} />
+                </div>
+              {/if}
+
+            {:else if previewMode === "preview"}
+              <!-- ── Full-width live preview ── -->
+              <div class="absolute inset-0">
+                {#if liveSpec}
+                  <div class="w-full h-full p-6 overflow-auto bg-background">
+                    <CatalogRenderer spec={liveSpec} {registry} />
+                  </div>
+                {:else if generatedCode}
+                  <V0Runner code={generatedCode} />
+                {:else}
+                  <div class="absolute inset-0 flex flex-col items-center justify-center text-muted-foreground gap-3">
+                    <Eye class="size-10 text-muted-foreground/30" />
+                    <p class="text-sm font-medium">No preview yet</p>
+                    <p class="text-xs text-muted-foreground/60 max-w-xs text-center">Ask the AI agent to design something, or paste a JSON spec in the editor.</p>
+                  </div>
+                {/if}
+              </div>
+
+            {:else if previewMode === "split"}
+              <!-- ── Split: Editor left, Preview right ── -->
+              <div class="absolute inset-0 flex">
+                <!-- Left half: JSON editor or Canvas -->
+                <div class="flex-1 relative min-w-0 flex flex-col border-r border-border">
+                  {#if isSpecMode}
+                    <textarea
+                      class="flex-1 w-full rounded-none border-none bg-zinc-950 p-4 font-mono text-xs text-emerald-400 placeholder:text-zinc-600 focus:outline-none resize-none leading-relaxed"
+                      placeholder="Paste or edit your JSON spec here..."
+                      value={specEditorText}
+                      oninput={(e) => handleSpecEdit(e.currentTarget.value)}
+                      spellcheck="false"
+                    ></textarea>
+                    {#if specParseError}
+                      <div class="shrink-0 px-3 py-1.5 bg-destructive/10 border-t border-destructive/30 text-destructive text-[11px] font-mono truncate">
+                        ⚠ {specParseError}
+                      </div>
+                    {/if}
+                  {:else}
+                    <div class="flex-1 relative min-w-0 flex">
+                      <LayerTree
+                        {document}
+                        {selectedNodeId}
+                        onSelectNode={(id) => selectedNodeId = id}
+                        width={Math.min(layerTreeWidth, 180)}
+                      />
+                      <ResizeHandle onResize={(d) => layerTreeWidth = clampPanel(layerTreeWidth + d)} />
+                      <div class="flex-1 relative min-w-0">
+                        <CanvasEditor
+                          {document}
+                          {selectedNodeId}
+                          bind:zoom
+                          onSelectNode={(id) => selectedNodeId = id}
+                          onUpdateNodePosition={updateNodePosition}
+                          onUpdateNodeSize={updateNodeSize}
+                        />
+                      </div>
+                    </div>
+                  {/if}
                 </div>
 
                 <!-- Right half: Live preview -->
                 <div class="flex-1 relative min-w-0">
-                  {#if jsonSpec}
+                  {#if liveSpec}
                     <div class="w-full h-full p-6 overflow-auto bg-background">
-                      <CatalogRenderer spec={jsonSpec} {registry} />
+                      <CatalogRenderer spec={liveSpec} {registry} />
                     </div>
-                  {:else}
+                  {:else if generatedCode}
                     <V0Runner code={generatedCode} />
+                  {:else}
+                    <div class="absolute inset-0 flex flex-col items-center justify-center text-muted-foreground gap-3">
+                      <Eye class="size-8 text-muted-foreground/30" />
+                      <p class="text-xs">Preview will appear here</p>
+                    </div>
                   {/if}
                 </div>
               </div>
@@ -565,12 +688,22 @@
     <!-- ─── Status Bar ─── -->
     <footer class="h-7 border-t border-border flex items-center justify-between px-3 text-[11px] text-muted-foreground bg-muted/20 shrink-0">
       <div class="flex items-center gap-3">
-        {#if activeTab === "preview" && (previewMode === "preview" || previewMode === "split") && generatedCode}
+        {#if activeTab === "preview" && isSpecMode}
+          <Badge variant="secondary" class="h-4 px-1.5 text-[10px] gap-1">
+            <Braces class="size-2.5" />
+            json-render
+          </Badge>
+          {#if liveSpec}
+            <span class="text-green-500">● Valid</span>
+          {:else if specParseError}
+            <span class="text-destructive">● Error</span>
+          {/if}
+          <Separator orientation="vertical" class="h-3!" />
+        {:else if activeTab === "preview" && (previewMode === "preview" || previewMode === "split") && generatedCode}
           <Badge variant="secondary" class="h-4 px-1.5 text-[10px] gap-1">
             <span class="size-1.5 rounded-full bg-chart-1 animate-pulse"></span>
             v0 Runner
           </Badge>
-          <span>DOM Ready</span>
           <Separator orientation="vertical" class="h-3!" />
         {/if}
         <span>Nodes: {document.children.length}</span>

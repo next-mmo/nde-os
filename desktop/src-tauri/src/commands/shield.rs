@@ -439,10 +439,179 @@ pub fn shield_open_url_on_device(
     mgr.open_url(&serial, &url).map_err(|e| e.to_string())
 }
 
+// ─── LDPlayer Emulator Management ─────────────────────────────────
+
+#[derive(Serialize)]
+pub struct LdPlayerDetectionResponse {
+    pub available: bool,
+    pub ldconsole_path: Option<String>,
+    pub version_dir: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct LdPlayerInstanceResponse {
+    pub index: u32,
+    pub name: String,
+    pub is_running: bool,
+    pub pid: i64,
+    // DB metadata (if available)
+    pub notes: Option<String>,
+    pub tags: Vec<String>,
+    pub linked_shield_profile_id: Option<String>,
+    pub proxy_host: Option<String>,
+    pub proxy_port: Option<u16>,
+    pub cpu: Option<u32>,
+    pub memory: Option<u32>,
+    pub resolution: Option<String>,
+    pub created_at: Option<u64>,
+    pub updated_at: Option<u64>,
+}
+
+#[tauri::command]
+pub fn shield_detect_ldplayer() -> LdPlayerDetectionResponse {
+    use ai_launcher_core::shield::ldplayer;
+    let detection = ldplayer::detect_ldplayer();
+    LdPlayerDetectionResponse {
+        available: detection.available,
+        ldconsole_path: detection.ldconsole_path,
+        version_dir: detection.version_dir,
+    }
+}
+
+#[tauri::command]
+pub fn shield_list_ldplayer_instances(
+    ld_state: tauri::State<'_, ShieldLdPlayerState>,
+) -> Result<Vec<LdPlayerInstanceResponse>, String> {
+    use ai_launcher_core::shield::ldplayer::LdPlayerManager;
+
+    let mgr = LdPlayerManager::new().map_err(|e| e.to_string())?;
+    let live = mgr.list_instances().map_err(|e| e.to_string())?;
+
+    // Sync DB with live data
+    let store = ld_state.store.lock().unwrap();
+    store.sync_with_live(&live, false).map_err(|e| e.to_string())?;
+    let db_profiles = store.list().map_err(|e| e.to_string())?;
+    drop(store);
+
+    // Merge live + DB data
+    Ok(live
+        .into_iter()
+        .map(|inst| {
+            let db_meta = db_profiles.iter().find(|m| m.ld_index == inst.index);
+            LdPlayerInstanceResponse {
+                index: inst.index,
+                name: inst.name,
+                is_running: inst.is_running,
+                pid: inst.pid,
+                notes: db_meta.and_then(|m| m.notes.clone()),
+                tags: db_meta.map(|m| m.tags.clone()).unwrap_or_default(),
+                linked_shield_profile_id: db_meta
+                    .and_then(|m| m.linked_shield_profile_id.clone()),
+                proxy_host: db_meta.and_then(|m| m.proxy_host.clone()),
+                proxy_port: db_meta.and_then(|m| m.proxy_port),
+                cpu: db_meta.and_then(|m| m.cpu),
+                memory: db_meta.and_then(|m| m.memory),
+                resolution: db_meta.and_then(|m| m.resolution.clone()),
+                created_at: db_meta.map(|m| m.created_at),
+                updated_at: db_meta.map(|m| m.updated_at),
+            }
+        })
+        .collect())
+}
+
+#[tauri::command]
+pub fn shield_launch_ldplayer(name: String) -> Result<(), String> {
+    use ai_launcher_core::shield::ldplayer::LdPlayerManager;
+    let mgr = LdPlayerManager::new().map_err(|e| e.to_string())?;
+    mgr.launch(&name).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn shield_quit_ldplayer(name: String) -> Result<(), String> {
+    use ai_launcher_core::shield::ldplayer::LdPlayerManager;
+    let mgr = LdPlayerManager::new().map_err(|e| e.to_string())?;
+    mgr.quit(&name).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn shield_quit_all_ldplayer() -> Result<(), String> {
+    use ai_launcher_core::shield::ldplayer::LdPlayerManager;
+    let mgr = LdPlayerManager::new().map_err(|e| e.to_string())?;
+    mgr.quit_all().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn shield_create_ldplayer(name: String) -> Result<(), String> {
+    use ai_launcher_core::shield::ldplayer::LdPlayerManager;
+    let mgr = LdPlayerManager::new().map_err(|e| e.to_string())?;
+    mgr.create_instance(&name).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn shield_clone_ldplayer(new_name: String, from_name: String) -> Result<(), String> {
+    use ai_launcher_core::shield::ldplayer::LdPlayerManager;
+    let mgr = LdPlayerManager::new().map_err(|e| e.to_string())?;
+    mgr.clone_instance(&new_name, &from_name)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn shield_remove_ldplayer(name: String) -> Result<(), String> {
+    use ai_launcher_core::shield::ldplayer::LdPlayerManager;
+    let mgr = LdPlayerManager::new().map_err(|e| e.to_string())?;
+    mgr.remove_instance(&name).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn shield_modify_ldplayer(
+    name: String,
+    cpu: Option<u32>,
+    memory: Option<u32>,
+    resolution: Option<String>,
+) -> Result<(), String> {
+    use ai_launcher_core::shield::ldplayer::{LdInstanceSettings, LdPlayerManager};
+    let mgr = LdPlayerManager::new().map_err(|e| e.to_string())?;
+    let settings = LdInstanceSettings {
+        cpu,
+        memory,
+        resolution,
+    };
+    mgr.modify_instance(&name, &settings)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn shield_update_ldplayer_meta(
+    ld_state: tauri::State<'_, ShieldLdPlayerState>,
+    ld_index: u32,
+    notes: Option<String>,
+    tags: Vec<String>,
+    linked_shield_profile_id: Option<String>,
+    proxy_host: Option<String>,
+    proxy_port: Option<u16>,
+) -> Result<(), String> {
+    let store = ld_state.store.lock().unwrap();
+    store
+        .update_meta(
+            ld_index,
+            notes.as_deref(),
+            &tags,
+            linked_shield_profile_id.as_deref(),
+            proxy_host.as_deref(),
+            proxy_port,
+        )
+        .map_err(|e| e.to_string())
+}
+
 // ─── Managed State ─────────────────────────────────────────────────
 
 /// Tauri-managed state for the browser launcher (async-safe).
 pub struct ShieldLauncherState {
     pub launcher: Arc<Mutex<BrowserLauncher>>,
+}
+
+/// Tauri-managed state for LDPlayer profile DB store.
+pub struct ShieldLdPlayerState {
+    pub store: std::sync::Mutex<ai_launcher_core::shield::ldplayer_db::LdPlayerStore>,
 }
 

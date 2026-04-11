@@ -3,25 +3,14 @@
 <script lang="ts">
   import { invoke } from "@tauri-apps/api/core";
   import { onMount } from "svelte";
-  import { Download, CheckCircle2, AlertCircle, ArrowLeft, Loader2, ExternalLink, Wrench, Mic, Film, Code2, Cpu, Play, Square, RefreshCw, Settings, X, Save } from "@lucide/svelte";
+  import { Download, CircleCheck, CircleAlert, ArrowLeft, Loader2, ExternalLink, Wrench, Mic, Film, Code2, Cpu, Play, Square, RefreshCw, Settings, X, Save, List as ListIcon, LayoutGrid, Search } from "@lucide/svelte";
   import { vikingStatus, vikingInstall, vikingStart, vikingStop, getServiceConfig, setServiceConfig } from "$lib/api/backend";
   import type { VikingStatus, ServiceConfig, ConfigField } from "$lib/api/types";
-  import { desktop, setVikingInstalled } from "🍎/state/desktop.svelte";
-
-  // ─── Types ───────────────────────────────────────────────────────────────
-  type ServiceStatus = {
-    id: string;
-    name: string;
-    description: string;
-    group: "voice" | "media" | "ai" | "tooling";
-    installed: boolean;
-    version?: string | null;
-    path?: string | null;
-    usedBy: string[];
-    optional: boolean;
-    details?: string | null;
-  };
-
+  import { desktop, setVikingInstalled, openGenericBrowserWindow } from "🍎/state/desktop.svelte";
+  import { logStore } from "$lib/stores/logs";
+  import type { ServiceStatus } from "./types";
+  import ServiceCard from "./components/ServiceCard.svelte";
+  import ServiceDrawer from "./components/ServiceDrawer.svelte";
   // ─── Props (receives window from AppNexus) ────────────────────────────
   import type { DesktopWindow } from "🍎/state/desktop.svelte";
 
@@ -41,6 +30,10 @@
   let installing = $state<string | null>(null);
   let installError = $state<string | null>(null);
   let installSuccess = $state<string | null>(null);
+  let activeTab = $state<string>("All");
+  let viewMode = $state<"list" | "grid">("list");
+  let drawerService = $state<ServiceStatus | null>(null);
+  let searchQuery = $state("");
 
   // Viking-specific state
   let viking = $state<VikingStatus | null>(null);
@@ -86,13 +79,16 @@
       installing = serviceId;
       installError = null;
       installSuccess = null;
+      logStore.info(`Installing ${serviceId}...`, "service-hub");
       const message = await invoke<string>("service_hub_install", { serviceId });
       installSuccess = message;
+      logStore.success(`Installed ${serviceId}`, "service-hub");
       await refreshStatus();
       // If we just installed OpenViking, refresh its live status too
       if (serviceId === "openviking") await fetchVikingStatus();
     } catch (e: any) {
       installError = e?.toString?.() ?? "Install failed";
+      logStore.error(`Failed to install ${serviceId}: ${installError}`, "service-hub");
     } finally {
       installing = null;
     }
@@ -100,18 +96,28 @@
 
   async function handleVikingStart() {
     vikingAction = "starting";
+    logStore.info("Starting OpenViking...", "service-hub");
     try {
       viking = await vikingStart();
+      logStore.success(`Started OpenViking (Port ${viking?.port})`, "service-hub");
       setVikingInstalled();
-    } catch { await fetchVikingStatus(); }
+    } catch (e: any) {
+      logStore.error(`Failed to start OpenViking: ${e?.toString()}`, "service-hub");
+      await fetchVikingStatus(); 
+    }
     vikingAction = "";
   }
 
   async function handleVikingStop() {
     vikingAction = "stopping";
+    logStore.info("Stopping OpenViking...", "service-hub");
     try {
       viking = await vikingStop();
-    } catch { await fetchVikingStatus(); }
+      logStore.success("Stopped OpenViking", "service-hub");
+    } catch (e: any) {
+      logStore.error(`Failed to stop OpenViking: ${e?.toString()}`, "service-hub");
+      await fetchVikingStatus(); 
+    }
     vikingAction = "";
   }
 
@@ -126,9 +132,24 @@
   // Derived
   let grouped = $derived.by(() => {
     const groups: Record<string, ServiceStatus[]> = {};
+    const query = searchQuery.toLowerCase().trim();
+    
     for (const svc of services) {
       // Skip openviking from the general grid — it has its own featured card
       if (svc.id === "openviking") continue;
+      
+      let keep = false;
+      if (activeTab === "All") keep = true;
+      else if (activeTab === "Installed") keep = svc.installed;
+      else if (activeTab === "Installing") keep = installing === svc.id;
+      else keep = activeTab === svc.group;
+
+      if (!keep) continue;
+      
+      if (query && !svc.name.toLowerCase().includes(query) && !(svc.description || "").toLowerCase().includes(query) && !svc.id.toLowerCase().includes(query)) {
+        continue;
+      }
+
       if (!groups[svc.group]) groups[svc.group] = [];
       groups[svc.group]!.push(svc);
     }
@@ -150,6 +171,19 @@
   let vikingInstalled = $derived(vikingService?.installed ?? false);
   let vikingConnected = $derived(viking?.connected ?? false);
   let isBusy = $derived(vikingAction !== "" || installing === "openviking" || desktop.viking_onboard_state?.stage === "installing" || desktop.viking_onboard_state?.stage === "starting");
+
+  let showViking = $derived.by(() => {
+    const query = searchQuery.toLowerCase().trim();
+    if (query) {
+      const matchText = "openviking context database core memory agent".toLowerCase();
+      if (!matchText.includes(query)) return false;
+    }
+
+    if (activeTab === "All" || activeTab === "ai") return true;
+    if (activeTab === "Installed" && vikingInstalled) return true;
+    if (activeTab === "Installing" && (installing === "openviking" || desktop.viking_onboard_state?.stage === "installing")) return true;
+    return false;
+  });
 
   // ─── Service Config State ──────────────────────────────────────────────
   let configOpen = $state<string | null>(null);
@@ -180,12 +214,15 @@
     configSaving = true;
     configError = null;
     configSuccess = null;
+    logStore.info(`Saving settings for ${configOpen}...`, "service-hub");
     try {
       await setServiceConfig(configOpen, editValues);
       configSuccess = "Settings saved";
+      logStore.success(`Saved settings for ${configOpen}`, "service-hub");
       if (configData) configData.values = { ...editValues };
     } catch (e: any) {
       configError = e?.toString?.() ?? "Failed to save";
+      logStore.error(`Failed to save settings for ${configOpen}: ${configError}`, "service-hub");
     }
     configSaving = false;
   }
@@ -293,13 +330,23 @@
         <p class="text-[10px] text-white/40 mt-0.5">Manage NDE-OS service dependencies</p>
       </div>
     </div>
-    <button
-      class="rounded-lg bg-white/5 px-3 py-1.5 text-[11px] text-white/60 transition-colors hover:bg-white/10 hover:text-white/80"
-      onclick={() => { refreshStatus(); fetchVikingStatus(); }}
-      disabled={loading}
-    >
-      {loading ? "Refreshing..." : "↻ Refresh"}
-    </button>
+    <div class="flex items-center gap-2">
+      <button
+        onclick={() => openGenericBrowserWindow("http://localhost:8080/swagger-ui/", "NDE-OS API Swagger")}
+        title="NDE-OS API Swagger"
+        class="flex items-center gap-1.5 rounded-lg bg-white/5 border border-white/10 px-3 py-1.5 text-[11px] font-medium text-white/70 transition-colors hover:bg-white/10 hover:text-white"
+      >
+        <ExternalLink class="w-3.5 h-3.5" /> API Swagger
+      </button>
+      <button
+        class="flex items-center gap-1.5 rounded-lg bg-white/5 px-3 py-1.5 text-[11px] text-white/60 transition-colors hover:bg-white/10 hover:text-white/80"
+        onclick={() => { refreshStatus(); fetchVikingStatus(); }}
+        disabled={loading}
+      >
+        <RefreshCw class="w-3.5 h-3.5 {loading ? 'animate-spin' : ''}" />
+        {loading ? "Refreshing..." : "Refresh"}
+      </button>
+    </div>
   </div>
 
   <!-- Required banner (deep-link context) -->
@@ -328,9 +375,9 @@
         {#each requiredServices as svc}
           <div class="flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] {svc.installed ? 'bg-emerald-500/15 text-emerald-300' : 'bg-amber-500/15 text-amber-300'}">
             {#if svc.installed}
-              <CheckCircle2 class="w-3 h-3" />
+              <CircleCheck class="w-3 h-3" />
             {:else}
-              <AlertCircle class="w-3 h-3" />
+              <CircleAlert class="w-3 h-3" />
             {/if}
             {svc.name}
           </div>
@@ -338,6 +385,73 @@
       </div>
     </div>
   {/if}
+
+  <!-- Tabs -->
+  <div class="px-5 pt-3 border-b border-white/5 bg-[#1a1a2e] flex items-center justify-between">
+    <div class="flex-1 overflow-x-auto scrollbar-hide mr-4">
+      <div class="flex items-center gap-4 min-w-max">
+        <button
+          class="pb-3 text-[11px] font-medium transition-colors border-b-2 {activeTab === 'All' ? 'border-violet-500 text-white' : 'border-transparent text-white/50 hover:text-white/80'}"
+          onclick={() => activeTab = 'All'}
+        >
+          All
+        </button>
+        <button
+          class="pb-3 text-[11px] font-medium transition-colors border-b-2 {activeTab === 'Installed' ? 'border-emerald-500 text-white' : 'border-transparent text-white/50 hover:text-white/80'}"
+          onclick={() => activeTab = 'Installed'}
+        >
+          Installed
+        </button>
+        <button
+          class="pb-3 text-[11px] font-medium transition-colors border-b-2 {activeTab === 'Installing' ? 'border-blue-500 text-white' : 'border-transparent text-white/50 hover:text-white/80'}"
+          onclick={() => activeTab = 'Installing'}
+        >
+          Installing
+        </button>
+        
+        <div class="w-px h-4 bg-white/10 mx-1"></div>
+        
+        {#each Object.keys(groupMeta) as tabKey}
+          <button
+            class="pb-3 text-[11px] font-medium transition-colors border-b-2 {activeTab === tabKey ? 'border-violet-500 text-white' : 'border-transparent text-white/50 hover:text-white/80'}"
+            onclick={() => activeTab = tabKey}
+          >
+            {groupMeta[tabKey].label}
+          </button>
+        {/each}
+      </div>
+    </div>
+    
+    <!-- Search & View Toggles -->
+    <div class="shrink-0 flex items-center pb-3">
+      <div class="relative w-40 lg:w-56 mr-3">
+        <Search class="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-white/40" />
+        <input
+          type="text"
+          placeholder="Search services..."
+          bind:value={searchQuery}
+          class="w-full bg-white/5 border border-white/10 rounded-md pl-8 pr-3 py-1.5 text-[11px] text-white placeholder:text-white/30 outline-none focus:border-violet-500/50 focus:bg-white/10 transition-colors"
+        />
+      </div>
+
+      <div class="flex items-center gap-1 border-l border-white/10 pl-3">
+        <button 
+          class="p-1.5 rounded-md transition-colors {viewMode === 'list' ? 'bg-white/10 text-white' : 'text-white/40 hover:text-white/80 hover:bg-white/5'}"
+          onclick={() => viewMode = 'list'}
+          title="List View"
+        >
+          <ListIcon class="w-3.5 h-3.5" />
+        </button>
+        <button 
+          class="p-1.5 rounded-md transition-colors {viewMode === 'grid' ? 'bg-white/10 text-white' : 'text-white/40 hover:text-white/80 hover:bg-white/5'}"
+          onclick={() => viewMode = 'grid'}
+          title="Grid View"
+        >
+          <LayoutGrid class="w-3.5 h-3.5" />
+        </button>
+      </div>
+    </div>
+  </div>
 
   <!-- Scroll body -->
   <div class="flex-1 overflow-y-auto px-4 py-4 space-y-5">
@@ -349,6 +463,7 @@
     {:else}
 
       <!-- ═══ OpenViking Featured Card ═══ -->
+      {#if showViking}
       <div class="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4">
         <div class="flex items-start justify-between gap-3">
           <div class="flex items-center gap-3 min-w-0">
@@ -378,7 +493,7 @@
               </div>
             {:else}
               <div class="flex items-center gap-1.5 rounded-full bg-red-500/15 px-2.5 py-1 text-[10px] text-red-300">
-                <AlertCircle class="w-3 h-3" /> Not Installed
+                <CircleAlert class="w-3 h-3" /> Not Installed
               </div>
             {/if}
           </div>
@@ -411,26 +526,28 @@
 
         <!-- Action buttons -->
         <div class="mt-3 flex items-center gap-2">
-          {#if !vikingInstalled}
-            <button
-              class="flex items-center gap-1.5 rounded-lg bg-violet-600 px-3 py-1.5 text-[10px] font-medium text-white transition-colors hover:bg-violet-500 disabled:opacity-50"
-              onclick={() => installService("openviking")}
-              disabled={isBusy}
-            >
-              {#if installing === "openviking" || desktop.viking_onboard_state?.stage === "installing"}
-                <Loader2 class="w-3 h-3 animate-spin" /> Installing...
-              {:else}
-                <Download class="w-3 h-3" /> Install
-              {/if}
-            </button>
-          {:else}
-            <button
-              class="flex items-center gap-1.5 rounded-lg bg-violet-600 px-3 py-1.5 text-[10px] font-medium text-white transition-colors hover:bg-violet-500 disabled:opacity-50"
-              onclick={() => installService("openviking")}
-              disabled={isBusy || vikingConnected}
-            >
-              <RefreshCw class="w-3 h-3" /> Re-install
-            </button>
+          {#if !vikingConnected}
+            {#if !vikingInstalled}
+              <button
+                class="flex items-center gap-1.5 rounded-lg bg-violet-600 px-3 py-1.5 text-[10px] font-medium text-white transition-colors hover:bg-violet-500 disabled:opacity-50"
+                onclick={() => installService("openviking")}
+                disabled={isBusy}
+              >
+                {#if installing === "openviking" || desktop.viking_onboard_state?.stage === "installing"}
+                  <Loader2 class="w-3 h-3 animate-spin" /> Installing...
+                {:else}
+                  <Download class="w-3 h-3" /> Install
+                {/if}
+              </button>
+            {:else}
+              <button
+                class="flex items-center gap-1.5 rounded-lg bg-violet-600 px-3 py-1.5 text-[10px] font-medium text-white transition-colors hover:bg-violet-500 disabled:opacity-50"
+                onclick={() => installService("openviking")}
+                disabled={isBusy}
+              >
+                <RefreshCw class="w-3 h-3" /> Re-install
+              </button>
+            {/if}
           {/if}
 
           {#if vikingInstalled && !vikingConnected}
@@ -461,14 +578,12 @@
             </button>
 
             <!-- API Docs link -->
-            <a
-              href="http://localhost:{viking?.port ?? 1933}/api-docs/openapi.json"
-              target="_blank"
-              rel="noopener noreferrer"
+            <button
+              onclick={() => openGenericBrowserWindow(`http://localhost:${viking?.port ?? 1933}/docs`, "OpenViking Docs")}
               class="flex items-center gap-1.5 rounded-lg bg-white/5 border border-white/10 px-3 py-1.5 text-[10px] font-medium text-white/70 transition-colors hover:bg-white/10 hover:text-white"
             >
               <ExternalLink class="w-3 h-3" /> API Docs
-            </a>
+            </button>
           {/if}
         </div>
 
@@ -494,6 +609,7 @@
           {@render configPanel()}
         {/if}
       </div>
+      {/if}
 
       <!-- ═══ Other Services Grid ═══ -->
       {#each Object.entries(grouped) as [group, groupServices]}
@@ -512,89 +628,36 @@
             <h2 class="text-[11px] font-semibold uppercase tracking-wider {meta.color}">{meta.label}</h2>
           </div>
 
-          <div class="space-y-2">
+          <div class="{viewMode === 'grid' ? 'grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3' : 'space-y-2'}">
             {#each groupServices as svc}
-              {@const isRequired = require.includes(svc.id)}
-              {@const isInstalling = installing === svc.id}
-              <div class="rounded-xl border {isRequired ? 'border-violet-400/20 bg-violet-400/5' : 'border-white/6 bg-white/2'} p-3 transition-colors hover:bg-white/4">
-                <div class="flex items-start justify-between gap-3">
-                  <div class="min-w-0 flex-1">
-                    <div class="flex items-center gap-2">
-                      <p class="text-[12px] font-semibold text-white/90">{svc.name}</p>
-                      {#if isRequired}
-                        <span class="rounded-full bg-violet-500/20 px-1.5 py-px text-[8px] uppercase tracking-wider text-violet-300">required</span>
-                      {:else if !svc.optional}
-                        <span class="rounded-full bg-amber-500/20 px-1.5 py-px text-[8px] uppercase tracking-wider text-amber-300">essential</span>
-                      {/if}
-                    </div>
-                    <p class="text-[10px] text-white/45 mt-0.5 leading-relaxed">{svc.description}</p>
-
-                    <!-- Details / version -->
-                    {#if svc.version || svc.details}
-                      <p class="text-[9px] text-white/30 mt-1">
-                        {#if svc.version}v{svc.version}{/if}
-                        {#if svc.version && svc.details} · {/if}
-                        {#if svc.details}{svc.details}{/if}
-                      </p>
-                    {/if}
-
-                    <!-- Used by -->
-                    {#if svc.usedBy.length > 0}
-                      <div class="flex items-center gap-1 mt-1.5">
-                        <span class="text-[9px] text-white/25">Used by:</span>
-                        {#each svc.usedBy as app}
-                          <span class="rounded-full bg-white/5 px-1.5 py-px text-[9px] text-white/40">{app}</span>
-                        {/each}
-                      </div>
-                    {/if}
-                  </div>
-
-                  <!-- Status + Settings + Install button -->
-                  <div class="shrink-0 flex items-center gap-2">
-                    <button
-                      class="rounded-md p-1 text-white/30 transition-colors hover:bg-white/5 hover:text-white/60 {configOpen === svc.id ? 'bg-white/5 text-white/60' : ''}"
-                      onclick={() => openConfig(svc.id)}
-                      title="Settings"
-                    >
-                      <Settings class="w-3.5 h-3.5" />
-                    </button>
-                    {#if svc.installed}
-                      <div class="flex items-center gap-1 rounded-full bg-emerald-500/15 px-2.5 py-1 text-[10px] text-emerald-300">
-                        <CheckCircle2 class="w-3 h-3" />
-                        Installed
-                      </div>
-                    {:else if svc.id === "voice-runtime" || svc.id === "uv"}
-                      <button
-                        class="flex items-center gap-1.5 rounded-lg bg-violet-600 px-3 py-1.5 text-[10px] font-medium text-white transition-colors hover:bg-violet-500 disabled:opacity-50"
-                        onclick={() => installService(svc.id)}
-                        disabled={isInstalling || installing !== null}
-                      >
-                        {#if isInstalling}
-                          <Loader2 class="w-3 h-3 animate-spin" />
-                          Installing...
-                        {:else}
-                          <Download class="w-3 h-3" />
-                          Install
-                        {/if}
-                      </button>
-                    {:else}
-                      <div class="flex items-center gap-1 rounded-full bg-amber-500/15 px-2.5 py-1 text-[10px] text-amber-300">
-                        <AlertCircle class="w-3 h-3" />
-                        Manual
-                      </div>
-                    {/if}
-                  </div>
-                </div>
-
-                <!-- Inline config panel for this service -->
+              <ServiceCard 
+                {svc}
+                isRequired={require.includes(svc.id)}
+                isInstalling={installing === svc.id}
+                installingAny={installing !== null}
+                {viewMode}
+                isConfigOpen={configOpen === svc.id}
+                onConfigOpen={() => openConfig(svc.id)}
+                onInstall={() => installService(svc.id)}
+                onRefresh={() => refreshStatus()}
+                onDrawerOpen={() => drawerService = svc}
+              >
                 {#if configOpen === svc.id}
                   {@render configPanel()}
                 {/if}
-              </div>
+              </ServiceCard>
             {/each}
           </div>
         </div>
       {/each}
+      
+      {#if Object.keys(grouped).length === 0 && !showViking}
+        <div class="flex flex-col items-center justify-center py-16 text-center">
+          <Wrench class="w-8 h-8 text-white/10 mb-3" />
+          <p class="text-[12px] font-medium text-white/40">No services found</p>
+          <p class="text-[10px] text-white/20 mt-1">There are no services matching this category filter.</p>
+        </div>
+      {/if}
     {/if}
 
     <!-- Install feedback -->
@@ -617,9 +680,17 @@
         class="w-full flex items-center justify-center gap-2 rounded-xl bg-emerald-600 py-2.5 text-[12px] font-semibold text-white transition-colors hover:bg-emerald-500"
         onclick={goBack}
       >
-        <CheckCircle2 class="w-4 h-4" />
+        <CircleCheck class="w-4 h-4" />
         All Ready — Return to {returnTo}
       </button>
     </div>
   {/if}
 </div>
+
+<!-- Right-side detail drawer -->
+<ServiceDrawer
+  svc={drawerService}
+  onClose={() => drawerService = null}
+  onInstall={drawerService ? () => installService(drawerService!.id) : undefined}
+  onConfigOpen={drawerService ? () => { openConfig(drawerService!.id); drawerService = null; } : undefined}
+/>

@@ -11,6 +11,7 @@
   import ShieldCreateProfile from "./ShieldCreateProfile.svelte";
   import ShieldDevices from "./ShieldDevices.svelte";
   import ProfileTable from "./ProfileTable.svelte";
+  import LDPlayerTable from "./LDPlayerTable.svelte";
 
   const store = useStore(shieldBrowserStore);
 
@@ -62,6 +63,14 @@
           Devices
         </Button>
         <Button 
+          variant={store.view === "emulators" ? "secondary" : "ghost"} 
+          size="sm" 
+          class="h-8 shadow-none" 
+          onclick={() => store.setView("emulators")}
+        >
+          🎮 Emulators
+        </Button>
+        <Button 
           variant={store.view === "create" ? "secondary" : "ghost"} 
           size="sm" 
           class="h-8 shadow-none gap-1" 
@@ -104,6 +113,8 @@
         <ShieldCreateProfile />
       {:else if store.view === "devices"}
         <ShieldDevices />
+      {:else if store.view === "emulators"}
+        <LDPlayerTable />
       {:else if store.view === "profiles"}
         <ProfileTable />
       {/if}

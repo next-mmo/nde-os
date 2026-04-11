@@ -248,5 +248,6 @@ mod tests {
         assert!(ids.contains(&"uv"));
         assert!(ids.contains(&"rvc"));
         assert!(ids.contains(&"openviking"));
+        assert!(ids.contains(&"ai-vision-runtime"));
     }
 }

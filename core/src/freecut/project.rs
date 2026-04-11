@@ -638,6 +638,7 @@ mod tests {
             fade_out: None,
             effects: vec![],
             blend_mode: None,
+            keyframes: vec![],
             src: Some("/media/clip.mp4".to_string()),
             thumbnail_url: None,
             source_width: Some(1920),

@@ -9,6 +9,8 @@ import type {
   AdbStatus,
   AvdInfo,
   ShieldView,
+  LdPlayerDetection,
+  LdPlayerInstance,
 } from "../components/apps/ShieldBrowser/types";
 
 export interface ShieldBrowserState {
@@ -56,6 +58,20 @@ export interface ShieldBrowserState {
   deviceUrlInput: string;
   screenshotPath: string | null;
   deviceActionBusy: boolean;
+
+  // LDPlayer Emulator Management
+  ldDetection: LdPlayerDetection | null;
+  ldInstances: LdPlayerInstance[];
+  ldLoading: boolean;
+  ldError: string;
+  ldActionBusy: boolean;
+  ldSelectedInstance: LdPlayerInstance | null;
+  ldDrawerOpen: boolean;
+  ldShowCreateDialog: boolean;
+  ldNewInstanceName: string;
+  ldShowCloneDialog: boolean;
+  ldCloneSourceName: string;
+  ldCloneNewName: string;
 }
 
 export interface ShieldBrowserActions {
@@ -101,6 +117,25 @@ export interface ShieldBrowserActions {
   openUrlOnDevice: (serial: string) => Promise<void>;
   takeScreenshot: (serial: string) => Promise<void>;
   stopListenerTracker: () => void;
+
+  // LDPlayer Emulator Management
+  loadLdInstances: () => Promise<void>;
+  detectLdPlayer: () => Promise<void>;
+  launchLdPlayer: (name: string) => Promise<void>;
+  quitLdPlayer: (name: string) => Promise<void>;
+  quitAllLdPlayer: () => Promise<void>;
+  createLdPlayer: () => Promise<void>;
+  cloneLdPlayer: () => Promise<void>;
+  removeLdPlayer: (name: string) => Promise<void>;
+  modifyLdPlayer: (name: string, cpu?: number, memory?: number, resolution?: string) => Promise<void>;
+  updateLdPlayerMeta: (ldIndex: number, notes?: string, tags?: string[], linkedId?: string, proxyHost?: string, proxyPort?: number) => Promise<void>;
+  setLdSelectedInstance: (inst: LdPlayerInstance | null) => void;
+  setLdDrawerOpen: (open: boolean) => void;
+  setLdShowCreateDialog: (show: boolean) => void;
+  setLdNewInstanceName: (name: string) => void;
+  setLdShowCloneDialog: (show: boolean) => void;
+  setLdCloneSourceName: (name: string) => void;
+  setLdCloneNewName: (name: string) => void;
 }
 
 export const shieldBrowserStore = createStore<ShieldBrowserState & ShieldBrowserActions>()((set, get) => {
@@ -154,6 +189,20 @@ export const shieldBrowserStore = createStore<ShieldBrowserState & ShieldBrowser
     deviceUrlInput: "https://browserleaks.com/canvas",
     screenshotPath: null,
     deviceActionBusy: false,
+
+    // LDPlayer
+    ldDetection: null,
+    ldInstances: [],
+    ldLoading: false,
+    ldError: "",
+    ldActionBusy: false,
+    ldSelectedInstance: null,
+    ldDrawerOpen: false,
+    ldShowCreateDialog: false,
+    ldNewInstanceName: "",
+    ldShowCloneDialog: false,
+    ldCloneSourceName: "",
+    ldCloneNewName: "",
 
     // ─── Actions ───
     setView: (view) => set({ view }),
@@ -521,6 +570,157 @@ export const shieldBrowserStore = createStore<ShieldBrowserState & ShieldBrowser
       stopListenerCleanup?.();
       stopListenerCleanup = null;
       hasInitProcessListener = false;
-    }
+    },
+
+    // ─── LDPlayer Actions ───
+    setLdSelectedInstance: (inst) => set({ ldSelectedInstance: inst }),
+    setLdDrawerOpen: (open) => set({ ldDrawerOpen: open, ...(open ? {} : { ldSelectedInstance: null }) }),
+    setLdShowCreateDialog: (show) => set({ ldShowCreateDialog: show }),
+    setLdNewInstanceName: (name) => set({ ldNewInstanceName: name }),
+    setLdShowCloneDialog: (show) => set({ ldShowCloneDialog: show }),
+    setLdCloneSourceName: (name) => set({ ldCloneSourceName: name }),
+    setLdCloneNewName: (name) => set({ ldCloneNewName: name }),
+
+    detectLdPlayer: async () => {
+      try {
+        const ldDetection = await invoke<LdPlayerDetection>("shield_detect_ldplayer");
+        set({ ldDetection });
+      } catch (e) {
+        set({ ldDetection: { available: false, ldconsole_path: null, version_dir: null } });
+      }
+    },
+
+    loadLdInstances: async () => {
+      set({ ldLoading: true, ldError: "" });
+      try {
+        const ldInstances = await invoke<LdPlayerInstance[]>("shield_list_ldplayer_instances");
+        set({ ldInstances });
+
+        // Update selected if still exists
+        const selected = get().ldSelectedInstance;
+        if (selected) {
+          const updated = ldInstances.find((i) => i.index === selected.index);
+          if (updated) set({ ldSelectedInstance: updated });
+        }
+      } catch (e: unknown) {
+        set({ ldError: `${e}`, ldInstances: [] });
+      } finally {
+        set({ ldLoading: false });
+      }
+    },
+
+    launchLdPlayer: async (name) => {
+      set({ ldActionBusy: true });
+      try {
+        await invoke("shield_launch_ldplayer", { name });
+        setTimeout(() => get().loadLdInstances(), 3000);
+      } catch (e: unknown) {
+        alert(`Failed to launch LDPlayer: ${e}`);
+      } finally {
+        set({ ldActionBusy: false });
+      }
+    },
+
+    quitLdPlayer: async (name) => {
+      set({ ldActionBusy: true });
+      try {
+        await invoke("shield_quit_ldplayer", { name });
+        await get().loadLdInstances();
+        if (get().ldSelectedInstance?.name === name) set({ ldSelectedInstance: null });
+      } catch (e: unknown) {
+        alert(`Failed to quit LDPlayer: ${e}`);
+      } finally {
+        set({ ldActionBusy: false });
+      }
+    },
+
+    quitAllLdPlayer: async () => {
+      set({ ldActionBusy: true });
+      try {
+        await invoke("shield_quit_all_ldplayer");
+        await get().loadLdInstances();
+        set({ ldSelectedInstance: null });
+      } catch (e: unknown) {
+        alert(`Failed to quit all: ${e}`);
+      } finally {
+        set({ ldActionBusy: false });
+      }
+    },
+
+    createLdPlayer: async () => {
+      const name = get().ldNewInstanceName.trim();
+      if (!name) return;
+      set({ ldActionBusy: true });
+      try {
+        await invoke("shield_create_ldplayer", { name });
+        set({ ldShowCreateDialog: false, ldNewInstanceName: "" });
+        await get().loadLdInstances();
+      } catch (e: unknown) {
+        alert(`Failed to create instance: ${e}`);
+      } finally {
+        set({ ldActionBusy: false });
+      }
+    },
+
+    cloneLdPlayer: async () => {
+      const { ldCloneSourceName, ldCloneNewName } = get();
+      if (!ldCloneNewName.trim() || !ldCloneSourceName) return;
+      set({ ldActionBusy: true });
+      try {
+        await invoke("shield_clone_ldplayer", { newName: ldCloneNewName.trim(), fromName: ldCloneSourceName });
+        set({ ldShowCloneDialog: false, ldCloneNewName: "", ldCloneSourceName: "" });
+        await get().loadLdInstances();
+      } catch (e: unknown) {
+        alert(`Failed to clone instance: ${e}`);
+      } finally {
+        set({ ldActionBusy: false });
+      }
+    },
+
+    removeLdPlayer: async (name) => {
+      set({ ldActionBusy: true });
+      try {
+        await invoke("shield_remove_ldplayer", { name });
+        if (get().ldSelectedInstance?.name === name) {
+          set({ ldSelectedInstance: null, ldDrawerOpen: false });
+        }
+        await get().loadLdInstances();
+      } catch (e: unknown) {
+        alert(`Failed to remove instance: ${e}`);
+      } finally {
+        set({ ldActionBusy: false });
+      }
+    },
+
+    modifyLdPlayer: async (name, cpu, memory, resolution) => {
+      set({ ldActionBusy: true });
+      try {
+        await invoke("shield_modify_ldplayer", { name, cpu: cpu ?? null, memory: memory ?? null, resolution: resolution ?? null });
+        await get().loadLdInstances();
+      } catch (e: unknown) {
+        alert(`Failed to modify instance: ${e}`);
+      } finally {
+        set({ ldActionBusy: false });
+      }
+    },
+
+    updateLdPlayerMeta: async (ldIndex, notes, tags, linkedId, proxyHost, proxyPort) => {
+      set({ ldActionBusy: true });
+      try {
+        await invoke("shield_update_ldplayer_meta", {
+          ldIndex,
+          notes: notes ?? null,
+          tags: tags ?? [],
+          linkedShieldProfileId: linkedId ?? null,
+          proxyHost: proxyHost ?? null,
+          proxyPort: proxyPort ?? null,
+        });
+        await get().loadLdInstances();
+      } catch (e: unknown) {
+        alert(`Failed to update metadata: ${e}`);
+      } finally {
+        set({ ldActionBusy: false });
+      }
+    },
   };
 });

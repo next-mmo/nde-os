@@ -2524,7 +2524,7 @@
             </div>
             <!-- Ruler area -->
             <div class="flex-1 relative h-full overflow-hidden">
-              <div class="absolute top-0 h-full pointer-events-none" style:left="{-ti.scrollLeft}px">
+              <div class="absolute top-0 h-full pointer-events-none will-change-transform" style:transform="translate3d({-ti.scrollLeft}px, 0, 0)">
                 {#each Array(Math.ceil((totalFrames / fps) + 10)) as _, i}
                   <!-- Major tick (every second) -->
                   <div class="absolute bottom-0" style:left="{frameToPixel(i * fps)}px">
@@ -2549,34 +2549,34 @@
                 {/each}
               </div>
               <!-- Playhead indicator on ruler -->
-              <div class="absolute top-0 bottom-0 w-px bg-violet-500 z-10 pointer-events-none" style:left="{frameToPixel(pb.currentFrame) - ti.scrollLeft}px">
+              <div class="absolute top-0 bottom-0 w-px bg-violet-500 z-10 pointer-events-none will-change-transform" style:transform="translate3d({frameToPixel(pb.currentFrame) - ti.scrollLeft}px, 0, 0)">
                 <div class="absolute -bottom-0.5 -left-[4px] w-0 h-0 border-l-[5px] border-l-transparent border-r-[5px] border-r-transparent border-t-[5px] border-t-violet-500"></div>
               </div>
 
               <!-- In/Out point indicators on ruler -->
               {#if inPoint !== null}
-                <div class="absolute top-0 bottom-0 w-0.5 bg-cyan-400 z-10 pointer-events-none" style:left="{frameToPixel(inPoint) - ti.scrollLeft}px">
+                <div class="absolute top-0 bottom-0 w-0.5 bg-cyan-400 z-10 pointer-events-none will-change-transform" style:transform="translate3d({frameToPixel(inPoint) - ti.scrollLeft}px, 0, 0)">
                   <span class="absolute -top-0.5 left-0.5 text-[6px] text-cyan-400 font-bold">I</span>
                 </div>
               {/if}
               {#if outPoint !== null}
-                <div class="absolute top-0 bottom-0 w-0.5 bg-cyan-400 z-10 pointer-events-none" style:left="{frameToPixel(outPoint) - ti.scrollLeft}px">
+                <div class="absolute top-0 bottom-0 w-0.5 bg-cyan-400 z-10 pointer-events-none will-change-transform" style:transform="translate3d({frameToPixel(outPoint) - ti.scrollLeft}px, 0, 0)">
                   <span class="absolute -top-0.5 -left-2 text-[6px] text-cyan-400 font-bold">O</span>
                 </div>
               {/if}
               {#if inPoint !== null && outPoint !== null}
-                <div class="absolute top-0 bottom-0 bg-cyan-400/10 pointer-events-none z-5" style:left="{frameToPixel(inPoint) - ti.scrollLeft}px" style:width="{frameToPixel(outPoint - inPoint)}px"></div>
+                <div class="absolute top-0 bottom-0 bg-cyan-400/10 pointer-events-none z-5 will-change-transform" style:transform="translate3d({frameToPixel(inPoint) - ti.scrollLeft}px, 0, 0)" style:width="{frameToPixel(outPoint - inPoint)}px"></div>
               {/if}
 
               <!-- Preview scrubber ghost on ruler -->
               {#if previewFrame !== null && !isDraggingPlayhead}
-                <div class="absolute top-0 bottom-0 w-px bg-white/20 z-5 pointer-events-none" style:left="{frameToPixel(previewFrame) - ti.scrollLeft}px"></div>
+                <div class="absolute top-0 bottom-0 w-px bg-white/20 z-5 pointer-events-none will-change-transform" style:transform="translate3d({frameToPixel(previewFrame) - ti.scrollLeft}px, 0, 0)"></div>
               {/if}
 
               <!-- Marker diamonds on ruler -->
               {#each markers as marker (marker.id)}
-                <div class="absolute top-0 bottom-0 pointer-events-none z-10" style:left="{frameToPixel(marker.frame) - ti.scrollLeft}px">
-                  <div class="absolute top-0 -left-[3px] w-[7px] h-[7px] rotate-45" style:background={marker.color}></div>
+                <div class="absolute top-0 bottom-0 pointer-events-none z-10 will-change-transform" style:transform="translate3d({frameToPixel(marker.frame) - ti.scrollLeft}px, 0, 0)">
+                  <div class="absolute top-0 -left-[3px] w-[7px] h-[7px] rotate-45 shadow-sm" style:background={marker.color}></div>
                 </div>
               {/each}
             </div>
@@ -2621,7 +2621,7 @@
                     <!-- Track Canvas -->
                     <!-- svelte-ignore a11y_click_events_have_key_events -->
                     <div class="absolute top-0 bottom-0 right-0 bg-white/1 overflow-hidden" style="left: 120px;">
-                      <div class="relative w-full h-full" style:left="{-ti.scrollLeft}px">
+                      <div class="relative w-full h-full will-change-transform" style:transform="translate3d({-ti.scrollLeft}px, 0, 0)">
                         
                         <!-- Clips -->
                         {#each (ti.itemsByTrackId[track.id] ?? []) as item (item.id)}
@@ -2684,6 +2684,20 @@
                               <div class="absolute inset-0 flex items-end px-px opacity-30 pointer-events-none">
                                 {#each item.waveformData.slice(0, Math.floor(widthPx / 2)) as peak}
                                   <div class="w-px mx-px rounded-t" style:height="{peak * 100}%" style:background={color}></div>
+                                {/each}
+                              </div>
+                            {/if}
+
+                            <!-- Timeline Keyframes Presentation (Professional Edition) -->
+                            {#if item.keyframes && item.keyframes.length > 0}
+                              <!-- Draw a faint line connecting keyframes -->
+                              <div class="absolute bottom-1.5 left-0 right-0 h-px bg-white/10 pointer-events-none mx-2"></div>
+                              <div class="absolute bottom-0 left-0 right-0 h-3 pointer-events-none">
+                                {#each item.keyframes as kf}
+                                  <div 
+                                    class="absolute w-1.5 h-1.5 bg-amber-400 rotate-45 transform -translate-x-1/2 translate-y-0.5 rounded-sm shadow-[0_0_4px_rgba(251,191,36,0.6)]"
+                                    style:left="{frameToPixel(kf.frameOffset)}px"
+                                  ></div>
                                 {/each}
                               </div>
                             {/if}
@@ -2779,42 +2793,55 @@
                 {/if}
 
                 <div class="border-t border-white/5 pt-3">
-                  <span class="block text-[10px] text-white/30 uppercase tracking-wider mb-2">Transform</span>
-                  <div class="grid grid-cols-2 gap-2">
+                  <div class="flex items-center justify-between mb-2">
+                    <span class="block text-[10px] text-white/30 uppercase tracking-wider">Transform</span>
+                    <button class="text-[9px] text-violet-400 hover:text-violet-300 pointer-events-auto" onclick={() => updateSelectedItem({keyframes: []})} disabled={!selectedItem.keyframes?.length}>Clear All Keyframes</button>
+                  </div>
+                  <div class="grid grid-cols-2 gap-3">
                     <div>
-                      <div class="flex items-center justify-between mb-1">
-                        <span class="text-[9px] text-white/40 block">Position X</span>
-                        <button class="text-[10px] cursor-pointer {hasKeyframeAtCurrentFrame('x') ? 'text-amber-400' : 'text-white/20 hover:text-white/50'}" onclick={() => toggleKeyframe('x', selectedItem?.transform?.x ?? 0)}>♦</button>
+                      <div class="flex items-center justify-between mb-1.5">
+                        <span class="text-[9px] text-white/40 block font-medium">Position X</span>
+                        <button class="flex items-center justify-center p-0.5 rounded cursor-pointer transition-colors {hasKeyframeAtCurrentFrame('x') ? 'text-amber-400 bg-amber-400/20 hover:bg-amber-400/30' : 'text-white/20 hover:text-white/50 hover:bg-white/10'}" onclick={() => toggleKeyframe('x', selectedItem?.transform?.x ?? 0)}>
+                          <div class="w-1.5 h-1.5 rotate-45 {hasKeyframeAtCurrentFrame('x') ? 'bg-amber-400' : 'border border-current bg-transparent'}" style="border-radius: 1px;"></div>
+                        </button>
                       </div>
-                      <input type="number" class="w-full bg-white/5 border border-white/10 rounded px-2 py-1 text-xs text-white font-mono" value={selectedItem.transform?.x ?? 0} onchange={(e) => { updateSelectedTransform({ x: parseFloat(e.currentTarget.value) }); if (hasKeyframeAtCurrentFrame('x')) toggleKeyframe('x', parseFloat(e.currentTarget.value)); else { /* allow dragging to auto keyframe later */ } }} />
+                      <input type="number" class="w-full bg-white/5 border border-white/10 rounded px-2 py-1 text-xs text-white font-mono focus:border-violet-500/50 focus:outline-none transition-colors" value={selectedItem.transform?.x ?? 0} onchange={(e) => { updateSelectedTransform({ x: parseFloat(e.currentTarget.value) }); if (hasKeyframeAtCurrentFrame('x')) toggleKeyframe('x', parseFloat(e.currentTarget.value)); else { /* manual adjust */ } }} />
                     </div>
                     <div>
-                      <div class="flex items-center justify-between mb-1">
-                        <span class="text-[9px] text-white/40 block">Position Y</span>
-                        <button class="text-[10px] cursor-pointer {hasKeyframeAtCurrentFrame('y') ? 'text-amber-400' : 'text-white/20 hover:text-white/50'}" onclick={() => toggleKeyframe('y', selectedItem?.transform?.y ?? 0)}>♦</button>
+                      <div class="flex items-center justify-between mb-1.5">
+                        <span class="text-[9px] text-white/40 block font-medium">Position Y</span>
+                        <button class="flex items-center justify-center p-0.5 rounded cursor-pointer transition-colors {hasKeyframeAtCurrentFrame('y') ? 'text-amber-400 bg-amber-400/20 hover:bg-amber-400/30' : 'text-white/20 hover:text-white/50 hover:bg-white/10'}" onclick={() => toggleKeyframe('y', selectedItem?.transform?.y ?? 0)}>
+                          <div class="w-1.5 h-1.5 rotate-45 {hasKeyframeAtCurrentFrame('y') ? 'bg-amber-400' : 'border border-current bg-transparent'}" style="border-radius: 1px;"></div>
+                        </button>
                       </div>
-                      <input type="number" class="w-full bg-white/5 border border-white/10 rounded px-2 py-1 text-xs text-white font-mono" value={selectedItem.transform?.y ?? 0} onchange={(e) => updateSelectedTransform({ y: parseFloat(e.currentTarget.value) })} />
+                      <input type="number" class="w-full bg-white/5 border border-white/10 rounded px-2 py-1 text-xs text-white font-mono focus:border-violet-500/50 focus:outline-none transition-colors" value={selectedItem.transform?.y ?? 0} onchange={(e) => { updateSelectedTransform({ y: parseFloat(e.currentTarget.value) }); if (hasKeyframeAtCurrentFrame('y')) toggleKeyframe('y', parseFloat(e.currentTarget.value)); }} />
                     </div>
                     <div>
-                      <div class="flex items-center justify-between mb-1">
-                        <span class="text-[9px] text-white/40 block">Scale</span>
-                        <button class="text-[10px] cursor-pointer {hasKeyframeAtCurrentFrame('scale') ? 'text-amber-400' : 'text-white/20 hover:text-white/50'}" onclick={() => toggleKeyframe('scale', selectedItem?.transform?.scale ?? 1)}>♦</button>
+                      <div class="flex items-center justify-between mb-1.5">
+                        <span class="text-[9px] text-white/40 block font-medium">Scale</span>
+                        <button class="flex items-center justify-center p-0.5 rounded cursor-pointer transition-colors {hasKeyframeAtCurrentFrame('scale') ? 'text-amber-400 bg-amber-400/20 hover:bg-amber-400/30' : 'text-white/20 hover:text-white/50 hover:bg-white/10'}" onclick={() => toggleKeyframe('scale', selectedItem?.transform?.scale ?? 1)}>
+                          <div class="w-1.5 h-1.5 rotate-45 {hasKeyframeAtCurrentFrame('scale') ? 'bg-amber-400' : 'border border-current bg-transparent'}" style="border-radius: 1px;"></div>
+                        </button>
                       </div>
-                      <input type="number" step="0.01" class="w-full bg-white/5 border border-white/10 rounded px-2 py-1 text-xs text-white font-mono" value={selectedItem.transform?.scale ?? 1} onchange={(e) => updateSelectedTransform({ scale: parseFloat(e.currentTarget.value) })} />
+                      <input type="number" step="0.01" class="w-full bg-white/5 border border-white/10 rounded px-2 py-1 text-xs text-white font-mono focus:border-violet-500/50 focus:outline-none transition-colors" value={selectedItem.transform?.scale ?? 1} onchange={(e) => { updateSelectedTransform({ scale: parseFloat(e.currentTarget.value) }); if (hasKeyframeAtCurrentFrame('scale')) toggleKeyframe('scale', parseFloat(e.currentTarget.value)); }} />
                     </div>
                     <div>
-                      <div class="flex items-center justify-between mb-1">
-                        <span class="text-[9px] text-white/40 block">Rotation (deg)</span>
-                        <button class="text-[10px] cursor-pointer {hasKeyframeAtCurrentFrame('rotation') ? 'text-amber-400' : 'text-white/20 hover:text-white/50'}" onclick={() => toggleKeyframe('rotation', selectedItem?.transform?.rotation ?? 0)}>♦</button>
+                      <div class="flex items-center justify-between mb-1.5">
+                        <span class="text-[9px] text-white/40 block font-medium">Rotation (deg)</span>
+                        <button class="flex items-center justify-center p-0.5 rounded cursor-pointer transition-colors {hasKeyframeAtCurrentFrame('rotation') ? 'text-amber-400 bg-amber-400/20 hover:bg-amber-400/30' : 'text-white/20 hover:text-white/50 hover:bg-white/10'}" onclick={() => toggleKeyframe('rotation', selectedItem?.transform?.rotation ?? 0)}>
+                          <div class="w-1.5 h-1.5 rotate-45 {hasKeyframeAtCurrentFrame('rotation') ? 'bg-amber-400' : 'border border-current bg-transparent'}" style="border-radius: 1px;"></div>
+                        </button>
                       </div>
-                      <input type="number" class="w-full bg-white/5 border border-white/10 rounded px-2 py-1 text-xs text-white font-mono" value={selectedItem.transform?.rotation ?? 0} onchange={(e) => updateSelectedTransform({ rotation: parseFloat(e.currentTarget.value) })} />
+                      <input type="number" class="w-full bg-white/5 border border-white/10 rounded px-2 py-1 text-xs text-white font-mono focus:border-violet-500/50 focus:outline-none transition-colors" value={selectedItem.transform?.rotation ?? 0} onchange={(e) => { updateSelectedTransform({ rotation: parseFloat(e.currentTarget.value) }); if (hasKeyframeAtCurrentFrame('rotation')) toggleKeyframe('rotation', parseFloat(e.currentTarget.value)); }} />
                     </div>
                     <div class="col-span-2">
-                      <div class="flex items-center justify-between mb-1">
-                        <span class="text-[9px] text-white/40 block">Opacity (0-1)</span>
-                        <button class="text-[10px] cursor-pointer {hasKeyframeAtCurrentFrame('opacity') ? 'text-amber-400' : 'text-white/20 hover:text-white/50'}" onclick={() => toggleKeyframe('opacity', selectedItem?.transform?.opacity ?? 1)}>♦</button>
+                      <div class="flex items-center justify-between mb-1.5">
+                        <span class="text-[9px] text-white/40 block font-medium">Opacity (0-1)</span>
+                        <button class="flex items-center justify-center p-0.5 rounded cursor-pointer transition-colors {hasKeyframeAtCurrentFrame('opacity') ? 'text-amber-400 bg-amber-400/20 hover:bg-amber-400/30' : 'text-white/20 hover:text-white/50 hover:bg-white/10'}" onclick={() => toggleKeyframe('opacity', selectedItem?.transform?.opacity ?? 1)}>
+                          <div class="w-1.5 h-1.5 rotate-45 {hasKeyframeAtCurrentFrame('opacity') ? 'bg-amber-400' : 'border border-current bg-transparent'}" style="border-radius: 1px;"></div>
+                        </button>
                       </div>
-                      <input type="number" step="0.05" min="0" max="1" class="w-full bg-white/5 border border-white/10 rounded px-2 py-1 text-xs text-white font-mono" value={selectedItem.transform?.opacity ?? 1} onchange={(e) => updateSelectedTransform({ opacity: parseFloat(e.currentTarget.value) })} />
+                      <input type="number" step="0.05" min="0" max="1" class="w-full bg-white/5 border border-white/10 rounded px-2 py-1 text-xs text-white font-mono focus:border-violet-500/50 focus:outline-none transition-colors" value={selectedItem.transform?.opacity ?? 1} onchange={(e) => { updateSelectedTransform({ opacity: parseFloat(e.currentTarget.value) }); if (hasKeyframeAtCurrentFrame('opacity')) toggleKeyframe('opacity', parseFloat(e.currentTarget.value)); }} />
                     </div>
                   </div>
                 </div>

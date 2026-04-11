@@ -3,10 +3,11 @@ mod state;
 
 use ai_launcher_core::openviking::{config::VikingConfig, VikingProcess};
 use ai_launcher_core::shield::launcher::BrowserLauncher;
+use ai_launcher_core::shield::ldplayer_db::LdPlayerStore;
 use ai_launcher_core::voice::runtime::VoiceRuntime;
 use commands::freecut::FreeCutState;
 use commands::service_hub::{VikingState, VoiceRuntimeState};
-use commands::shield::ShieldLauncherState;
+use commands::shield::{ShieldLauncherState, ShieldLdPlayerState};
 use commands::workspace::WorkspaceState;
 use state::AppState;
 use std::path::PathBuf;
@@ -51,6 +52,13 @@ pub fn run() {
         process: Arc::new(Mutex::new(VikingProcess::new(viking_config, &base_dir))),
     };
 
+    // LDPlayer emulator DB store
+    let ld_player_state = ShieldLdPlayerState {
+        store: std::sync::Mutex::new(
+            LdPlayerStore::new(&base_dir).expect("Failed to initialize LDPlayer DB"),
+        ),
+    };
+
     // Workspace state — manages active workspace path and recent workspaces
     let workspace_state = WorkspaceState::new(&base_dir);
 
@@ -80,6 +88,7 @@ pub fn run() {
         .manage(freecut_state)
         .manage(viking_state)
         .manage(workspace_state)
+        .manage(ld_player_state)
         .manage(commands::pty::PtyState::new())
         .invoke_handler(tauri::generate_handler![
             // system
@@ -135,6 +144,17 @@ pub fn run() {
             commands::shield::shield_clear_proxy,
             commands::shield::shield_device_screenshot,
             commands::shield::shield_open_url_on_device,
+            // shield ldplayer emulator management
+            commands::shield::shield_detect_ldplayer,
+            commands::shield::shield_list_ldplayer_instances,
+            commands::shield::shield_launch_ldplayer,
+            commands::shield::shield_quit_ldplayer,
+            commands::shield::shield_quit_all_ldplayer,
+            commands::shield::shield_create_ldplayer,
+            commands::shield::shield_clone_ldplayer,
+            commands::shield::shield_remove_ldplayer,
+            commands::shield::shield_modify_ldplayer,
+            commands::shield::shield_update_ldplayer_meta,
             // figma json
             commands::figma_json::convert_figma_json,
             commands::figma_json::resolve_document_styles,
