@@ -12,8 +12,9 @@ pub fn detect_all(base_dir: &Path) -> Vec<ServiceStatus> {
     let voice_rt = VoiceRuntime::new(base_dir);
     let voice_status = voice_rt.detect_status();
 
-    let ffmpeg_installed = crate::voice::runtime::resolve_system_command("ffmpeg").is_some();
-    let ffprobe_installed = crate::voice::runtime::resolve_system_command("ffprobe").is_some();
+    // FFmpeg: check sandboxed install first, then system PATH
+    let ffmpeg_bins = crate::freecut::ffmpeg_bootstrap::find_ffmpeg(base_dir);
+    let ffmpeg_installed = ffmpeg_bins.is_some();
     let python_installed = crate::voice::runtime::resolve_python().is_some();
     let uv_installed = crate::voice::runtime::resolve_system_command("uv").is_some()
         || base_dir.join("uv").exists()
@@ -76,23 +77,16 @@ pub fn detect_all(base_dir: &Path) -> Vec<ServiceStatus> {
             name: "FFmpeg".to_string(),
             description: "Video/audio processing, encoding, and transcoding".to_string(),
             group: ServiceGroup::Media,
-            installed: ffmpeg_installed && ffprobe_installed,
-            version: detect_ffmpeg_version(),
-            path: crate::voice::runtime::resolve_system_command("ffmpeg")
-                .map(|p| p.to_string_lossy().to_string()),
+            installed: ffmpeg_installed,
+            version: detect_ffmpeg_version(ffmpeg_bins.as_ref()),
+            path: ffmpeg_bins.as_ref()
+                .map(|bins| bins.ffmpeg.to_string_lossy().to_string()),
             used_by: vec!["FreeCut".to_string()],
             optional: false,
-            details: if ffmpeg_installed && ffprobe_installed {
+            details: if ffmpeg_installed {
                 Some("ffmpeg + ffprobe ready".to_string())
             } else {
-                let mut missing = Vec::new();
-                if !ffmpeg_installed {
-                    missing.push("ffmpeg");
-                }
-                if !ffprobe_installed {
-                    missing.push("ffprobe");
-                }
-                Some(format!("Missing: {}", missing.join(", ")))
+                Some("Click Install to auto-download FFmpeg".to_string())
             },
         },
         ServiceStatus {
@@ -213,7 +207,11 @@ pub fn install_service(service_id: &str, base_dir: &Path) -> Result<String> {
             Ok("AI Vision models installed successfully".to_string())
         }
         "ffmpeg" => {
-            anyhow::bail!("FFmpeg must be installed via your system package manager (brew install ffmpeg / apt install ffmpeg / winget install ffmpeg)")
+            let bins = crate::freecut::ffmpeg_bootstrap::ensure_ffmpeg(base_dir)?;
+            Ok(format!(
+                "FFmpeg installed to {}",
+                bins.ffmpeg.parent().unwrap_or(base_dir).display()
+            ))
         }
         "python" => {
             anyhow::bail!("Python must be installed via your system package manager or python.org")
@@ -228,8 +226,13 @@ pub fn install_service(service_id: &str, base_dir: &Path) -> Result<String> {
     }
 }
 
-fn detect_ffmpeg_version() -> Option<String> {
-    let output = std::process::Command::new("ffmpeg")
+fn detect_ffmpeg_version(
+    bins: Option<&crate::freecut::ffmpeg_bootstrap::FfmpegBins>,
+) -> Option<String> {
+    let ffmpeg_path = bins
+        .map(|b| b.ffmpeg.to_string_lossy().to_string())
+        .unwrap_or_else(|| "ffmpeg".to_string());
+    let output = std::process::Command::new(&ffmpeg_path)
         .arg("-version")
         .output()
         .ok()?;

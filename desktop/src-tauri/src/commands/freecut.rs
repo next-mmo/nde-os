@@ -10,6 +10,7 @@ use ai_launcher_core::freecut::{
         detect_local_tools, generate_dubbing_assets, import_srt_as_session, DubbingImportResult,
         DubbingToolReport, WhisperSettings,
     },
+    ffmpeg_bootstrap,
     media_probe,
     project::{
         DubbingSession, ExportConfig, ExportProgressEvent, FrameRenderedEvent, MediaImportedEvent,
@@ -28,6 +29,7 @@ use tokio::sync::Mutex;
 /// Managed state for FreeCut — holds the SQLite store.
 pub struct FreeCutState {
     pub store: Arc<Mutex<FreeCutStore>>,
+    pub base_dir: PathBuf,
     pub freecut_dir: PathBuf,
     pub projects_dir: PathBuf,
     pub media_dir: PathBuf,
@@ -57,6 +59,7 @@ impl FreeCutState {
 
         Ok(Self {
             store: Arc::new(Mutex::new(store)),
+            base_dir: base_dir.to_path_buf(),
             freecut_dir,
             projects_dir,
             media_dir,
@@ -65,6 +68,23 @@ impl FreeCutState {
             tooling_dir,
             tool_env_lock: Arc::new(Mutex::new(())),
         })
+    }
+
+    /// Resolve FFmpeg bins (bundled → system → auto-download).
+    pub fn resolve_ffmpeg(&self) -> Result<ffmpeg_bootstrap::FfmpegBins, String> {
+        ffmpeg_bootstrap::ensure_ffmpeg(&self.base_dir).map_err(|e| e.to_string())
+    }
+
+    /// Get ffprobe path string for media probing.
+    pub fn ffprobe_str(&self) -> Option<String> {
+        ffmpeg_bootstrap::find_ffmpeg(&self.base_dir)
+            .map(|bins| bins.ffprobe.to_string_lossy().to_string())
+    }
+
+    /// Get ffmpeg path string for media processing.
+    pub fn ffmpeg_str(&self) -> Option<String> {
+        ffmpeg_bootstrap::find_ffmpeg(&self.base_dir)
+            .map(|bins| bins.ffmpeg.to_string_lossy().to_string())
     }
 }
 
@@ -231,12 +251,24 @@ pub async fn freecut_import_media(
             .map_err(|e| format!("copy failed: {e}"))?;
     }
 
+    // Resolve FFmpeg (auto-downloads if needed) — runs on blocking thread.
+    let base_dir = state.base_dir.clone();
+    let ffprobe_bin = tokio::task::spawn_blocking(move || {
+        ffmpeg_bootstrap::ensure_ffmpeg(&base_dir)
+            .ok()
+            .map(|bins| bins.ffprobe.to_string_lossy().to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?;
+
     // Probe on blocking thread (FFprobe is sync).
     let dest_clone = dest.clone();
-    let meta = tokio::task::spawn_blocking(move || media_probe::probe_media(&dest_clone, None))
-        .await
-        .map_err(|e| e.to_string())?
-        .map_err(|e| e.to_string())?;
+    let meta = tokio::task::spawn_blocking(move || {
+        media_probe::probe_media(&dest_clone, ffprobe_bin.as_deref())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())?;
 
     // Persist to DB.
     {
@@ -258,9 +290,13 @@ pub async fn freecut_import_media(
 }
 
 #[tauri::command]
-pub async fn freecut_probe_media(file_path: String) -> Result<MediaMetadata, String> {
+pub async fn freecut_probe_media(
+    state: tauri::State<'_, FreeCutState>,
+    file_path: String,
+) -> Result<MediaMetadata, String> {
     let path = PathBuf::from(&file_path);
-    tokio::task::spawn_blocking(move || media_probe::probe_media(&path, None))
+    let ffprobe_bin = state.ffprobe_str();
+    tokio::task::spawn_blocking(move || media_probe::probe_media(&path, ffprobe_bin.as_deref()))
         .await
         .map_err(|e| e.to_string())?
         .map_err(|e| e.to_string())
@@ -277,9 +313,10 @@ pub async fn freecut_generate_thumbnails(
     let src = PathBuf::from(&file_path);
     let out_dir = state.thumbnails_dir.join(&media_id);
     let thumb_count = count.unwrap_or(10);
+    let ffmpeg_bin = state.ffmpeg_str();
 
     let paths = tokio::task::spawn_blocking(move || {
-        media_probe::generate_thumbnails(&src, &out_dir, thumb_count, 320, None)
+        media_probe::generate_thumbnails(&src, &out_dir, thumb_count, 320, ffmpeg_bin.as_deref())
     })
     .await
     .map_err(|e| e.to_string())?
@@ -299,15 +336,17 @@ pub async fn freecut_generate_thumbnails(
 #[tauri::command]
 pub async fn freecut_generate_waveform(
     app: tauri::AppHandle,
+    state: tauri::State<'_, FreeCutState>,
     media_id: String,
     file_path: String,
     sample_count: Option<usize>,
 ) -> Result<Vec<f32>, String> {
     let src = PathBuf::from(&file_path);
     let samples = sample_count.unwrap_or(500);
+    let ffmpeg_bin = state.ffmpeg_str();
 
     let peaks =
-        tokio::task::spawn_blocking(move || media_probe::generate_waveform(&src, samples, None))
+        tokio::task::spawn_blocking(move || media_probe::generate_waveform(&src, samples, ffmpeg_bin.as_deref()))
             .await
             .map_err(|e| e.to_string())?
             .map_err(|e| e.to_string())?;
@@ -353,8 +392,11 @@ pub async fn freecut_render_frame(
     frame: u32,
 ) -> Result<String, String> {
     let render_dir = state.render_dir.join(&project.id);
+    let ffmpeg_bin = state.ffmpeg_str();
     let output = tokio::task::spawn_blocking(move || {
-        ai_launcher_core::freecut::render_engine::render_frame(&project, frame, &render_dir, None)
+        ai_launcher_core::freecut::render_engine::render_frame(
+            &project, frame, &render_dir, ffmpeg_bin.as_deref(),
+        )
     })
     .await
     .map_err(|e| e.to_string())?
@@ -385,10 +427,14 @@ pub struct HwEncoder {
 }
 
 #[tauri::command]
-pub async fn freecut_get_hw_encoders() -> Result<Vec<HwEncoder>, String> {
+pub async fn freecut_get_hw_encoders(
+    state: tauri::State<'_, FreeCutState>,
+) -> Result<Vec<HwEncoder>, String> {
+    let ffmpeg_bin = state.ffmpeg_str().unwrap_or_else(|| "ffmpeg".to_string());
+
     // Detect available hardware encoders via ffmpeg -encoders.
-    let output = tokio::task::spawn_blocking(|| {
-        std::process::Command::new("ffmpeg")
+    let output = tokio::task::spawn_blocking(move || {
+        std::process::Command::new(&ffmpeg_bin)
             .args(["-hide_banner", "-encoders"])
             .output()
     })
@@ -435,17 +481,18 @@ pub struct ExportCompleteEvent {
 #[tauri::command]
 pub async fn freecut_export_video(
     app: tauri::AppHandle,
-    _state: tauri::State<'_, FreeCutState>,
+    state: tauri::State<'_, FreeCutState>,
     project: Project,
     config: ExportConfig,
 ) -> Result<String, String> {
     let app_clone = app.clone();
+    let ffmpeg_bin = state.ffmpeg_str();
 
     let result = tokio::task::spawn_blocking(move || {
         ai_launcher_core::freecut::render_engine::export_video(
             &project,
             &config,
-            None,
+            ffmpeg_bin.as_deref(),
             move |current_frame, total_frames| {
                 let percent = if total_frames > 0 {
                     (current_frame as f64 / total_frames as f64) * 100.0

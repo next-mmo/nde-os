@@ -4,6 +4,7 @@
 //! The Svelte frontend receives rendered frames and status via Tauri events.
 
 pub mod dubbing;
+pub mod ffmpeg_bootstrap;
 pub mod media_probe;
 pub mod project;
 pub mod render_engine;

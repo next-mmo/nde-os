@@ -13,8 +13,18 @@ use super::project::{MediaMetadata, MediaType};
 
 /// Probe a media file and return structured metadata.
 ///
-/// Requires `ffprobe` to be in `PATH` (or supply `ffprobe_path`).
+/// Tries `ffprobe` first for rich codec/duration/resolution data.
+/// Falls back to extension-based detection when `ffprobe` is not installed,
+/// so media import still works (with limited metadata) on systems without FFmpeg.
 pub fn probe_media(file_path: &Path, ffprobe_bin: Option<&str>) -> Result<MediaMetadata> {
+    match probe_media_ffprobe(file_path, ffprobe_bin) {
+        Ok(meta) => Ok(meta),
+        Err(_) => probe_media_fallback(file_path),
+    }
+}
+
+/// Full probe via `ffprobe` subprocess.
+fn probe_media_ffprobe(file_path: &Path, ffprobe_bin: Option<&str>) -> Result<MediaMetadata> {
     let bin = ffprobe_bin.unwrap_or("ffprobe");
 
     let output = std::process::Command::new(bin)
@@ -75,16 +85,7 @@ pub fn probe_media(file_path: &Path, ffprobe_bin: Option<&str>) -> Result<MediaM
     } else if audio_stream.is_some() {
         MediaType::Audio
     } else {
-        // Fallback based on extension.
-        let ext = file_path
-            .extension()
-            .map(|e| e.to_string_lossy().to_lowercase())
-            .unwrap_or_default();
-        match ext.as_str() {
-            "png" | "jpg" | "jpeg" | "gif" | "webp" | "bmp" | "tiff" | "svg" => MediaType::Image,
-            "mp3" | "wav" | "flac" | "aac" | "ogg" | "m4a" | "wma" => MediaType::Audio,
-            _ => MediaType::Video,
-        }
+        media_type_from_extension(file_path)
     };
 
     // Extract video properties.
@@ -138,6 +139,84 @@ pub fn probe_media(file_path: &Path, ffprobe_bin: Option<&str>) -> Result<MediaM
         thumbnail_path: None,
         imported_at: Utc::now(),
     })
+}
+
+/// Lightweight fallback probe when `ffprobe` is not available.
+///
+/// Determines media type from file extension and reads basic file metadata.
+/// For images, attempts to read dimensions via the file header bytes.
+/// Does not populate codec, fps, duration, or audio properties.
+fn probe_media_fallback(file_path: &Path) -> Result<MediaMetadata> {
+    let file_name = file_path
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_default();
+
+    let file_size = std::fs::metadata(file_path).map(|m| m.len()).unwrap_or(0);
+    let media_type = media_type_from_extension(file_path);
+
+    // Try to read image dimensions from the file header.
+    let (width, height) = if media_type == MediaType::Image {
+        read_image_dimensions(file_path).unwrap_or((None, None))
+    } else {
+        (None, None)
+    };
+
+    Ok(MediaMetadata {
+        id: Uuid::new_v4().to_string(),
+        file_name,
+        file_path: file_path.to_string_lossy().to_string(),
+        file_size,
+        media_type,
+        width,
+        height,
+        duration_secs: None,
+        fps: None,
+        codec: None,
+        audio_codec: None,
+        sample_rate: None,
+        channels: None,
+        thumbnail_path: None,
+        imported_at: Utc::now(),
+    })
+}
+
+/// Determine [`MediaType`] from file extension alone.
+fn media_type_from_extension(file_path: &Path) -> MediaType {
+    let ext = file_path
+        .extension()
+        .map(|e| e.to_string_lossy().to_lowercase())
+        .unwrap_or_default();
+    match ext.as_str() {
+        "png" | "jpg" | "jpeg" | "gif" | "webp" | "bmp" | "tiff" | "svg" => MediaType::Image,
+        "mp3" | "wav" | "flac" | "aac" | "ogg" | "m4a" | "wma" => MediaType::Audio,
+        _ => MediaType::Video,
+    }
+}
+
+/// Read image dimensions from the file header (PNG and JPEG only).
+///
+/// Avoids pulling in heavyweight image crates — just reads the minimal
+/// header bytes needed for the two most common web formats.
+fn read_image_dimensions(file_path: &Path) -> Result<(Option<u32>, Option<u32>)> {
+    use std::io::Read;
+    let mut f = std::fs::File::open(file_path)?;
+    let mut header = [0u8; 32];
+    let n = f.read(&mut header)?;
+    if n < 8 {
+        return Ok((None, None));
+    }
+
+    // PNG: bytes 16..20 = width (BE u32), 20..24 = height (BE u32)
+    if header.starts_with(&[0x89, b'P', b'N', b'G']) && n >= 24 {
+        let w = u32::from_be_bytes([header[16], header[17], header[18], header[19]]);
+        let h = u32::from_be_bytes([header[20], header[21], header[22], header[23]]);
+        return Ok((Some(w), Some(h)));
+    }
+
+    // JPEG: need to scan for SOF0/SOF2 marker — skip for now, would require
+    // reading deeper into the file. Return None dimensions.
+    Ok((None, None))
 }
 
 /// Generate thumbnail images at evenly-spaced intervals using `ffmpeg`.
