@@ -138,8 +138,8 @@ impl MovieDubPipeline {
             Err(e) => {
                 warn!("Vocal separation failed: {e}");
                 progress(Phase::Separate, 1.0, "Separation failed, using silence");
-                let len = segments.last()
-                    .map(|s| mix::ms_to_samples(s.end_ms, self.config.output.sample_rate) + 44100)
+                let len = mix::wav_duration_ms(&audio_wav)
+                    .map(|ms| mix::ms_to_samples(ms, self.config.output.sample_rate))
                     .unwrap_or(44100);
                 vec![0.0f32; len]
             }
