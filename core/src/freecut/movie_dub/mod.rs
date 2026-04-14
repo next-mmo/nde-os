@@ -103,20 +103,40 @@ impl MovieDubPipeline {
         stt.extract_audio(video, &audio_wav).await?;
         progress(Phase::Extract, 1.0, "Audio extracted");
 
-        // Phase 2: Transcribe.
-        progress(Phase::Transcribe, 0.0, &format!("Transcribing ({})...", opts.source_lang));
-        let segments = stt.transcribe(&audio_wav, Some(opts.source_lang)).await?;
-        progress(Phase::Transcribe, 1.0, &format!("{} segments found", segments.len()));
+        // Phase 2+3: Either use provided SRT or Whisper+Translate.
+        let timed_texts = if let Some(srt_file) = &opts.srt_path {
+            // User provided a pre-translated SRT — skip Whisper + Lingva entirely.
+            progress(Phase::Transcribe, 0.0, "Using provided SRT file...");
+            progress(Phase::Transcribe, 1.0, "SRT loaded (skipped transcription)");
+            progress(Phase::Translate, 0.0, "Using provided SRT (skipped translation)");
+            let timed = Self::parse_srt_to_timed_texts(srt_file)?;
+            progress(Phase::Translate, 1.0, &format!("{} segments from SRT", timed.len()));
+            timed
+        } else {
+            // Phase 2: Transcribe.
+            progress(Phase::Transcribe, 0.0, &format!("Transcribing ({})...", opts.source_lang));
+            let segments = stt.transcribe(&audio_wav, Some(opts.source_lang)).await?;
+            progress(Phase::Transcribe, 1.0, &format!("{} segments found", segments.len()));
 
-        // Save segments.
-        let seg_json = serde_json::to_string_pretty(&segments)?;
-        std::fs::write(work.join("segments.json"), &seg_json)?;
+            // Save segments.
+            let seg_json = serde_json::to_string_pretty(&segments)?;
+            std::fs::write(work.join("segments.json"), &seg_json)?;
 
-        // Phase 3: Translate.
-        progress(Phase::Translate, 0.0, "Translating → Khmer...");
-        let translator = Translator::from_config(&self.config.translation);
-        let timed_texts = translator.translate_segments(&segments, Lang::Km).await?;
-        progress(Phase::Translate, 1.0, &format!("{} segments translated", timed_texts.len()));
+            if opts.export_orig_srt {
+                let orig_srt_path = work.join("original_subtitles.srt");
+                let orig_srt_entries: Vec<(u64, u64, String)> = segments.iter()
+                    .map(|s| (s.start_ms, s.end_ms, s.source_text.clone()))
+                    .collect();
+                mix::generate_srt(&orig_srt_entries, &orig_srt_path)?;
+            }
+
+            // Phase 3: Translate.
+            progress(Phase::Translate, 0.0, "Translating → Khmer...");
+            let translator = Translator::from_config(&self.config.translation);
+            let timed = translator.translate_segments(&segments, Lang::Km).await?;
+            progress(Phase::Translate, 1.0, &format!("{} segments translated", timed.len()));
+            timed
+        };
 
         // Generate subtitles if requested.
         let srt_path = work.join("khmer_subtitles.srt");
@@ -130,18 +150,23 @@ impl MovieDubPipeline {
         // Phase 4: Separate background audio.
         progress(Phase::Separate, 0.0, "Separating vocals from background...");
         let bg_path = work.join("separated");
-        let bg_audio = match mix::separate_audio(&audio_wav, &bg_path, self.demucs_path.as_deref(), &self.ffmpeg_path).await {
-            Ok((_, bg)) => {
-                progress(Phase::Separate, 1.0, "Vocal separation complete");
-                bg
-            }
-            Err(e) => {
-                warn!("Vocal separation failed: {e}");
-                progress(Phase::Separate, 1.0, "Separation failed, using silence");
-                let len = mix::wav_duration_ms(&audio_wav)
-                    .map(|ms| mix::ms_to_samples(ms, self.config.output.sample_rate))
-                    .unwrap_or(44100);
-                vec![0.0f32; len]
+        let bg_audio = if opts.export_mode == pipeline::ExportMode::SpeechOnly {
+            let len = mix::wav_duration_ms(&audio_wav).map(|ms| mix::ms_to_samples(ms, self.config.output.sample_rate)).unwrap_or(44100);
+            vec![0.0f32; len]
+        } else {
+            match mix::separate_audio(&audio_wav, &bg_path, self.demucs_path.as_deref(), &self.ffmpeg_path).await {
+                Ok((_, bg)) => {
+                    progress(Phase::Separate, 1.0, "Vocal separation complete");
+                    bg
+                }
+                Err(e) => {
+                    warn!("Vocal separation failed: {e}");
+                    progress(Phase::Separate, 1.0, "Separation failed, using silence");
+                    let len = mix::wav_duration_ms(&audio_wav)
+                        .map(|ms| mix::ms_to_samples(ms, self.config.output.sample_rate))
+                        .unwrap_or(44100);
+                    vec![0.0f32; len]
+                }
             }
         };
 
@@ -209,11 +234,34 @@ impl MovieDubPipeline {
             total_samples: bg_audio.len(),
             sample_rate,
         };
-        let final_audio = mix::mix_final(&bg_audio, &placed_segments, &mix_params);
+        let segments_to_mix = if opts.export_mode == pipeline::ExportMode::BackgroundOnly {
+            vec![]
+        } else {
+            placed_segments
+        };
+        let final_audio = mix::mix_final(&bg_audio, &segments_to_mix, &mix_params);
 
         let dubbed_wav = work.join("_dubbed_temp.wav");
         mix::write_wav(&dubbed_wav, &final_audio, sample_rate)?;
         progress(Phase::Mix, 1.0, "Audio mixed");
+
+        // Copy SRTs next to output.
+        let output_mp4 = &opts.output_path;
+        let final_parent = output_mp4.parent().unwrap_or(std::path::Path::new(""));
+        if opts.export_orig_srt {
+            let orig_src = work.join("original_subtitles.srt");
+            if orig_src.exists() {
+                let orig_dst = final_parent.join(format!("{}_orig.srt", output_mp4.file_stem().unwrap_or_default().to_string_lossy()));
+                let _ = std::fs::copy(&orig_src, &orig_dst);
+            }
+        }
+        if opts.generate_subtitles {
+            let translated_src = work.join("khmer_subtitles.srt");
+            if translated_src.exists() {
+                let translated_dst = final_parent.join(format!("{}_translated.srt", output_mp4.file_stem().unwrap_or_default().to_string_lossy()));
+                let _ = std::fs::copy(&translated_src, &translated_dst);
+            }
+        }
 
         // Phase 7: Remux → MP4.
         progress(Phase::Export, 0.0, "Building final MP4...");
@@ -345,6 +393,110 @@ impl MovieDubPipeline {
         mix::write_wav(output_path, &final_audio, sample_rate)?;
 
         Ok(output_path.to_path_buf())
+    }
+
+    /// Parse a standard SRT file into `Vec<TimedText>` for direct TTS consumption.
+    ///
+    /// SRT format:
+    /// ```
+    /// 1
+    /// 00:00:00,000 --> 00:00:05,100
+    /// Some translated text here.
+    /// ```
+    fn parse_srt_to_timed_texts(srt_path: &Path) -> Result<Vec<TimedText>> {
+        let content = std::fs::read_to_string(srt_path)
+            .with_context(|| format!("Failed to read SRT file: {}", srt_path.display()))?;
+
+        let mut results = Vec::new();
+        let mut lines = content.lines().peekable();
+        let mut id: u32 = 0;
+
+        while lines.peek().is_some() {
+            // Skip blank lines.
+            while lines.peek().map_or(false, |l| l.trim().is_empty()) {
+                lines.next();
+            }
+
+            // Sequence number line (e.g. "1").
+            let seq_line = match lines.next() {
+                Some(l) if l.trim().parse::<u32>().is_ok() => l.trim().to_string(),
+                Some(_) => continue,
+                None => break,
+            };
+            let _ = seq_line; // consumed but unused
+
+            // Timestamp line (e.g. "00:00:00,000 --> 00:00:05,100").
+            let ts_line = match lines.next() {
+                Some(l) => l.trim().to_string(),
+                None => break,
+            };
+
+            let (start_ms, end_ms) = Self::parse_srt_timestamp_line(&ts_line)?;
+
+            // Text lines (until blank line or EOF).
+            let mut text_parts = Vec::new();
+            while lines.peek().map_or(false, |l| !l.trim().is_empty()) {
+                text_parts.push(lines.next().unwrap().trim().to_string());
+            }
+            let text = text_parts.join(" ");
+            if text.is_empty() {
+                continue;
+            }
+
+            id += 1;
+            let seg = Segment {
+                id,
+                start_ms,
+                end_ms,
+                source_text: text.clone(),
+                source_lang: Lang::Km,
+                speaker_id: None,
+            };
+            let duration = end_ms.saturating_sub(start_ms);
+            results.push(TimedText {
+                segment: seg,
+                translated_text: text,
+                target_lang: Lang::Km,
+                estimated_duration_ms: duration,
+                syllable_count: None,
+                provider_used: "srt_import".to_string(),
+                stretch_ratio: 1.0,
+            });
+        }
+
+        info!("Parsed {} segments from SRT: {}", results.len(), srt_path.display());
+        Ok(results)
+    }
+
+    /// Parse "HH:MM:SS,mmm --> HH:MM:SS,mmm" into (start_ms, end_ms).
+    fn parse_srt_timestamp_line(line: &str) -> Result<(u64, u64)> {
+        let parts: Vec<&str> = line.split("-->").collect();
+        if parts.len() != 2 {
+            anyhow::bail!("Invalid SRT timestamp line: {}", line);
+        }
+        let start = Self::parse_srt_time(parts[0].trim())?;
+        let end = Self::parse_srt_time(parts[1].trim())?;
+        Ok((start, end))
+    }
+
+    /// Parse "HH:MM:SS,mmm" into milliseconds.
+    fn parse_srt_time(s: &str) -> Result<u64> {
+        // Handle both comma and period separators.
+        let s = s.replace(',', ".");
+        let parts: Vec<&str> = s.split(':').collect();
+        if parts.len() != 3 {
+            anyhow::bail!("Invalid SRT time format: {}", s);
+        }
+        let h: u64 = parts[0].parse().context("Invalid hours")?;
+        let m: u64 = parts[1].parse().context("Invalid minutes")?;
+        let sec_parts: Vec<&str> = parts[2].split('.').collect();
+        let sec: u64 = sec_parts[0].parse().context("Invalid seconds")?;
+        let ms: u64 = if sec_parts.len() > 1 {
+            sec_parts[1].parse().context("Invalid milliseconds")?
+        } else {
+            0
+        };
+        Ok(h * 3_600_000 + m * 60_000 + sec * 1_000 + ms)
     }
 }
 

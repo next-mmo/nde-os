@@ -12,6 +12,10 @@ use std::path::{Path, PathBuf};
 pub struct DubVideoRequest {
     pub input_path: String,
     pub output_path: Option<String>,
+    pub export_orig_srt: Option<bool>,
+    pub export_mode: Option<String>,
+    /// Path to a pre-translated SRT file. Skips Whisper + Translation when provided.
+    pub srt_path: Option<String>,
 }
 
 /// POST /api/freecut/dub
@@ -68,13 +72,35 @@ pub fn handle_dub(
         Err(e) => return err(500, &format!("Pipeline init error: {}", e)),
     };
 
+    let export_mode = match payload.export_mode.as_deref() {
+        Some("SpeechOnly") => ai_launcher_core::freecut::movie_dub::pipeline::ExportMode::SpeechOnly,
+        Some("BackgroundOnly") => ai_launcher_core::freecut::movie_dub::pipeline::ExportMode::BackgroundOnly,
+        Some("DualAudio") => {
+            // we handle DualAudio differently, but we can keep MergeAll as the mode
+            ai_launcher_core::freecut::movie_dub::pipeline::ExportMode::MergeAll
+        }
+        _ => ai_launcher_core::freecut::movie_dub::pipeline::ExportMode::MergeAll,
+    };
+    
+    let is_dual = payload.export_mode.as_deref() == Some("DualAudio");
+
+    let srt_path = payload.srt_path.as_ref().map(|p| {
+        match std::fs::canonicalize(p) {
+            Ok(cp) => cp,
+            Err(_) => PathBuf::from(p),
+        }
+    });
+
     let opts = DubVideoOptions {
         input_path,
         output_path: output_path.clone(),
         source_lang: Lang::En,
-        dual_audio: false,
+        dual_audio: is_dual,
         generate_subtitles: true,
+        export_orig_srt: payload.export_orig_srt.unwrap_or(false),
+        export_mode,
         burn_subtitles: false,
+        srt_path,
     };
 
     // Run blocking wait

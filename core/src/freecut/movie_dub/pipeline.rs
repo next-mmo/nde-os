@@ -57,5 +57,22 @@ pub struct DubVideoOptions {
     pub source_lang: super::lang::Lang,
     pub dual_audio: bool,
     pub generate_subtitles: bool,
+    pub export_orig_srt: bool,
+    pub export_mode: ExportMode,
     pub burn_subtitles: bool,
+    /// If provided, skip Whisper + Translation and use this pre-translated SRT directly.
+    pub srt_path: Option<std::path::PathBuf>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ExportMode {
+    MergeAll,
+    BackgroundOnly,
+    SpeechOnly,
+}
+
+impl Default for ExportMode {
+    fn default() -> Self {
+        Self::MergeAll
+    }
 }
