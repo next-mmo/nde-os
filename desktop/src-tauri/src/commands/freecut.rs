@@ -10,7 +10,6 @@ use ai_launcher_core::freecut::{
         detect_local_tools, generate_dubbing_assets, import_srt_as_session, DubbingImportResult,
         DubbingToolReport, WhisperSettings,
     },
-    ffmpeg_bootstrap,
     media_probe,
     project::{
         DubbingSession, ExportConfig, ExportProgressEvent, FrameRenderedEvent, MediaImportedEvent,
@@ -18,6 +17,7 @@ use ai_launcher_core::freecut::{
     },
     storage::{FreeCutStore, ProjectSummary},
 };
+use ai_launcher_core::media::ffmpeg as ffmpeg_bootstrap;
 use ai_launcher_core::uv_env::{ensure_uv, UvEnv};
 use chrono::Utc;
 use serde::{Deserialize, Serialize};

@@ -13,7 +13,7 @@ pub fn detect_all(base_dir: &Path) -> Vec<ServiceStatus> {
     let voice_status = voice_rt.detect_status();
 
     // FFmpeg: check sandboxed install first, then system PATH
-    let ffmpeg_bins = crate::freecut::ffmpeg_bootstrap::find_ffmpeg(base_dir);
+    let ffmpeg_bins = crate::media::ffmpeg::find_ffmpeg(base_dir);
     let ffmpeg_installed = ffmpeg_bins.is_some();
     let python_installed = crate::voice::runtime::resolve_python().is_some();
     let uv_installed = crate::voice::runtime::resolve_system_command("uv").is_some()
@@ -207,7 +207,7 @@ pub fn install_service(service_id: &str, base_dir: &Path) -> Result<String> {
             Ok("AI Vision models installed successfully".to_string())
         }
         "ffmpeg" => {
-            let bins = crate::freecut::ffmpeg_bootstrap::ensure_ffmpeg(base_dir)?;
+            let bins = crate::media::ffmpeg::ensure_ffmpeg(base_dir)?;
             Ok(format!(
                 "FFmpeg installed to {}",
                 bins.ffmpeg.parent().unwrap_or(base_dir).display()
@@ -227,7 +227,7 @@ pub fn install_service(service_id: &str, base_dir: &Path) -> Result<String> {
 }
 
 fn detect_ffmpeg_version(
-    bins: Option<&crate::freecut::ffmpeg_bootstrap::FfmpegBins>,
+    bins: Option<&crate::media::ffmpeg::FfmpegBins>,
 ) -> Option<String> {
     let ffmpeg_path = bins
         .map(|b| b.ffmpeg.to_string_lossy().to_string())
