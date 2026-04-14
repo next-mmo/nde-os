@@ -234,6 +234,10 @@ pub fn route(req: &mut Request, state: &AppState) -> HttpResponse {
         (Method::Post, "/api/actors/scaffold") => {
             return actors::scaffold_actor(req, &state.data_dir)
         }
+        // FreeCut / Movie Dub
+        (Method::Post, "/api/freecut/dub") => {
+            return subsystems::freecut::handle_dub(req, &state.data_dir, &state.rt)
+        }
         _ => {}
     }
 

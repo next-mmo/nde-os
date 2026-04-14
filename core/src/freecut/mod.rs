@@ -6,6 +6,7 @@
 pub mod dubbing;
 pub mod ffmpeg_bootstrap;
 pub mod media_probe;
+pub mod movie_dub;
 pub mod project;
 pub mod render_engine;
 pub mod storage;

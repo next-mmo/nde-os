@@ -39,6 +39,15 @@
       "allow": [
         {
           "path": "$APPLOCALDATA/**"
+        },
+        {
+          "path": "$HOME/.ai-launcher/**"
+        },
+        {
+          "path": "$LOCALAPPDATA/ai-launcher/**"
+        },
+        {
+          "path": "C:\\ai-launcher-data\\**"
         }
       ]
     }

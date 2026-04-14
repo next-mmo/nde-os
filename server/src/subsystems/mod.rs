@@ -1,7 +1,8 @@
 /// Channel, MCP, Skills, Knowledge, Memory handlers.
 /// These expose core subsystem data to the desktop UI.
-/// Skills / Knowledge / Memory now use real core modules with OpenViking fallback.
 use crate::response::*;
+
+pub mod freecut;
 
 use serde_json::Value;
 use std::fs;

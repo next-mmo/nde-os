@@ -1,6 +1,6 @@
 //! Service registry — detects and installs all NDE-OS service dependencies.
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use std::path::Path;
 
 use super::types::{ServiceGroup, ServiceStatus};
@@ -29,6 +29,9 @@ pub fn detect_all(base_dir: &Path) -> Vec<ServiceStatus> {
     let vision_rt = crate::freecut::vision::VisionRuntime::new(base_dir);
     let vision_installed = vision_rt.is_installed();
 
+    // Demucs: vocal separation for movie dubbing
+    let demucs_installed = voice_rt.resolve_tool("demucs").is_some();
+
     // LDPlayer: detect if the Android emulator is installed on this system
     let ld_detection = crate::shield::ldplayer::detect_ldplayer();
 
@@ -41,7 +44,7 @@ pub fn detect_all(base_dir: &Path) -> Vec<ServiceStatus> {
             installed: voice_status.edge_tts_available && voice_status.whisper_available,
             version: None,
             path: voice_status.runtime_path.clone(),
-            used_by: vec!["FreeCut".to_string()],
+            used_by: vec!["FreeCut".to_string(), "MovieDub".to_string()],
             optional: true,
             details: if voice_status.edge_tts_available && voice_status.whisper_available {
                 Some("Edge TTS + Whisper ready".to_string())
@@ -81,7 +84,7 @@ pub fn detect_all(base_dir: &Path) -> Vec<ServiceStatus> {
             version: detect_ffmpeg_version(ffmpeg_bins.as_ref()),
             path: ffmpeg_bins.as_ref()
                 .map(|bins| bins.ffmpeg.to_string_lossy().to_string()),
-            used_by: vec!["FreeCut".to_string()],
+            used_by: vec!["FreeCut".to_string(), "MovieDub".to_string()],
             optional: false,
             details: if ffmpeg_installed {
                 Some("ffmpeg + ffprobe ready".to_string())
@@ -148,6 +151,23 @@ pub fn detect_all(base_dir: &Path) -> Vec<ServiceStatus> {
                 Some("Ready".to_string()) 
             } else { 
                 Some("Requires installation via Service Hub".to_string()) 
+            },
+        },
+        ServiceStatus {
+            id: "demucs".to_string(),
+            name: "Demucs".to_string(),
+            description: "AI vocal separation for isolating background music/SFX from dialogue".to_string(),
+            group: ServiceGroup::Ai,
+            installed: demucs_installed,
+            version: None,
+            path: voice_rt.resolve_tool("demucs")
+                .map(|p| p.to_string_lossy().to_string()),
+            used_by: vec!["MovieDub".to_string()],
+            optional: true,
+            details: if demucs_installed {
+                Some("Ready".to_string())
+            } else {
+                Some("Optional — install for better background audio separation".to_string())
             },
         },
         ServiceStatus {
@@ -219,6 +239,18 @@ pub fn install_service(service_id: &str, base_dir: &Path) -> Result<String> {
         "rvc" => {
             anyhow::bail!("RVC requires manual setup: clone the RVC repo and configure model paths in the app")
         }
+        "demucs" => {
+            // Install demucs into the voice runtime venv.
+            let rt = VoiceRuntime::new(base_dir);
+            let uv_bin = crate::uv_env::ensure_uv(base_dir)
+                .context("failed to ensure uv binary for demucs install")?;
+            let uv = crate::uv_env::UvEnv::new(&uv_bin, rt.workspace_dir(), "3.11");
+            uv.ensure_python().context("failed to ensure Python for demucs")?;
+            uv.create_venv().context("failed to create venv for demucs")?;
+            uv.install_deps(&["demucs".to_string()])
+                .context("failed to install demucs")?;
+            Ok("Demucs installed into NDE-OS voice runtime".to_string())
+        }
         "ldplayer" => {
             anyhow::bail!("LDPlayer must be installed manually from https://www.ldplayer.net — download and install, then restart NDE-OS")
         }
@@ -277,6 +309,7 @@ mod tests {
         assert!(ids.contains(&"rvc"));
         assert!(ids.contains(&"openviking"));
         assert!(ids.contains(&"ai-vision-runtime"));
+        assert!(ids.contains(&"demucs"));
         assert!(ids.contains(&"ldplayer"));
     }
 }

@@ -205,7 +205,7 @@
   let previewFrame = $state<number | null>(null);
 
   // Derived
-  let totalFrames = $derived(currentProject?.duration ?? ti.maxItemEndFrame);
+  let totalFrames = $derived(currentProject?.duration || ti.maxItemEndFrame || 1);
   let fps = $derived(currentProject?.metadata.fps ?? ti.fps);
   let currentTime = $derived(formatTimecode(pb.currentFrame, fps));
   let totalTime = $derived(formatTimecode(totalFrames, fps));
@@ -399,9 +399,13 @@
         }
       }),
       await listen("freecut://frame-rendered", (event: any) => {
-        const { frame, bitmapPath } = event.payload;
-        if (frame === pb.currentFrame) {
+        const { bitmapPath } = event.payload;
+        // Always accept the latest rendered frame — during playback the playhead
+        // moves faster than FFmpeg can render, so demanding exact frame match
+        // would cause the preview to never update.
+        if (bitmapPath) {
           renderedFramePath = bitmapPath;
+          renderEpoch++;
         }
       }),
       await listen("freecut://export-progress", (event: any) => {
@@ -485,24 +489,51 @@
   // ─── Request frame render from Rust backend on frame change ───────────
   let lastRenderedFrame = -1;
   let isRendering = false;
+  let renderEpoch = $state(0);
+  let pendingRenderFrame: number | null = null;
+
+  function requestRender(frame: number) {
+    if (!currentProject) return;
+    if (isRendering) {
+      // Queue latest frame — when the current render finishes we'll pick this up
+      pendingRenderFrame = frame;
+      return;
+    }
+    isRendering = true;
+    lastRenderedFrame = frame;
+
+    const projectState = {
+      ...currentProject,
+      timeline: {
+        items: itemsStore.getState().items,
+        tracks: itemsStore.getState().tracks,
+      }
+    };
+
+    invoke("freecut_render_frame", { project: projectState, frame })
+      .then((pathStr: any) => {
+        // Use the direct return value — the event listener is a backup
+        if (pathStr) {
+          renderedFramePath = pathStr as string;
+          renderEpoch++;
+        }
+      })
+      .catch(console.error)
+      .finally(() => {
+        isRendering = false;
+        // If a newer frame was requested while we were rendering, fire it now
+        if (pendingRenderFrame !== null && pendingRenderFrame !== lastRenderedFrame) {
+          const next = pendingRenderFrame;
+          pendingRenderFrame = null;
+          requestRender(next);
+        }
+      });
+  }
 
   $effect(() => {
     const frame = pb.currentFrame;
-    if (frame !== lastRenderedFrame && currentProject && !isRendering) {
-      isRendering = true;
-      lastRenderedFrame = frame;
-
-      const projectState = {
-        ...currentProject,
-        timeline: {
-          items: itemsStore.getState().items,
-          tracks: itemsStore.getState().tracks,
-        }
-      };
-
-      invoke("freecut_render_frame", { project: projectState, frame })
-        .catch(console.error)
-        .finally(() => { isRendering = false; });
+    if (frame !== lastRenderedFrame && currentProject) {
+      requestRender(frame);
     }
   });
 
@@ -2409,7 +2440,7 @@
             style:height="100%"
           >
             {#if renderedFramePath}
-              <img src={assetUrl(renderedFramePath)} alt="Preview" class="w-full h-full object-contain" />
+              <img src="{assetUrl(renderedFramePath)}?t={renderEpoch}" alt="Preview" class="w-full h-full object-contain" />
             {:else}
               <div class="w-full h-full flex items-center justify-center text-white/10">
                 <Film class="w-12 h-12" />
