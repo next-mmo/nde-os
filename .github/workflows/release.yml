@@ -62,7 +62,6 @@ jobs:
       - name: Rust cache
         uses: swatinem/rust-cache@v2
         with:
-          workspaces: desktop/src-tauri
           cache-on-failure: true
 
       # ── Node + pnpm ──────────────────────────────────────────────
@@ -80,6 +79,25 @@ jobs:
         working-directory: desktop
         run: pnpm install --frozen-lockfile
 
+      - name: Sync workspace versions to Release Tag
+        shell: bash
+        run: |
+          TAG="${{ inputs.tag || github.ref_name }}"
+          VERSION="${TAG#v}"
+          echo "Setting bundle version to: $VERSION"
+          python3 -c "import json, re;
+          version = '$VERSION';
+          def up_json(p, k):
+              with open(p, 'r') as f: d=json.load(f)
+              if k in d: d[k] = version
+              with open(p, 'w') as f: json.dump(d, f, indent=2)
+          up_json('desktop/package.json', 'version')
+          up_json('desktop/src-tauri/tauri.conf.json', 'version')
+          with open('desktop/src-tauri/Cargo.toml', 'r') as f: c = f.read()
+          c = re.sub(r'(?m)^version\s*=\s*\".*?\"', f'version = \"{version}\"', c, count=1)
+          with open('desktop/src-tauri/Cargo.toml', 'w') as f: f.write(c)
+          "
+
       # ── Build Tauri ──────────────────────────────────────────────
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0
@@ -87,13 +105,19 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         with:
           projectPath: desktop
           tauriScript: pnpm tauri
-          tagName: ${{ github.ref_name }}
-          releaseName: 'AI Launcher ${{ github.ref_name }}'
+          tagName: ${{ inputs.tag || github.ref_name }}
+          releaseName: 'AI Launcher ${{ inputs.tag || github.ref_name }}'
           releaseBody: |
-            ## NDE-OS AI Launcher ${{ github.ref_name }}
+            ## NDE-OS AI Launcher ${{ inputs.tag || github.ref_name }}
 
             Cross-platform sandboxed AI app manager with OpenViking context database.
 
@@ -103,6 +127,14 @@ jobs:
             | Windows  | `.msi` / `.exe` |
             | macOS    | `.dmg` |
             | Linux    | `.deb` / `.AppImage` |
+
+            ### ⚠️ macOS Users
+            If you do not have to sign with an Apple Developer certificate, macOS will block the app as "damaged" due to Gatekeeper quarantine. To fix this, run the following command in your Terminal after moving the app to your Applications folder:
+            
+            ```bash
+            xattr -cr "/Applications/AI Launcher.app"
+            ```
+            You can then open the app normally.
 
             ### What's New
             See [CHANGELOG](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md) for details.
