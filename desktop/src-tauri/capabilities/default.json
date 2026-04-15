@@ -50,6 +50,15 @@
           "path": "C:\\ai-launcher-data\\**"
         }
       ]
+    },
+    {
+      "identifier": "core:asset-protocol:allow-read",
+      "allow": [
+        { "path": "$HOME/.ai-launcher/**" },
+        { "path": "$APPLOCALDATA/**" },
+        { "path": "$LOCALAPPDATA/ai-launcher/**" },
+        { "path": "C:\\ai-launcher-data\\**" }
+      ]
     }
   ]
 }
