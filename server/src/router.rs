@@ -238,10 +238,64 @@ pub fn route(req: &mut Request, state: &AppState) -> HttpResponse {
         (Method::Post, "/api/freecut/dub") => {
             return subsystems::freecut::handle_dub(req, &state.data_dir, &state.rt)
         }
+        (Method::Post, "/api/freecut/dub/split") => {
+            return subsystems::freecut::handle_split(req, &state.data_dir, &state.rt)
+        }
+        (Method::Post, "/api/freecut/dub/split-stream") => {
+            return subsystems::freecut::handle_split_stream(req, &state.data_dir, &state.rt)
+        }
+        (Method::Post, "/api/freecut/dub/part") => {
+            return subsystems::freecut::handle_dub_part(req, &state.data_dir, &state.rt)
+        }
+        (Method::Post, "/api/freecut/dub/merge") => {
+            return subsystems::freecut::handle_merge(req, &state.data_dir, &state.rt)
+        }
+        (Method::Post, "/api/freecut/dub/all") => {
+            return subsystems::freecut::handle_dub_all(req, &state.data_dir, &state.rt)
+        }
+        (Method::Post, "/api/freecut/dub/srt/read") => {
+            return subsystems::freecut::handle_read_srt(req, &state.data_dir)
+        }
+        (Method::Post, "/api/freecut/dub/srt/save") => {
+            return subsystems::freecut::handle_save_srt(req, &state.data_dir)
+        }
+        // ── FFmpeg Tools ────────────────────────────────────────────
+        (Method::Post, "/api/freecut/ffmpeg/convert") => {
+            return subsystems::freecut::handle_ffmpeg_convert(req, &state.data_dir, &state.rt)
+        }
+        (Method::Post, "/api/freecut/ffmpeg/extract-audio") => {
+            return subsystems::freecut::handle_ffmpeg_extract_audio(req, &state.data_dir, &state.rt)
+        }
+        (Method::Post, "/api/freecut/ffmpeg/trim") => {
+            return subsystems::freecut::handle_ffmpeg_trim(req, &state.data_dir, &state.rt)
+        }
+        (Method::Post, "/api/freecut/ffmpeg/compress") => {
+            return subsystems::freecut::handle_ffmpeg_compress(req, &state.data_dir, &state.rt)
+        }
+        (Method::Post, "/api/freecut/ffmpeg/resize") => {
+            return subsystems::freecut::handle_ffmpeg_resize(req, &state.data_dir, &state.rt)
+        }
+        (Method::Post, "/api/freecut/ffmpeg/remove-audio") => {
+            return subsystems::freecut::handle_ffmpeg_remove_audio(req, &state.data_dir, &state.rt)
+        }
+        (Method::Post, "/api/freecut/ffmpeg/gif") => {
+            return subsystems::freecut::handle_ffmpeg_gif(req, &state.data_dir, &state.rt)
+        }
+        (Method::Post, "/api/freecut/ffmpeg/info") => {
+            return subsystems::freecut::handle_ffmpeg_info(req, &state.data_dir, &state.rt)
+        }
         _ => {}
     }
 
     // ── Dynamic routes (path params) ────────────────────────────────────────
+
+    // FreeCut dub job status: /api/freecut/dub/job/{job_id}
+    if path.starts_with("/api/freecut/dub/job/") {
+        let job_id = path.trim_start_matches("/api/freecut/dub/job/");
+        if !job_id.is_empty() {
+            return subsystems::freecut::handle_job_status(job_id, &state.data_dir);
+        }
+    }
 
     // Agent task routes: /api/agent/tasks/{id}/...
     if path.starts_with("/api/agent/tasks/") {

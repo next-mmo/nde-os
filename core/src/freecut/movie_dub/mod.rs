@@ -8,9 +8,11 @@
 
 pub mod config;
 pub mod lang;
+pub mod merge;
 pub mod mix;
 pub mod pipeline;
 pub mod segment;
+pub mod split;
 pub mod stt;
 pub mod sync;
 pub mod translate;

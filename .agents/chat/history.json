@@ -1,0 +1,18 @@
+{
+  "messages": [
+    {
+      "id": 1,
+      "role": "user",
+      "content": "/todo_add Build a sample app",
+      "timestamp": "2026-04-15T08:30:40.921Z"
+    },
+    {
+      "id": 2,
+      "role": "assistant",
+      "content": "✅ **Task created:** Build a sample app\n📄 File: `build-a-sample-app.md`",
+      "timestamp": "2026-04-15T08:30:40.931Z"
+    }
+  ],
+  "conversation_id": null,
+  "msg_counter": 2
+}

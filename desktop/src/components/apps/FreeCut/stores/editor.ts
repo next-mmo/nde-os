@@ -6,7 +6,7 @@
 
 import { createStore } from 'zustand/vanilla';
 
-export type EditorTab = 'media' | 'effects' | 'transitions' | 'text' | 'audio' | 'shapes' | 'dubbing';
+export type EditorTab = 'media' | 'effects' | 'transitions' | 'text' | 'audio' | 'shapes' | 'dubbing' | 'tools';
 export type ClipInspectorTab = 'transform' | 'effects' | 'audio' | 'speed' | 'color';
 
 export interface EditorState {
