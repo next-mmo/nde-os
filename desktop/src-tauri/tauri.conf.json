@@ -29,10 +29,9 @@
       "assetProtocol": {
         "enable": true,
         "scope": [
-          "$HOME/**",
-          "$APPLOCALDATA/**",
-          "$LOCALAPPDATA/**",
-          "C:\\ai-launcher-data\\**"
+          "$HOME/.ai-launcher/**/*",
+          "$APPLOCALDATA/**/*",
+          "$LOCALAPPDATA/ai-launcher/**/*"
         ]
       }
     }

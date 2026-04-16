@@ -14,7 +14,6 @@ use std::time::{Duration, Instant};
 use tokio::sync::{broadcast, mpsc, Mutex};
 use tokio_util::sync::CancellationToken;
 
-use super::models::{AgentTask, TaskState};
 use super::protocol::AgentEvent;
 use super::store::TaskStore;
 

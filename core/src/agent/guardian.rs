@@ -10,7 +10,7 @@ use std::path::Path;
 use crate::security::audit::AuditTrail;
 use crate::security::injection::InjectionScanner;
 use crate::security::metering::ComputeMeter;
-use crate::security::policy::{PolicyVerdict, ToolPolicy, ToolRisk};
+use crate::security::policy::{PolicyVerdict, ToolPolicy};
 
 /// Configuration for the Guardian.
 #[derive(Debug, Clone)]

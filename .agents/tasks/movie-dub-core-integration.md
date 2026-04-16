@@ -1,5 +1,6 @@
 # Movie Dub → NDE-OS Core Integration
 
+- **ID:** NDE-11
 **Status:** 🟢 done by AI  
 **Feature:** Integrate the standalone `movie-dub` (FangDub) pipeline into `core/src/freecut/` as a native NDE-OS module  
 **Purpose:** Unify the full end-to-end movie dubbing pipeline (STT → Translate → TTS → Sync → Mix → Remux) into the NDE-OS sandbox, reusing the existing Service Hub infrastructure for all external tool dependencies (FFmpeg, Whisper, edge-tts, demucs) instead of directly shelling out to host OS binaries.

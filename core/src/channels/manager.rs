@@ -1,4 +1,4 @@
-use super::{Channel, ChannelMessage, ChannelResponse, ChannelStatus, ChannelType};
+use super::{Channel, ChannelMessage, ChannelResponse, ChannelStatus};
 use anyhow::{anyhow, Result};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};

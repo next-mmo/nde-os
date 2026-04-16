@@ -2,7 +2,6 @@ use anyhow::{anyhow, Context, Result};
 use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 /// Cross-platform filesystem jail.
 /// Works on both Linux and Windows without WSL.

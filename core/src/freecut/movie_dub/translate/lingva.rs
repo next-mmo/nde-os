@@ -72,7 +72,7 @@ impl LingvaEngine {
         &self,
         base: &str,
         text: &str,
-        source: Lang,
+        _source: Lang,
         target: Lang,
     ) -> Result<String> {
         let encoded = urlencoding::encode(text);

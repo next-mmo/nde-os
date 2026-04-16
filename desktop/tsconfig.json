@@ -20,7 +20,9 @@
     "types": ["svelte", "vite/client"],
     "paths": {
       "$lib/*": ["src/lib/*"],
-      "🍎/*": ["src/*"]
+      "🍎/*": ["src/*"],
+      "@lucide/svelte": ["node_modules/lucide-svelte"],
+      "@lucide/svelte/*": ["node_modules/lucide-svelte/*"]
     }
   },
   "include": [

@@ -4,7 +4,6 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use super::manifest::*;
-use crate::shield::browser::BrowserEngine;
 
 // ─── Template Types ────────────────────────────────────────────────
 

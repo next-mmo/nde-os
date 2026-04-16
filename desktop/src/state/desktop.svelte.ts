@@ -600,7 +600,8 @@ export function openStaticApp(app_id: StaticAppID, data?: any) {
   }
 
   const config = apps_config[app_id];
-  const window = createWindow(app_id, config.title, config.width!, config.height!);
+  const savedGeo = loadWindowGeometry(app_id);
+  const window = createWindow(app_id, config.title, savedGeo?.width && savedGeo.width >= 200 ? savedGeo.width : config.width!, savedGeo?.height && savedGeo.height >= 200 ? savedGeo.height : config.height!);
   window.resizable = config.resizable!;
   window.expandable = config.expandable!;
   if (data) window.data = data;

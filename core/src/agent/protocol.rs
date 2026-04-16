@@ -7,7 +7,6 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 use super::models::TaskState;
-use crate::llm::Usage;
 
 /// A single event emitted by the agent runtime.
 ///

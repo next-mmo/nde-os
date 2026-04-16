@@ -1,7 +1,6 @@
 //! Shared types for the NDE-OS voice services (TTS + RVC).
 
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
 
 // ─── TTS ───────────────────────────────────────────────────────────────────────
 

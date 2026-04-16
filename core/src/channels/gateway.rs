@@ -1,4 +1,4 @@
-use super::{ChannelMessage, ChannelResponse, ChannelType};
+use super::{ChannelMessage, ChannelType};
 use serde::{Deserialize, Serialize};
 
 /// Normalize a raw platform message into a `ChannelMessage`.

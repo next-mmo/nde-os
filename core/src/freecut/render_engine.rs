@@ -15,7 +15,7 @@ use anyhow::{bail, Context, Result};
 use std::path::{Path, PathBuf};
 
 use super::project::{
-    FrameRenderedEvent, ItemType, Project, ProjectResolution, ProjectTimeline, TimelineItem,
+    ItemType, Project, ProjectResolution, ProjectTimeline, TimelineItem,
 };
 
 /// Rendered frame output.
@@ -243,8 +243,25 @@ fn render_composed_frame(
 
                         let x = eval_keyframe_at("x", base_x, &item.keyframes, item.from, frame);
                         let y = eval_keyframe_at("y", base_y, &item.keyframes, item.from, frame);
-                        let opacity = eval_keyframe_at("opacity", base_op, &item.keyframes, item.from, frame);
+                        let mut opacity = eval_keyframe_at("opacity", base_op, &item.keyframes, item.from, frame);
                         let scale = eval_keyframe_at("scale", base_sc, &item.keyframes, item.from, frame);
+
+                        // Apply video fade in/out as opacity modulation for preview.
+                        let item_offset = frame.saturating_sub(item.from) as f64;
+                        let item_dur = item.duration_in_frames as f64;
+                        if let Some(fi) = item.fade_in {
+                            if fi > 0.0 && item_offset < fi {
+                                opacity *= item_offset / fi;
+                            }
+                        }
+                        if let Some(fo) = item.fade_out {
+                            if fo > 0.0 {
+                                let fo_start = item_dur - fo;
+                                if item_offset > fo_start {
+                                    opacity *= ((item_dur - item_offset) / fo).clamp(0.0, 1.0);
+                                }
+                            }
+                        }
 
                         let base_w = item.transform.as_ref().and_then(|t| t.width).unwrap_or(res.width as f64);
                         let base_h = item.transform.as_ref().and_then(|t| t.height).unwrap_or(res.height as f64);
@@ -545,8 +562,22 @@ pub fn export_video(
                     item_dur / speed
                 ));
 
-                // Scale + format.
-                filter_parts.push(format!("{tr}scale={w:.0}:{h:.0},format=rgba{sc}"));
+                // Scale + format + video fades.
+                let mut scale_chain = format!("{tr}scale={w:.0}:{h:.0},format=rgba");
+                if let Some(fi) = item.fade_in {
+                    if fi > 0.0 {
+                        let fi_dur = fi / fps as f64;
+                        scale_chain.push_str(&format!(",fade=t=in:st=0:d={fi_dur:.4}"));
+                    }
+                }
+                if let Some(fo) = item.fade_out {
+                    if fo > 0.0 {
+                        let fo_dur = fo / fps as f64;
+                        let fo_start = (item_dur - fo_dur).max(0.0);
+                        scale_chain.push_str(&format!(",fade=t=out:st={fo_start:.4}:d={fo_dur:.4}"));
+                    }
+                }
+                filter_parts.push(format!("{scale_chain}{sc}"));
 
                 // Overlay with enable timing using x/y expressions.
                 let end_t = item_start + item_dur;
@@ -569,10 +600,24 @@ pub fn export_video(
                     if vol > 0.001 {
                         let delay_ms = (item_start * 1000.0) as i64;
                         let al = format!("[ao{input_idx}]");
-                        filter_parts.push(format!(
-                            "[{input_idx}:a]atrim=start={src_start:.6}:duration={:.6},asetpts=PTS-STARTPTS,adelay={delay_ms}|{delay_ms},volume={vol:.3}{al}",
+                        let mut audio_chain = format!(
+                            "[{input_idx}:a]atrim=start={src_start:.6}:duration={:.6},asetpts=PTS-STARTPTS,adelay={delay_ms}|{delay_ms},volume={vol:.3}",
                             item_dur / speed
-                        ));
+                        );
+                        if let Some(afi) = item.audio_fade_in {
+                            if afi > 0.0 {
+                                let afi_dur = afi / fps as f64;
+                                audio_chain.push_str(&format!(",afade=t=in:st=0:d={afi_dur:.4}"));
+                            }
+                        }
+                        if let Some(afo) = item.audio_fade_out {
+                            if afo > 0.0 {
+                                let afo_dur = afo / fps as f64;
+                                let afo_start = (item_dur - afo_dur).max(0.0);
+                                audio_chain.push_str(&format!(",afade=t=out:st={afo_start:.4}:d={afo_dur:.4}"));
+                            }
+                        }
+                        filter_parts.push(format!("{audio_chain}{al}"));
                         audio_labels.push(al);
                     }
                 }
@@ -595,9 +640,23 @@ pub fn export_video(
                 let delay_ms = (item_start * 1000.0) as i64;
 
                 let al = format!("[ao{input_idx}]");
-                filter_parts.push(format!(
-                    "[{input_idx}:a]atrim=start={src_start:.6}:duration={item_dur:.6},asetpts=PTS-STARTPTS,adelay={delay_ms}|{delay_ms},volume={vol:.3}{al}"
-                ));
+                let mut audio_chain = format!(
+                    "[{input_idx}:a]atrim=start={src_start:.6}:duration={item_dur:.6},asetpts=PTS-STARTPTS,adelay={delay_ms}|{delay_ms},volume={vol:.3}"
+                );
+                if let Some(afi) = item.audio_fade_in {
+                    if afi > 0.0 {
+                        let afi_dur = afi / fps as f64;
+                        audio_chain.push_str(&format!(",afade=t=in:st=0:d={afi_dur:.4}"));
+                    }
+                }
+                if let Some(afo) = item.audio_fade_out {
+                    if afo > 0.0 {
+                        let afo_dur = afo / fps as f64;
+                        let afo_start = (item_dur - afo_dur).max(0.0);
+                        audio_chain.push_str(&format!(",afade=t=out:st={afo_start:.4}:d={afo_dur:.4}"));
+                    }
+                }
+                filter_parts.push(format!("{audio_chain}{al}"));
                 audio_labels.push(al);
                 input_idx += 1;
             }
@@ -818,7 +877,21 @@ fn export_video_no_audio(
                     "[{input_idx}:v]trim=start={src_start:.6}:duration={:.6},setpts=PTS-STARTPTS{tr}",
                     item_dur / speed
                 ));
-                filter_parts.push(format!("{tr}scale={w:.0}:{h:.0},format=rgba{sc}"));
+                let mut scale_chain = format!("{tr}scale={w:.0}:{h:.0},format=rgba");
+                if let Some(fi) = item.fade_in {
+                    if fi > 0.0 {
+                        let fi_dur = fi / fps as f64;
+                        scale_chain.push_str(&format!(",fade=t=in:st=0:d={fi_dur:.4}"));
+                    }
+                }
+                if let Some(fo) = item.fade_out {
+                    if fo > 0.0 {
+                        let fo_dur = fo / fps as f64;
+                        let fo_start = (item_dur - fo_dur).max(0.0);
+                        scale_chain.push_str(&format!(",fade=t=out:st={fo_start:.4}:d={fo_dur:.4}"));
+                    }
+                }
+                filter_parts.push(format!("{scale_chain}{sc}"));
                 if opacity < 1.0 {
                     let al = format!("[va{input_idx}]");
                     filter_parts.push(format!("{sc}colorchannelmixer=aa={opacity:.3}{al}"));

@@ -238,7 +238,7 @@ fn find_available_engine(engine_mgr: &EngineManager) -> Result<(BrowserEngine, S
 
 /// Clean up raw body text from a browser.
 fn clean_body_text(text: &str) -> String {
-    let mut lines: Vec<&str> = text.lines().map(|l| l.trim()).collect();
+    let lines: Vec<&str> = text.lines().map(|l| l.trim()).collect();
 
     // Remove consecutive blank lines
     let mut result = String::new();

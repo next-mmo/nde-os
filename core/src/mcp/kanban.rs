@@ -1,8 +1,8 @@
 use anyhow::{anyhow, Result};
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use serde_json::json;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use super::server::McpServer;
 

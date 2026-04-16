@@ -1,7 +1,6 @@
 //! Edge TTS synthesis — wraps the `edge-tts` CLI as a global NDE-OS voice service.
 
 use anyhow::{anyhow, Result};
-use std::path::Path;
 use std::process::Command;
 
 use super::runtime::{run_checked_command, VoiceRuntime};

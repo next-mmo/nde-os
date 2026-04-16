@@ -6,7 +6,7 @@ use std::sync::Arc;
 use tokio::process::Command as TokioCommand;
 use tokio::sync::Mutex;
 
-use super::manifest::{ActorManager, ActorManifest, ActorRuntime};
+use super::manifest::{ActorManager, ActorRuntime};
 use super::storage::RunStorage;
 
 // ─── Run Status ────────────────────────────────────────────────────

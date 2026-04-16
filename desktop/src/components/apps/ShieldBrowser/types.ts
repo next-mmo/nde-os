@@ -4,6 +4,7 @@ export interface ShieldProfile {
   id: string;
   name: string;
   engine: string;
+  version: string;
   engine_version: string;
   is_running: boolean;
   last_launch: number | null;
@@ -17,11 +18,13 @@ export interface ShieldProfile {
 export interface ShieldStatus {
   total_profiles: number;
   running_profiles: number;
-  installed_engines: { engine: string; version: string }[];
+  installed_engines: { engine: string;
+  version: string; version: string }[];
 }
 
 export interface AvailableEngine {
   engine: string;
+  version: string;
   name: string;
   description: string;
   available: boolean;

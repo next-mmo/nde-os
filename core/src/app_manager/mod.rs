@@ -373,7 +373,7 @@ impl AppManager {
         {
             let mut running = self.running.lock().unwrap();
             if let Some(mut child) = running.remove(app_id) {
-                let pid = child.id();
+                let _pid = child.id();
 
                 #[cfg(windows)]
                 {

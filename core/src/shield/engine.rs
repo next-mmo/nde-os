@@ -290,7 +290,7 @@ fn extract_zip(archive_path: &Path, dest_dir: &Path) -> Result<()> {
 }
 
 fn extract_tar_gz(archive_path: &Path, dest_dir: &Path) -> Result<()> {
-    use std::io::Read;
+    
     let file = std::fs::File::open(archive_path).context("Failed to open tar.gz archive")?;
     let buf_reader = std::io::BufReader::new(file);
     let gz = flate2::read::GzDecoder::new(buf_reader);

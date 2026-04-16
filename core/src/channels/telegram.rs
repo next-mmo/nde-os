@@ -1,4 +1,4 @@
-use super::{Attachment, Channel, ChannelMessage, ChannelResponse, ChannelType};
+use super::{Channel, ChannelMessage, ChannelResponse, ChannelType};
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use serde::Deserialize;

@@ -108,7 +108,7 @@
           modelPath: null,
           indexPath: null,
           pitchShift: 0,
-          ...(speaker.rvc ?? {}),
+          enabled: speaker.rvc?.enabled ?? false, ...(speaker.rvc ?? {}),
           ...(byId.get(speaker.id)?.rvc ?? {}),
         },
       });
@@ -121,7 +121,7 @@
       ...session,
       speakers: session.speakers.map((speaker) =>
         speaker.id === speakerId
-          ? { ...speaker, ...patch, rvc: { ...(speaker.rvc ?? {}), ...(patch.rvc ?? {}) } }
+          ? { ...speaker, ...patch, rvc: { enabled: speaker.rvc?.enabled ?? false, ...(speaker.rvc ?? {}), ...(patch.rvc ?? {}) } }
           : speaker
       ),
     }));
@@ -914,15 +914,15 @@
                           <input
                             type="checkbox"
                             checked={speaker.rvc?.enabled ?? false}
-                            onchange={(e) => updateDubbingSpeaker(speaker.id, { rvc: { ...(speaker.rvc ?? {}), enabled: e.currentTarget.checked } })}
+                            onchange={(e) => updateDubbingSpeaker(speaker.id, { rvc: { enabled: speaker.rvc?.enabled ?? false, ...(speaker.rvc ?? {}), enabled: e.currentTarget.checked } })}
                           />
                           Enable RVC post-process
                         </label>
                         {#if speaker.rvc?.enabled}
                           <div class="grid grid-cols-1 gap-2">
-                            <input type="text" class="rounded-lg border border-white/10 bg-white/5 px-2 py-2 text-[11px] text-white" value={speaker.rvc?.cliPath ?? ""} placeholder="RVC CLI path" onchange={(e) => updateDubbingSpeaker(speaker.id, { rvc: { ...(speaker.rvc ?? {}), cliPath: e.currentTarget.value } })} />
-                            <input type="text" class="rounded-lg border border-white/10 bg-white/5 px-2 py-2 text-[11px] text-white" value={speaker.rvc?.modelPath ?? ""} placeholder="RVC model (.pth)" onchange={(e) => updateDubbingSpeaker(speaker.id, { rvc: { ...(speaker.rvc ?? {}), modelPath: e.currentTarget.value } })} />
-                            <input type="text" class="rounded-lg border border-white/10 bg-white/5 px-2 py-2 text-[11px] text-white" value={speaker.rvc?.indexPath ?? ""} placeholder="RVC index (.index)" onchange={(e) => updateDubbingSpeaker(speaker.id, { rvc: { ...(speaker.rvc ?? {}), indexPath: e.currentTarget.value } })} />
+                            <input type="text" class="rounded-lg border border-white/10 bg-white/5 px-2 py-2 text-[11px] text-white" value={speaker.rvc?.cliPath ?? ""} placeholder="RVC CLI path" onchange={(e) => updateDubbingSpeaker(speaker.id, { rvc: { enabled: speaker.rvc?.enabled ?? false, ...(speaker.rvc ?? {}), cliPath: e.currentTarget.value } })} />
+                            <input type="text" class="rounded-lg border border-white/10 bg-white/5 px-2 py-2 text-[11px] text-white" value={speaker.rvc?.modelPath ?? ""} placeholder="RVC model (.pth)" onchange={(e) => updateDubbingSpeaker(speaker.id, { rvc: { enabled: speaker.rvc?.enabled ?? false, ...(speaker.rvc ?? {}), modelPath: e.currentTarget.value } })} />
+                            <input type="text" class="rounded-lg border border-white/10 bg-white/5 px-2 py-2 text-[11px] text-white" value={speaker.rvc?.indexPath ?? ""} placeholder="RVC index (.index)" onchange={(e) => updateDubbingSpeaker(speaker.id, { rvc: { enabled: speaker.rvc?.enabled ?? false, ...(speaker.rvc ?? {}), indexPath: e.currentTarget.value } })} />
                           </div>
                         {/if}
                       </div>

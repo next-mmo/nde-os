@@ -5,10 +5,10 @@ use std::sync::Arc;
 use tokio::process::Command as TokioCommand;
 use tokio::sync::Mutex;
 
-use super::browser::{self, BrowserEngine, ProxyConfig};
+use super::browser::{self, BrowserEngine};
 use super::engine::EngineManager;
 use super::extension::ExtensionManager;
-use super::profile::{ProfileManager, ShieldProfile};
+use super::profile::ProfileManager;
 
 // ─── Running Browser Instance ──────────────────────────────────────
 

@@ -27,7 +27,7 @@ use super::project::{
 
 use crate::voice::{
     rvc as voice_rvc,
-    runtime::{resolve_python, resolve_system_command, run_checked_command, VoiceRuntime},
+    runtime::{run_checked_command, VoiceRuntime},
     tts as voice_tts,
     types::{RvcConvertRequest, TtsSynthesizeRequest},
 };

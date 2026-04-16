@@ -215,7 +215,7 @@ fn extract_readable_text(html: &str) -> String {
         let prefix = "#".repeat(i);
         let tag = format!("h{}", i);
         if let Some(content) = extract_tag_content(&text, &tag) {
-            let clean = clean_text(&strip_tags(&content));
+            let _clean = clean_text(&strip_tags(&content));
             text = text.replacen(&format!("<{}>", tag), &format!("\n{} ", prefix), 1);
         }
     }
@@ -289,7 +289,7 @@ fn decode_entities(text: &str) -> String {
 
 /// Clean up whitespace in text.
 fn clean_text(text: &str) -> String {
-    let mut lines: Vec<&str> = text.lines().map(|l| l.trim()).collect();
+    let lines: Vec<&str> = text.lines().map(|l| l.trim()).collect();
 
     // Remove consecutive blank lines
     let mut result = String::new();

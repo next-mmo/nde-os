@@ -106,11 +106,7 @@
   const dragDisabled = Compartment.of(() => disabled(window.fullscreen || !draggingEnabled));
   const isActive = $derived(activeWindow()?.id === window.id);
 
-  const savedGeo = loadWindowGeometry(window.app_id);
-  if (savedGeo) {
-    window.width = savedGeo.width;
-    window.height = savedGeo.height;
-  }
+
 
   const defaultPosition = () => {
     const vw = globalThis.innerWidth ?? 1280;

@@ -977,11 +977,11 @@
     currentView = "projects";
     mediaLibrary = [];
     renderedFramePath = null;
-    dubbingTools = null;
-    dubbingBusy = false;
-    dubbingError = null;
-    dubbingStatus = null;
-    dubbingProgress = null;
+    
+    
+    
+    
+    
     playbackStore.getState().setCurrentFrame(0);
     playbackStore.getState().pause();
     itemsStore.getState().setItems([]);
@@ -1128,7 +1128,7 @@
     } catch (e: any) {
       bgRemovalError = e?.toString?.() ?? "AI Background Removal failed";
       
-      if (bgRemovalError.includes("not installed")) {
+      if (bgRemovalError?.includes("not installed")) {
         import("🍎/state/desktop.svelte").then(({ openServiceHub }) => {
           openServiceHub({ require: ["ai-vision-runtime"], returnTo: "freecut" });
         });
@@ -2226,9 +2226,103 @@
                         </button>
                       </div>
                       <input type="number" step="0.05" min="0" max="1" class="w-full bg-white/5 border border-white/10 rounded px-2 py-1 text-xs text-white font-mono focus:border-violet-500/50 focus:outline-none transition-colors" value={selectedItem.transform?.opacity ?? 1} onchange={(e) => { updateSelectedTransform({ opacity: parseFloat(e.currentTarget.value) }); if (hasKeyframeAtCurrentFrame('opacity')) toggleKeyframe('opacity', parseFloat(e.currentTarget.value)); }} />
-                    </div>
                   </div>
                 </div>
+                </div>
+
+                <!-- Volume & Audio -->
+                {#if selectedItem.type === "video" || selectedItem.type === "audio"}
+                  <div class="border-t border-white/5 pt-3">
+                    <span class="block text-[10px] text-white/30 uppercase tracking-wider mb-2">Audio</span>
+                    <div class="space-y-3">
+                      <div>
+                        <div class="flex items-center justify-between mb-1.5">
+                          <span class="text-[9px] text-white/40 font-medium">Volume</span>
+                          <span class="text-[9px] text-white/50 font-mono">{Math.round((selectedItem.volume ?? 1) * 100)}%</span>
+                        </div>
+                        <div class="flex items-center gap-2">
+                          <button
+                            class="text-white/40 hover:text-white/70 transition-colors text-[11px] shrink-0"
+                            aria-label="Toggle mute"
+                            onclick={() => updateSelectedItem({ volume: (selectedItem?.volume ?? 1) === 0 ? 1 : 0 })}
+                          >
+                            {#if (selectedItem.volume ?? 1) === 0}🔇{:else if (selectedItem.volume ?? 1) < 0.5}🔈{:else}🔊{/if}
+                          </button>
+                          <input
+                            type="range"
+                            min="0"
+                            max="2"
+                            step="0.01"
+                            value={selectedItem.volume ?? 1}
+                            oninput={(e) => updateSelectedItem({ volume: parseFloat(e.currentTarget.value) })}
+                            class="flex-1 h-1 accent-violet-500 cursor-pointer"
+                          />
+                        </div>
+                      </div>
+                      <div class="grid grid-cols-2 gap-2">
+                        <div>
+                          <span class="text-[9px] text-white/40 block mb-1">Fade In (frames)</span>
+                          <input type="number" min="0" step="1" class="w-full bg-white/5 border border-white/10 rounded px-2 py-1 text-xs text-white font-mono focus:border-violet-500/50 focus:outline-none transition-colors" value={selectedItem.audioFadeIn ?? 0} onchange={(e) => updateSelectedItem({ audioFadeIn: parseInt(e.currentTarget.value) || 0 })} />
+                        </div>
+                        <div>
+                          <span class="text-[9px] text-white/40 block mb-1">Fade Out (frames)</span>
+                          <input type="number" min="0" step="1" class="w-full bg-white/5 border border-white/10 rounded px-2 py-1 text-xs text-white font-mono focus:border-violet-500/50 focus:outline-none transition-colors" value={selectedItem.audioFadeOut ?? 0} onchange={(e) => updateSelectedItem({ audioFadeOut: parseInt(e.currentTarget.value) || 0 })} />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                {/if}
+
+                <!-- Speed -->
+                {#if selectedItem.type === "video" || selectedItem.type === "audio"}
+                  <div class="border-t border-white/5 pt-3">
+                    <span class="block text-[10px] text-white/30 uppercase tracking-wider mb-2">Speed</span>
+                    <div class="space-y-2">
+                      <div class="flex items-center justify-between mb-1">
+                        <span class="text-[9px] text-white/40 font-medium">Playback Rate</span>
+                        <span class="text-[9px] text-white/50 font-mono">{(selectedItem.speed ?? 1).toFixed(2)}x</span>
+                      </div>
+                      <div class="flex items-center gap-2">
+                        <input
+                          type="range"
+                          min="0.25"
+                          max="4"
+                          step="0.05"
+                          value={selectedItem.speed ?? 1}
+                          oninput={(e) => updateSelectedItem({ speed: parseFloat(e.currentTarget.value) })}
+                          class="flex-1 h-1 accent-violet-500 cursor-pointer"
+                        />
+                      </div>
+                      <div class="flex gap-1 flex-wrap">
+                        {#each [0.25, 0.5, 1, 1.5, 2, 4] as preset}
+                          <button
+                            class="px-2 py-0.5 rounded text-[9px] font-medium transition-colors {(selectedItem.speed ?? 1) === preset ? 'bg-violet-600 text-white' : 'bg-white/5 text-white/50 hover:bg-white/10 hover:text-white/70'}"
+                            onclick={() => updateSelectedItem({ speed: preset })}
+                          >
+                            {preset}x
+                          </button>
+                        {/each}
+                      </div>
+                    </div>
+                  </div>
+                {/if}
+
+                <!-- Video Fades -->
+                {#if selectedItem.type === "video" || selectedItem.type === "image"}
+                  <div class="border-t border-white/5 pt-3">
+                    <span class="block text-[10px] text-white/30 uppercase tracking-wider mb-2">Video Fade</span>
+                    <div class="grid grid-cols-2 gap-2">
+                      <div>
+                        <span class="text-[9px] text-white/40 block mb-1">Fade In (frames)</span>
+                        <input type="number" min="0" step="1" class="w-full bg-white/5 border border-white/10 rounded px-2 py-1 text-xs text-white font-mono focus:border-violet-500/50 focus:outline-none transition-colors" value={selectedItem.fadeIn ?? 0} onchange={(e) => updateSelectedItem({ fadeIn: parseInt(e.currentTarget.value) || 0 })} />
+                      </div>
+                      <div>
+                        <span class="text-[9px] text-white/40 block mb-1">Fade Out (frames)</span>
+                        <input type="number" min="0" step="1" class="w-full bg-white/5 border border-white/10 rounded px-2 py-1 text-xs text-white font-mono focus:border-violet-500/50 focus:outline-none transition-colors" value={selectedItem.fadeOut ?? 0} onchange={(e) => updateSelectedItem({ fadeOut: parseInt(e.currentTarget.value) || 0 })} />
+                      </div>
+                    </div>
+                  </div>
+                {/if}
 
                 {#if selectedItem.type === "image"}
                   <div class="border-t border-white/5 pt-3">
