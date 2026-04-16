@@ -62,6 +62,20 @@
   let hwEncoders = $state<{ name: string; codec: string; device: string }[]>([]);
   let exportHwAccel = $state<string | null>(null);
 
+  // New Project Modal
+  let showNewProjectModal = $state(false);
+  let newProjectName = $state("");
+  const ratioPresets = [
+    { label: "16:9", icon: "▬", w: 1920, h: 1080, desc: "YouTube / Landscape" },
+    { label: "9:16", icon: "▮", w: 1080, h: 1920, desc: "TikTok / Reels" },
+    { label: "1:1", icon: "■", w: 1080, h: 1080, desc: "Instagram Post" },
+    { label: "4:5", icon: "▯", w: 1080, h: 1350, desc: "Instagram Portrait" },
+    { label: "4:3", icon: "▭", w: 1440, h: 1080, desc: "Classic" },
+    { label: "21:9", icon: "━", w: 2560, h: 1080, desc: "Ultrawide / Cinema" },
+  ] as const;
+  let selectedRatioIdx = $state(0);
+  let selectedRatio = $derived(ratioPresets[selectedRatioIdx]!);
+
   // AI Background Removal properties
   let isRemovingBackground = $state(false);
   let bgRemovalError = $state<string | null>(null);
@@ -94,6 +108,28 @@
   let leftSidebarResizeStartX = $state(0);
   let leftSidebarResizeStartWidth = $state(0);
 
+  // Context menu for media items
+  let contextMenuMedia = $state<{
+    x: number;
+    y: number;
+    media: MediaItem;
+  } | null>(null);
+
+  function closeContextMenu() {
+    contextMenuMedia = null;
+  }
+
+  // Preview Tabs
+  let activePreviewTab = $state<"timeline" | "media">("timeline");
+  let previewMediaItem = $state<MediaItem | null>(null);
+
+  $effect(() => {
+    // Auto-switch to timeline when playback starts
+    if (pb.isPlaying && activePreviewTab === "media") {
+      activePreviewTab = "timeline";
+    }
+  });
+
   // Snap visual feedback
   let activeSnapFrame = $state<number | null>(null);
 
@@ -110,6 +146,13 @@
 
   // Preview scrubber (ghost playhead on hover)
   let previewFrame = $state<number | null>(null);
+
+  // Playback video preview — native <video> for smooth real-time playback
+  let playbackVideoEl: HTMLVideoElement | undefined = $state();
+  let activePlaybackVideoSrc: string | null = null;
+  let lastSetVideoRate = -1;   // cache to avoid redundant playbackRate sets
+  let audioSyncCounter = 0;
+  let lastPlaybackFrame = 0;
 
   // Derived
   let totalFrames = $derived(currentProject?.duration || ti.maxItemEndFrame || 1);
@@ -231,55 +274,365 @@
     unlisten.forEach((fn) => fn());
   });
 
-  // ─── Playback loop ────────────────────────────────────────────────────
+  // ─── Playback engine (pure vanilla — zero Svelte reactivity) ─────────
+  // Uses a vanilla zustand subscription instead of $effect to ensure
+  // the rAF loop can NEVER be killed by unrelated reactive changes.
   let animFrame: number | null = null;
   let lastFrameTime = 0;
+  let isPlayingRaw = $state(false);
 
-  $effect(() => {
-    if (pb.isPlaying) {
-      lastFrameTime = performance.now();
-      const tick = (now: number) => {
-        const elapsed = now - lastFrameTime;
-        const frameDuration = 1000 / fps;
-        if (elapsed >= frameDuration) {
-          const framesToAdvance = Math.floor(elapsed / frameDuration);
-          let nextFrame = pb.currentFrame + framesToAdvance * pb.playbackRate;
-          if (nextFrame >= totalFrames) {
-            if (pb.loop) {
-              nextFrame = 0;
-            } else {
-              playbackStore.getState().pause();
-              return;
-            }
-          }
-          playbackStore.getState().setCurrentFrame(Math.round(nextFrame));
-          lastFrameTime = now - (elapsed % frameDuration);
+  function startPlaybackLoop() {
+    if (animFrame) { cancelAnimationFrame(animFrame); animFrame = null; }
+    isPlayingRaw = true;
 
-          // Auto-scroll: keep playhead visible during playback
-          const playheadPx = frameToPixel(Math.round(nextFrame));
-          const tracksEl = document.getElementById('tracks-container');
-          if (tracksEl) {
-            const viewportWidth = tracksEl.clientWidth - 120; // subtract track headers
-            const scrollLeft = ti.scrollLeft;
-            const playheadInView = playheadPx - scrollLeft;
-            // If playhead is past 80% of visible width, scroll forward
-            if (playheadInView > viewportWidth * 0.8) {
-              itemsStore.getState().setScrollLeft(playheadPx - viewportWidth * 0.2);
-            }
-            // If playhead is before 10% of visible width (rewound), jump scroll
-            if (playheadInView < 0) {
-              itemsStore.getState().setScrollLeft(Math.max(0, playheadPx - viewportWidth * 0.1));
+    const _startTime = performance.now();
+    const _startFrame = playbackStore.getState().currentFrame;
+    audioSyncCounter = 0;
+
+    // Snapshot values from vanilla stores
+    let _pps = zoomStore.getState().pixelsPerSecond;
+    let _fps = itemsStore.getState().fps;
+    let _fd = 1000 / _fps;
+    let _pxPerFrame = _pps / _fps;
+    let _maxFrames = itemsStore.getState().maxItemEndFrame || 1;
+    let _rate = playbackStore.getState().playbackRate;
+    let _lastIntFrame = _startFrame;
+
+    // Cache DOM refs once
+    const _rulerPH = document.querySelector('[data-playhead="ruler"]') as HTMLElement | null;
+    const _trackPHs = document.querySelectorAll('[data-playhead="track"]');
+    const _tcPreview = document.querySelector('[data-tc="preview"]') as HTMLElement | null;
+    const _tcRuler = document.querySelector('[data-tc="ruler"]') as HTMLElement | null;
+    const _tracksEl = document.getElementById('tracks-container');
+    const _vpWidth = _tracksEl ? _tracksEl.clientWidth - 120 : 800;
+
+    let _init = false;
+
+    const tick = (now: number) => {
+      // ── Absolute time → frame ──
+      const wallMs = now - _startTime;
+      const exactFrame = _startFrame + (wallMs / _fd) * _rate;
+      const intFrame = Math.floor(exactFrame);
+
+      // ── Smooth playhead every tick (ALWAYS runs first, never blocked) ──
+      const smoothPx = exactFrame * _pxPerFrame;
+      const sl = itemsStore.getState().scrollLeft;
+      if (_rulerPH) _rulerPH.style.transform = `translate3d(${smoothPx - sl}px,0,0)`;
+      for (let i = 0; i < _trackPHs.length; i++) {
+        (_trackPHs[i] as HTMLElement).style.transform = `translate3d(${smoothPx}px,0,0)`;
+      }
+
+      // ── Frame boundary ──
+      if (intFrame !== _lastIntFrame) {
+        _lastIntFrame = intFrame;
+        lastPlaybackFrame = intFrame;
+
+        if (intFrame >= _maxFrames) {
+          playbackStore.getState().pause();
+          return;
+        }
+
+        audioSyncCounter++;
+
+        // Timecodes every 5 frames
+        if (audioSyncCounter % 5 === 0) {
+          const tc = formatTimecode(intFrame, _fps);
+          if (_tcPreview) _tcPreview.textContent = tc;
+          if (_tcRuler) _tcRuler.textContent = tc;
+        }
+
+        const _c = audioSyncCounter;
+        const _f = intFrame;
+
+        // Video + audio init on first frame
+        if (!_init) {
+          _init = true;
+          setTimeout(() => {
+            updatePlaybackVideo(_startFrame);
+            syncAudioToFrame(_startFrame, true, _fps);
+          }, 0);
+        }
+
+        // Video sync every 30 frames (~1s) — deferred after paint.
+        // Minimise interference: only checks clip transitions + drift.
+        if (_c % 30 === 0 && _c > 0) {
+          setTimeout(() => updatePlaybackVideo(_f), 0);
+        }
+
+        // Audio drift-check + constants refresh every 60 frames (~2s)
+        if (_c % 60 === 0 && _c > 0) {
+          setTimeout(() => syncAudioToFrame(_f, true, _fps), 0);
+          const prevRate = _rate;
+          _rate = playbackStore.getState().playbackRate;
+          _pps = zoomStore.getState().pixelsPerSecond;
+          _fps = itemsStore.getState().fps;
+          _fd = 1000 / _fps;
+          _pxPerFrame = _pps / _fps;
+          _maxFrames = itemsStore.getState().maxItemEndFrame || 1;
+
+          // If timeline rate changed mid-playback, immediately update video element
+          if (_rate !== prevRate) {
+            const vid = playbackVideoEl;
+            if (vid && !vid.paused) {
+              const topItem = findTopmostVideoItem(_f);
+              if (topItem) {
+                const sourceFps = topItem.sourceFps ?? _fps;
+                const newRate = Math.abs(topItem.speed ?? 1) * _rate * (_fps / sourceFps);
+                vid.playbackRate = newRate;
+                lastSetVideoRate = newRate;
+              }
             }
           }
         }
-        animFrame = requestAnimationFrame(tick);
-      };
+      }
       animFrame = requestAnimationFrame(tick);
+    };
+    animFrame = requestAnimationFrame(tick);
+  }
+
+  function stopPlaybackLoop() {
+    if (animFrame) { cancelAnimationFrame(animFrame); animFrame = null; }
+    isPlayingRaw = false;
+    lastSetVideoRate = -1;
+    pausePlaybackVideo();
+    playbackStore.getState().setCurrentFrame(lastPlaybackFrame);
+  }
+
+  // Subscribe to playbackStore — only react to isPlaying changes
+  let _prevIsPlaying = false;
+  const unsubPlayback = playbackStore.subscribe((state) => {
+    const nowPlaying = state.isPlaying;
+    if (nowPlaying === _prevIsPlaying) return; // no change
+    _prevIsPlaying = nowPlaying;
+    if (nowPlaying) {
+      startPlaybackLoop();
+    } else {
+      stopPlaybackLoop();
+    }
+  });
+
+  onDestroy(() => {
+    unsubPlayback();
+    stopPlaybackLoop();
+  });
+
+  // ─── Audio Playback Engine ─────────────────────────────────────────────
+  // Manages hidden HTML5 media elements to play audio in sync with timeline.
+  const audioElements = new Map<string, HTMLMediaElement>();
+
+  function getOrCreateAudioEl(item: TimelineItem): HTMLMediaElement | null {
+    if (!item.src) return null;
+    let el = audioElements.get(item.id);
+    if (el) return el;
+    const src = assetUrl(item.src);
+    // Always use <audio> — even for video files. Chromium extracts just the
+    // audio track, avoiding redundant video decoding that competes with the
+    // preview <video> element for GPU decoder slots.
+    if (item.type === 'video' || item.type === 'audio') {
+      const a = document.createElement('audio');
+      a.src = src;
+      a.preload = 'auto';
+      document.body.appendChild(a);
+      el = a;
+    } else {
+      return null;
+    }
+    audioElements.set(item.id, el);
+    return el;
+  }
+
+  function cleanupAudioElements() {
+    audioElements.forEach((el) => {
+      el.pause();
+      el.remove();
+    });
+    audioElements.clear();
+  }
+
+  // ─── Audio / Video Sync ──────────────────────────────────────────────
+  // Extracted so it can be called from the rAF tick (during playback) or
+  // reactively (when paused/scrubbing). During playback the rAF tick calls
+  // this every few frames; during scrubbing the $effect below calls it on
+  // every frame change.
+
+  // Cached muted/solo sets — rebuilt only when tracks change
+  let _cachedMutedTrackIds: Set<string> = new Set();
+  let _cachedSoloTrackIds: Set<string> = new Set();
+  let _cachedHasSolo = false;
+  let _cachedTracksEpoch = -1;
+
+  function rebuildTrackAudioCache(tracks: typeof itemsStore extends { getState: () => infer S } ? S extends { tracks: infer T } ? T : never : never) {
+    _cachedMutedTrackIds = new Set<string>();
+    _cachedSoloTrackIds = new Set<string>();
+    for (const t of tracks) {
+      if (t.muted) _cachedMutedTrackIds.add(t.id);
+      if (t.solo) _cachedSoloTrackIds.add(t.id);
+    }
+    _cachedHasSolo = _cachedSoloTrackIds.size > 0;
+  }
+
+  // Reusable set to avoid allocation every sync call
+  const _activeItemIds = new Set<string>();
+
+  function syncAudioToFrame(frame: number, playing: boolean, currentFps: number) {
+    const pbState = playbackStore.getState();
+    const tiState = itemsStore.getState();
+    const globalMuted = pbState.muted;
+    const globalVolume = pbState.volume;
+    const items = tiState.items;
+    const tracks = tiState.tracks;
+
+    // Rebuild muted/solo cache only when tracks array identity changes
+    const tracksLen = tracks.length;
+    if (tracksLen !== _cachedTracksEpoch) {
+      _cachedTracksEpoch = tracksLen;
+      rebuildTrackAudioCache(tracks);
     }
 
-    return () => {
-      if (animFrame) cancelAnimationFrame(animFrame);
-    };
+    _activeItemIds.clear();
+
+    for (const item of items) {
+      if (item.type !== 'video' && item.type !== 'audio') continue;
+      if (!item.src) continue;
+      const vol = item.volume ?? 1;
+      if (vol <= 0) continue;
+
+      const itemEnd = item.from + item.durationInFrames;
+      const isActive = frame >= item.from && frame < itemEnd;
+
+      if (!isActive) {
+        const el = audioElements.get(item.id);
+        if (el && !el.paused) el.pause();
+        continue;
+      }
+
+      _activeItemIds.add(item.id);
+
+      const trackMuted = _cachedMutedTrackIds.has(item.trackId);
+      const trackSoloed = !_cachedHasSolo || _cachedSoloTrackIds.has(item.trackId);
+
+      const el = getOrCreateAudioEl(item);
+      if (!el) continue;
+
+      const frameInClip = frame - item.from;
+      const speed = item.speed ?? 1;
+      const sourceStartFrame = item.sourceStart ?? 0;
+      const sourceFrame = sourceStartFrame + frameInClip * speed;
+      const sourceFps = item.sourceFps ?? currentFps;
+      const targetTime = sourceFrame / sourceFps;
+
+      const effectiveVol = (globalMuted || trackMuted || !trackSoloed) ? 0 : vol * globalVolume;
+      el.volume = Math.max(0, Math.min(1, effectiveVol));
+      el.playbackRate = Math.abs(speed) * pbState.playbackRate * (currentFps / sourceFps);
+
+      if (playing) {
+        // Drift threshold 0.25s — tight enough to prevent audible drift,
+        // loose enough to avoid seek loops (elements take ~100ms to start).
+        if (!el.seeking && Math.abs(el.currentTime - targetTime) > 0.25) {
+          el.currentTime = targetTime;
+        }
+        if (el.paused && effectiveVol > 0) {
+          el.play().catch(() => {});
+        }
+      } else {
+        if (!el.paused) el.pause();
+        el.currentTime = targetTime;
+      }
+    }
+
+    audioElements.forEach((el, id) => {
+      if (!_activeItemIds.has(id) && !el.paused) {
+        el.pause();
+      }
+    });
+  }
+
+  /** Find the topmost (last in layer order) video item visible at the given frame. */
+  function findTopmostVideoItem(frame: number): TimelineItem | null {
+    const items = itemsStore.getState().items;
+    let topmost: TimelineItem | null = null;
+    for (const item of items) {
+      if (item.type !== 'video') continue;
+      if (!item.src) continue;
+      const itemEnd = item.from + item.durationInFrames;
+      if (frame >= item.from && frame < itemEnd) {
+        topmost = item;
+      }
+    }
+    return topmost;
+  }
+
+  /** Start or update the native preview <video> to show the topmost clip. */
+  function updatePlaybackVideo(frame: number) {
+    const video = playbackVideoEl;
+    if (!video) return;
+
+    const item = findTopmostVideoItem(frame);
+    if (!item || !item.src) {
+      if (activePlaybackVideoSrc) {
+        video.pause();
+        activePlaybackVideoSrc = null;
+      }
+      return;
+    }
+
+    const currentFps = itemsStore.getState().fps;
+    const timelineRate = playbackStore.getState().playbackRate;
+    const frameInClip = frame - item.from;
+    const speed = item.speed ?? 1;
+    const sourceStartFrame = item.sourceStart ?? 0;
+    const sourceFrame = sourceStartFrame + frameInClip * speed;
+    const sourceFps = item.sourceFps ?? currentFps;
+    const targetTime = sourceFrame / sourceFps;
+    // Rate must account for project↔source FPS ratio so the video
+    // advances at the same wall-clock rate as the timeline.
+    const effectiveRate = Math.abs(speed) * timelineRate * (currentFps / sourceFps);
+
+    if (activePlaybackVideoSrc !== item.src) {
+      // Different video clip — load new source
+      activePlaybackVideoSrc = item.src;
+      video.src = assetUrl(item.src);
+      video.currentTime = targetTime;
+      video.playbackRate = effectiveRate;
+      lastSetVideoRate = effectiveRate;
+      video.play().catch(() => {});
+    } else {
+      // Same video — only touch playbackRate when it actually changed to
+      // avoid resetting the browser's internal decoder timing.
+      if (lastSetVideoRate !== effectiveRate) {
+        video.playbackRate = effectiveRate;
+        lastSetVideoRate = effectiveRate;
+      }
+      // Seek on drift > 0.5s — loose enough to prevent seek loops,
+      // tight enough to keep preview useful.
+      if (!video.seeking && Math.abs(video.currentTime - targetTime) > 0.5) {
+        video.currentTime = targetTime;
+      }
+      if (video.paused) {
+        video.play().catch(() => {});
+      }
+    }
+  }
+
+  /** Pause the preview video when playback stops. */
+  function pausePlaybackVideo() {
+    const video = playbackVideoEl;
+    if (video && !video.paused) {
+      video.pause();
+    }
+    // Keep activePlaybackVideoSrc cached — avoids reloading the same
+    // video from disk on every play/pause cycle.
+  }
+
+  // During playback, audio sync is handled by the rAF tick.
+  // When paused/scrubbing, sync reactively on every frame change.
+  $effect(() => {
+    if (pb.isPlaying) return;
+    syncAudioToFrame(pb.currentFrame, false, fps);
+  });
+
+  onDestroy(() => {
+    cleanupAudioElements();
   });
 
   // ─── Request frame render from Rust backend on frame change ───────────
@@ -291,7 +644,6 @@
   function requestRender(frame: number) {
     if (!currentProject) return;
     if (isRendering) {
-      // Queue latest frame — when the current render finishes we'll pick this up
       pendingRenderFrame = frame;
       return;
     }
@@ -308,16 +660,23 @@
 
     invoke("freecut_render_frame", { project: projectState, frame })
       .then((pathStr: any) => {
-        // Use the direct return value — the event listener is a backup
         if (pathStr) {
-          renderedFramePath = pathStr as string;
-          renderEpoch++;
+          // Preload the image before updating state to prevent flicker
+          const assetSrc = assetUrl(pathStr as string);
+          const url = assetSrc + "?t=" + Date.now();
+          const img = document.createElement('img');
+          const apply = () => {
+            renderedFramePath = pathStr as string;
+            renderEpoch++;
+          };
+          img.onload = apply;
+          img.onerror = apply; // show even if preload fails
+          img.src = url;
         }
       })
       .catch(console.error)
       .finally(() => {
         isRendering = false;
-        // If a newer frame was requested while we were rendering, fire it now
         if (pendingRenderFrame !== null && pendingRenderFrame !== lastRenderedFrame) {
           const next = pendingRenderFrame;
           pendingRenderFrame = null;
@@ -326,7 +685,15 @@
       });
   }
 
+  // Skip FFmpeg per-frame renders during playback — the native <video>
+  // preview handles smooth real-time display. Only render when paused
+  // (scrubbing / seeking) for accurate composited preview.
   $effect(() => {
+    // Read isPlaying FIRST — if true, return before reading currentFrame.
+    // This prevents Svelte from tracking currentFrame as a dependency
+    // during playback, avoiding 30+ unnecessary effect runs per second.
+    const playing = pb.isPlaying;
+    if (playing) return;
     const frame = pb.currentFrame;
     if (frame !== lastRenderedFrame && currentProject) {
       requestRender(frame);
@@ -348,14 +715,23 @@
     } catch (e) { console.error(e); }
   }
 
+  function openNewProjectModal() {
+    newProjectName = `Untitled Project ${projects.length + 1}`;
+    selectedRatioIdx = 0;
+    showNewProjectModal = true;
+  }
+
   async function createProject() {
     try {
+      const preset = selectedRatio;
+      const name = newProjectName.trim() || `Untitled Project ${projects.length + 1}`;
       const project: Project = await invoke("freecut_create_project", {
-        args: { name: `Untitled Project ${projects.length + 1}`, width: 1920, height: 1080, fps: 30 },
+        args: { name, width: preset.w, height: preset.h, fps: 30 },
       });
       currentProject = { ...project, dubbing: project.dubbing ?? createDefaultDubbingSession() };
       itemsStore.getState().setFps(project.metadata.fps);
       historyStore.getState().clear();
+      showNewProjectModal = false;
       currentView = "editor";
       await loadProjects();
     } catch (e) { console.error(e); }
@@ -681,7 +1057,7 @@
         sourceStart: 0,
         sourceEnd: duration,
         speed: 1,
-        volume: media.mediaType === "audio" ? 1 : 0,
+        volume: 1,
       };
       itemsStore.getState().addItem(item);
       console.log("[FreeCut] Added media to timeline:", item.label, "at frame", fromFrame, "on track", trackId);
@@ -946,7 +1322,7 @@
       sourceStart: 0,
       sourceEnd: duration,
       speed: 1,
-      volume: media.mediaType === "audio" ? 1 : 0,
+      volume: 1,
     };
 
     state.addItem(item);
@@ -1309,26 +1685,10 @@
         outPoint = null;
         break;
       case "l":
-        if (!e.ctrlKey && !e.metaKey) {
-          // L: Toggle playback rate (1x -> 2x -> 4x -> 1x)
-          const rates = [1, 2, 4];
-          const currentIdx = rates.indexOf(pb.playbackRate);
-          const nextRate = rates[(currentIdx + 1) % rates.length]!;
-          playbackStore.getState().setPlaybackRate(nextRate);
-        }
+        // L: reserved (was playback rate toggle — removed)
         break;
       case "j":
-        if (!e.ctrlKey && !e.metaKey) {
-          // J: Reverse playback direction / decrease rate
-          const rate = pb.playbackRate;
-          if (rate > 0) {
-            playbackStore.getState().setPlaybackRate(-1);
-          } else {
-            const rr = Math.min(-1, rate * 2);
-            playbackStore.getState().setPlaybackRate(rr);
-          }
-          if (!pb.isPlaying) playbackStore.getState().togglePlayPause();
-        }
+        // J: reserved (was reverse playback — removed)
         break;
       case "k":
         if (!e.ctrlKey && !e.metaKey) {
@@ -1399,6 +1759,7 @@
   function startPlayheadDrag(e: MouseEvent) {
     e.preventDefault();
     isDraggingPlayhead = true;
+    if (activePreviewTab === "media") activePreviewTab = "timeline";
     scrubPlayhead(e);
 
     const onMove = (ev: MouseEvent) => {
@@ -1559,7 +1920,7 @@
       </div>
       <button
         class="flex items-center gap-2 px-4 py-2 rounded-lg bg-violet-600 hover:bg-violet-500 text-white text-sm font-medium transition-colors shadow-lg shadow-violet-600/20"
-        onclick={createProject}
+        onclick={openNewProjectModal}
       >
         <Plus class="w-4 h-4" />
         New Project
@@ -1601,6 +1962,77 @@
         </div>
       {/if}
     </div>
+
+    <!-- New Project Modal -->
+    {#if showNewProjectModal}
+      <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
+        <div class="w-[520px] rounded-2xl border border-white/10 bg-zinc-900 shadow-2xl overflow-hidden" style="color-scheme: dark;">
+          <!-- Header -->
+          <div class="flex items-center justify-between px-6 pt-6 pb-2">
+            <h2 class="text-white text-lg font-semibold">New Project</h2>
+            <button class="p-1.5 rounded-lg hover:bg-white/10 text-white/40 hover:text-white/80 transition-colors" onclick={() => showNewProjectModal = false}>
+              <Plus class="w-4 h-4 rotate-45" />
+            </button>
+          </div>
+
+          <!-- Project Name -->
+          <div class="px-6 pt-3 pb-4">
+            <label for="new-project-name" class="block text-[11px] uppercase tracking-wider text-white/40 mb-1.5">Project Name</label>
+            <input
+              id="new-project-name"
+              type="text"
+              class="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder-white/20 focus:outline-none focus:border-violet-500/50 focus:ring-1 focus:ring-violet-500/20 transition-colors"
+              placeholder="My Video Project"
+              bind:value={newProjectName}
+              onkeydown={(e) => { if (e.key === 'Enter') createProject(); }}
+            />
+          </div>
+
+          <!-- Ratio Presets -->
+          <div class="px-6 pb-2">
+            <p class="text-[11px] uppercase tracking-wider text-white/40 mb-3">Canvas Ratio</p>
+            <div class="grid grid-cols-3 gap-2">
+              {#each ratioPresets as preset, i}
+                <button
+                  class="group flex flex-col items-center gap-2 p-3 rounded-xl border transition-all duration-200 {selectedRatioIdx === i ? 'border-violet-500/60 bg-violet-500/10 ring-1 ring-violet-500/20' : 'border-white/5 bg-white/[0.02] hover:bg-white/[0.04] hover:border-white/10'}"
+                  onclick={() => selectedRatioIdx = i}
+                >
+                  <!-- Dynamic shape preview -->
+                  <div class="w-full flex items-center justify-center" style="height: 48px;">
+                    <div
+                      class="border-2 rounded-sm transition-colors {selectedRatioIdx === i ? 'border-violet-400' : 'border-white/20 group-hover:border-white/30'}"
+                      style="aspect-ratio: {preset.w}/{preset.h}; height: {preset.h > preset.w ? '100%' : 'auto'}; width: {preset.w >= preset.h ? '100%' : 'auto'}; max-height: 48px; max-width: 72px;"
+                    ></div>
+                  </div>
+                  <div class="text-center">
+                    <p class="text-xs font-semibold {selectedRatioIdx === i ? 'text-violet-300' : 'text-white/70'}">{preset.label}</p>
+                    <p class="text-[9px] {selectedRatioIdx === i ? 'text-violet-300/60' : 'text-white/30'}">{preset.desc}</p>
+                  </div>
+                </button>
+              {/each}
+            </div>
+          </div>
+
+          <!-- Resolution Info -->
+          <div class="px-6 py-3">
+            <div class="flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-white/[0.03] border border-white/5">
+              <span class="font-mono text-xs text-white/50">{selectedRatio.w} × {selectedRatio.h}</span>
+              <span class="text-[10px] text-white/20">·</span>
+              <span class="text-[10px] text-white/30">30 fps</span>
+            </div>
+          </div>
+
+          <!-- Actions -->
+          <div class="flex items-center justify-end gap-3 px-6 py-4 border-t border-white/5">
+            <button class="px-5 py-2 text-sm hover:bg-white/5 rounded-lg text-white/50 transition-colors" onclick={() => showNewProjectModal = false}>Cancel</button>
+            <button
+              class="px-6 py-2 text-sm bg-violet-600 hover:bg-violet-500 rounded-lg text-white font-medium transition-colors shadow-lg shadow-violet-600/25"
+              onclick={createProject}
+            >Create Project</button>
+          </div>
+        </div>
+      </div>
+    {/if}
   </div>
 
 <!-- ─── Editor View ──────────────────────────────────────────────────── -->
@@ -1710,9 +2142,11 @@
                   <div
                     role="button"
                     tabindex="0"
-                    class="cursor-grab active:cursor-grabbing w-full flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-white/5 transition-colors text-left group"
+                    class="cursor-grab active:cursor-grabbing w-full flex items-center gap-2 px-2 py-1.5 rounded-lg transition-colors text-left group {previewMediaItem?.id === media.id ? 'bg-white/10' : 'hover:bg-white/5'}"
+                    onclick={() => { previewMediaItem = media; activePreviewTab = 'media'; }}
                     onmousedown={(e) => { if (e.button === 0) startMediaPointerDrag(e, media); }}
                     ondblclick={() => addMediaToTimeline(media)}
+                    oncontextmenu={(e) => { e.preventDefault(); e.stopPropagation(); contextMenuMedia = { x: e.clientX, y: e.clientY, media }; }}
                   >
                     <div class="w-10 h-7 rounded bg-white/5 grid place-items-center shrink-0 overflow-hidden">
                       {#if media.thumbnailPath}
@@ -1783,27 +2217,59 @@
       <!-- Center: Preview + Timeline -->
       <div class="flex flex-col flex-1 min-w-0">
         <!-- Preview Area -->
-        <div class="flex-1 flex items-center justify-center bg-black/40 relative min-h-[180px]">
-          <div
-            class="border border-white/5 rounded-sm bg-black shadow-2xl overflow-hidden"
-            style:aspect-ratio="{currentProject.metadata.width}/{currentProject.metadata.height}"
-            style:max-width="90%"
-            style:max-height="90%"
-            style:width="auto"
-            style:height="100%"
-          >
-            {#if renderedFramePath}
-              <img src="{assetUrl(renderedFramePath)}?t={renderEpoch}" alt="Preview" class="w-full h-full object-contain" />
-            {:else}
-              <div class="w-full h-full flex items-center justify-center text-white/10">
-                <Film class="w-12 h-12" />
-              </div>
-            {/if}
+        <div class="flex-1 flex flex-col relative min-h-[180px] bg-black/40 overflow-hidden">
+          <div class="absolute top-3 left-3 flex items-center gap-1 p-1 rounded-lg border border-white/10 z-20 shadow-lg {isPlayingRaw ? 'bg-black/70' : 'bg-black/40 backdrop-blur-md'}">
+            <button class="px-3 py-1 rounded-md text-[10px] font-medium transition-colors {activePreviewTab === 'timeline' ? 'bg-violet-600/90 text-white' : 'text-white/40 hover:bg-white/10 hover:text-white/80'}" onclick={() => activePreviewTab = 'timeline'}>Timeline</button>
+            <button class="px-3 py-1 rounded-md text-[10px] font-medium transition-colors {activePreviewTab === 'media' ? 'bg-violet-600/90 text-white' : 'text-white/40 hover:bg-white/10 hover:text-white/80'}" onclick={() => activePreviewTab = 'media'} disabled={!previewMediaItem}>Media</button>
           </div>
-          <div class="absolute bottom-3 left-1/2 -translate-x-1/2 flex items-center gap-3 px-3 py-1 rounded-md bg-black/60 backdrop-blur-sm border border-white/5">
-            <span class="font-mono text-[11px] text-white/60">{currentTime}</span>
-            <span class="text-[10px] text-white/20">/</span>
-            <span class="font-mono text-[11px] text-white/40">{totalTime}</span>
+
+          <div class="absolute inset-0 flex items-center justify-center p-4">
+            {#if activePreviewTab === 'timeline'}
+              <div
+                class="border border-white/5 rounded-sm bg-black shadow-2xl overflow-hidden flex items-center justify-center relative"
+                style="aspect-ratio: {currentProject.metadata.width} / {currentProject.metadata.height}; height: 100%; max-width: 100%;"
+              >
+                <!-- Native video for smooth real-time playback (muted — audio from hidden elements) -->
+                <!-- svelte-ignore a11y_media_has_caption -->
+                <video
+                  bind:this={playbackVideoEl}
+                  class="absolute inset-0 w-full h-full object-contain will-change-transform"
+                  class:invisible={!isPlayingRaw}
+                  muted
+                  playsinline
+                  preload="auto"
+                ></video>
+                {#if !isPlayingRaw}
+                  {#if renderedFramePath}
+                    <img src="{assetUrl(renderedFramePath)}?t={renderEpoch}" alt="Preview" class="w-full h-full object-contain" />
+                  {:else}
+                    <Film class="w-16 h-16 text-white/5" />
+                  {/if}
+                {/if}
+              </div>
+              <div class="absolute bottom-3 left-1/2 -translate-x-1/2 flex items-center gap-3 px-3 py-1 rounded-md border border-white/5 pointer-events-none z-10 {isPlayingRaw ? 'bg-black/80' : 'bg-black/60 backdrop-blur-sm'}">
+                <span data-tc="preview" class="font-mono text-[11px] text-white/60">{currentTime}</span>
+                <span class="text-[10px] text-white/20">/</span>
+                <span class="font-mono text-[11px] text-white/40">{totalTime}</span>
+              </div>
+            {:else if activePreviewTab === 'media' && previewMediaItem}
+              {#if previewMediaItem.mediaType === 'video'}
+                <!-- svelte-ignore a11y_media_has_caption -->
+                <video src={assetUrl(previewMediaItem.filePath)} controls class="max-w-full max-h-full object-contain outline-none border border-white/10 rounded-lg bg-black shadow-2xl"></video>
+              {:else if previewMediaItem.mediaType === 'image'}
+                <img src={assetUrl(previewMediaItem.filePath)} alt="Preview" class="max-w-full max-h-full object-contain border border-white/10 rounded-lg bg-black shadow-2xl" />
+              {:else if previewMediaItem.mediaType === 'audio'}
+                <div class="w-full max-w-md aspect-video border border-white/10 rounded-lg bg-black shadow-2xl flex flex-col items-center justify-center p-6">
+                  <Music class="w-16 h-16 text-white/10 mb-6" />
+                  <!-- svelte-ignore a11y_media_has_caption -->
+                  <audio src={assetUrl(previewMediaItem.filePath)} controls class="w-full"></audio>
+                </div>
+              {:else}
+                <div class="flex flex-col items-center justify-center">
+                  <p class="text-sm text-white/50">Preview not available</p>
+                </div>
+              {/if}
+            {/if}
           </div>
         </div>
 
@@ -1904,7 +2370,7 @@
           >
             <!-- Track header spacer -->
             <div class="w-[120px] shrink-0 flex items-center justify-center">
-              <span class="text-[9px] text-white/20 font-mono">{currentTime}</span>
+              <span data-tc="ruler" class="text-[9px] text-white/20 font-mono">{currentTime}</span>
             </div>
             <!-- Ruler area -->
             <div class="flex-1 relative h-full overflow-hidden">
@@ -1933,7 +2399,7 @@
                 {/each}
               </div>
               <!-- Playhead indicator on ruler -->
-              <div class="absolute top-0 bottom-0 w-px bg-violet-500 z-10 pointer-events-none will-change-transform" style:transform="translate3d({frameToPixel(pb.currentFrame) - ti.scrollLeft}px, 0, 0)">
+              <div data-playhead="ruler" class="absolute top-0 bottom-0 w-px bg-violet-500 z-10 pointer-events-none will-change-transform" style:transform="translate3d({frameToPixel(pb.currentFrame) - ti.scrollLeft}px, 0, 0)">
                 <div class="absolute -bottom-0.5 -left-[4px] w-0 h-0 border-l-[5px] border-l-transparent border-r-[5px] border-r-transparent border-t-[5px] border-t-violet-500"></div>
               </div>
 
@@ -2089,7 +2555,7 @@
                         {/each}
 
                         <!-- Playhead through tracks -->
-                        <div class="absolute top-0 bottom-0 w-px bg-violet-500/50 pointer-events-none z-10" style:left="{frameToPixel(pb.currentFrame)}px"></div>
+                        <div data-playhead="track" class="absolute top-0 bottom-0 w-px bg-violet-500/50 pointer-events-none z-10 will-change-transform" style:transform="translate3d({frameToPixel(pb.currentFrame)}px, 0, 0)"></div>
 
                         <!-- Active snap guide line (shown during drag) -->
                         {#if activeSnapFrame !== null && isDraggingClip}
@@ -2419,6 +2885,32 @@
           <strong>Export Failed:</strong> {exportError}
         </div>
       {/if}
+    </div>
+  </div>
+{/if}
+
+<!-- Context Menu overlay -->
+{#if contextMenuMedia}
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <div
+    class="fixed inset-0 z-[9999]"
+    onclick={closeContextMenu}
+    oncontextmenu={(e) => { e.preventDefault(); closeContextMenu(); }}
+    onkeydown={undefined}
+  >
+    <div
+      class="absolute min-w-[160px] py-1 rounded-xl bg-zinc-900 border border-white/10 shadow-xl shadow-black/50"
+      style="left: {contextMenuMedia.x}px; top: {contextMenuMedia.y}px;"
+    >
+      <!-- Add to Timeline -->
+      <button class="flex items-center gap-2 w-[calc(100%-8px)] px-2.5 py-1.5 text-[11px] text-left bg-transparent border-none cursor-default rounded-md mx-1 hover:bg-violet-500/20 text-white/80 hover:text-white transition-colors" onclick={() => { if (contextMenuMedia?.media) addMediaToTimeline(contextMenuMedia.media); closeContextMenu(); }}>
+        <Plus class="w-3.5 h-3.5 opacity-70" /> Add to Timeline
+      </button>
+      <div class="h-px mx-2 my-1 bg-white/10"></div>
+      <!-- Delete Media -->
+      <button class="flex items-center gap-2 w-[calc(100%-8px)] px-2.5 py-1.5 text-[11px] text-left bg-transparent border-none cursor-default rounded-md mx-1 hover:bg-red-500/20 text-red-400 hover:text-red-300 transition-colors" onclick={() => { if (contextMenuMedia?.media) deleteMedia(contextMenuMedia.media); closeContextMenu(); }}>
+        <Trash2 class="w-3.5 h-3.5 opacity-70" /> Delete Media
+      </button>
     </div>
   </div>
 {/if}
