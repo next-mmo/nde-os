@@ -29,6 +29,9 @@ export interface PlaybackState {
 
 export interface PlaybackActions {
   setCurrentFrame: (frame: number) => void;
+  /** Lightweight frame update — does NOT increment epochs.
+   *  Used by the rAF playback loop to avoid triggering reactive subscribers. */
+  setCurrentFrameSilent: (frame: number) => void;
   setScrubFrame: (frame: number, itemId?: string) => void;
   play: () => void;
   pause: () => void;
@@ -83,6 +86,16 @@ export const playbackStore = createStore<PlaybackState & PlaybackActions>()((set
         currentFrameEpoch: nextEpoch,
         frameUpdateEpoch: nextEpoch,
       };
+    }),
+
+  setCurrentFrameSilent: (frame) =>
+    set((state) => {
+      const nextFrame = normalizeFrame(frame);
+      if (state.currentFrame === nextFrame) return state;
+      // Only update currentFrame — no epoch bumps.
+      // Combined with shallowEqual in useStore, this means the Svelte UI
+      // won't re-render during playback (playhead is updated via vanilla DOM).
+      return { currentFrame: nextFrame };
     }),
 
   setScrubFrame: (frame, itemId) =>

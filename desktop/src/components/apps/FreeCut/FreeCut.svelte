@@ -150,6 +150,7 @@
   // Playback video preview — native <video> for smooth real-time playback
   let playbackVideoEl: HTMLVideoElement | undefined = $state();
   let activePlaybackVideoSrc: string | null = null;
+  let activePlaybackItemId: string | null = null;
   let lastSetVideoRate = -1;   // cache to avoid redundant playbackRate sets
   let audioSyncCounter = 0;
   let lastPlaybackFrame = 0;
@@ -277,57 +278,184 @@
   // ─── Playback engine (pure vanilla — zero Svelte reactivity) ─────────
   // Uses a vanilla zustand subscription instead of $effect to ensure
   // the rAF loop can NEVER be killed by unrelated reactive changes.
+  //
+  // TIMING MODEL: the rAF tick is a RENDERER, not a clock. It reads the
+  // currently-playing media element's `currentTime` to derive the exact
+  // timeline frame. This eliminates the dual-clock drift that caused the
+  // playhead to run ahead of the decoded video (and the periodic "seeking"
+  // stutter caused by the old drift-correction seeks).
+  //
+  // Only when no media element is active (e.g. the playhead is over an
+  // image clip or empty region) do we fall back to wall-clock timing.
   let animFrame: number | null = null;
-  let lastFrameTime = 0;
   let isPlayingRaw = $state(false);
+
+  type PlaybackClock = {
+    startTime: number;     // wall-clock anchor
+    startFrame: number;    // timeline frame at startTime
+    rate: number;          // timelineRate snapshot
+    fps: number;
+    pps: number;
+    maxFrames: number;
+    rulerPH: HTMLElement | null;
+    trackPHs: NodeListOf<Element>;
+    tcPreview: HTMLElement | null;
+    tcRuler: HTMLElement | null;
+    lastIntFrame: number;
+    lastAudioSyncFrame: number;
+    lastVideoCheckFrame: number;
+  };
+
+  let _clock: PlaybackClock | null = null;
+
+  /** Rebase the wall-clock anchor so that `frame` corresponds to `now`. */
+  function rebaseClock(frame: number, now: number) {
+    if (!_clock) return;
+    _clock.startTime = now;
+    _clock.startFrame = frame;
+  }
+
+  /**
+   * Compute the current exact timeline frame by reading the active
+   * media element's clock (video preferred, then active audio element).
+   *
+   * Priority:
+   *   1. Active <video>.currentTime (if ready & playing)
+   *   2. First active <audio>.currentTime (if ready & playing)
+   *   3. If a media item exists at this frame but isn't ready yet:
+   *      HOLD the playhead at startFrame (avoids the "playhead jumps
+   *      back" glitch when video finishes loading 200ms into playback)
+   *   4. Otherwise (image clip / empty region): wall-clock timing
+   */
+  function computeExactFrame(now: number): number {
+    if (!_clock) return 0;
+    const { startTime, startFrame, rate, fps } = _clock;
+
+    // 1. Video-driven: use the topmost video's currentTime as master clock.
+    const vid = playbackVideoEl;
+    if (vid && !vid.paused && !vid.seeking && vid.readyState >= 2 && activePlaybackItemId) {
+      const item = itemsStore.getState().itemById[activePlaybackItemId];
+      if (item) {
+        const sourceFps = item.sourceFps ?? fps;
+        const speed = Math.abs(item.speed ?? 1) || 1;
+        const sourceStartFrame = item.sourceStart ?? 0;
+        const sourceFrames = vid.currentTime * sourceFps;
+        const timelineFramesInClip = (sourceFrames - sourceStartFrame) / speed;
+        const frame = item.from + timelineFramesInClip;
+        if (Number.isFinite(frame) && frame >= item.from - 2 && frame < item.from + item.durationInFrames + 2) {
+          return frame;
+        }
+      }
+    }
+
+    // 2. Audio-driven: when no video is active, sync to first active audio.
+    const items = itemsStore.getState().items;
+    for (const item of items) {
+      if (item.type !== 'audio' && item.type !== 'video') continue;
+      if (!item.src) continue;
+      const el = audioElements.get(item.id);
+      if (!el || el.paused || el.seeking || el.readyState < 2) continue;
+      const sourceFps = item.sourceFps ?? fps;
+      const speed = Math.abs(item.speed ?? 1) || 1;
+      const sourceStartFrame = item.sourceStart ?? 0;
+      const sourceFrames = el.currentTime * sourceFps;
+      const timelineFramesInClip = (sourceFrames - sourceStartFrame) / speed;
+      const frame = item.from + timelineFramesInClip;
+      if (Number.isFinite(frame) && frame >= item.from - 2 && frame < item.from + item.durationInFrames + 2) {
+        return frame;
+      }
+    }
+
+    // 3. Media item exists at this frame but isn't ready → hold at startFrame.
+    //    This avoids a cosmetic backward-jump of the playhead when the video
+    //    finishes loading (wall-clock advances during load → media clock
+    //    takes over at video.currentTime=0 → playhead would jump back).
+    //    Only advance via wall-clock when there is NO media at this frame.
+    const holdFrame = Math.max(startFrame, _clock.lastIntFrame);
+    for (const item of items) {
+      if (item.type !== 'audio' && item.type !== 'video') continue;
+      if (!item.src) continue;
+      const itemEnd = item.from + item.durationInFrames;
+      if (holdFrame >= item.from && holdFrame < itemEnd) {
+        // Media item covers this frame — hold until it becomes ready.
+        return holdFrame;
+      }
+    }
+
+    // 4. Fallback: wall-clock (image clips / empty regions, no media at all).
+    const wallMs = now - startTime;
+    const fd = 1000 / fps;
+    return startFrame + (wallMs / fd) * rate;
+  }
 
   function startPlaybackLoop() {
     if (animFrame) { cancelAnimationFrame(animFrame); animFrame = null; }
     isPlayingRaw = true;
 
-    const _startTime = performance.now();
-    const _startFrame = playbackStore.getState().currentFrame;
+    const now = performance.now();
+    const startFrame = playbackStore.getState().currentFrame;
+    const fps = itemsStore.getState().fps;
+    const pps = zoomStore.getState().pixelsPerSecond;
+    const rate = playbackStore.getState().playbackRate;
+    const maxFrames = itemsStore.getState().maxItemEndFrame || 1;
+
+    _clock = {
+      startTime: now,
+      startFrame,
+      rate,
+      fps,
+      pps,
+      maxFrames,
+      rulerPH: document.querySelector('[data-playhead="ruler"]') as HTMLElement | null,
+      trackPHs: document.querySelectorAll('[data-playhead="track"]'),
+      tcPreview: document.querySelector('[data-tc="preview"]') as HTMLElement | null,
+      tcRuler: document.querySelector('[data-tc="ruler"]') as HTMLElement | null,
+      lastIntFrame: startFrame - 1,  // force first-frame branch on first tick
+      lastAudioSyncFrame: startFrame,
+      lastVideoCheckFrame: startFrame,
+    };
+
+    // Kick off media IMMEDIATELY (before the rAF tick runs) so decoders have
+    // a head-start. Since computeExactFrame falls back to wall-clock until
+    // video.readyState ≥ HAVE_CURRENT_DATA, the playhead starts on wall-clock
+    // and transparently hands off to the media clock once ready.
+    updatePlaybackVideo(startFrame);
+    syncAudioToFrame(startFrame, true, fps);
     audioSyncCounter = 0;
 
-    // Snapshot values from vanilla stores
-    let _pps = zoomStore.getState().pixelsPerSecond;
-    let _fps = itemsStore.getState().fps;
-    let _fd = 1000 / _fps;
-    let _pxPerFrame = _pps / _fps;
-    let _maxFrames = itemsStore.getState().maxItemEndFrame || 1;
-    let _rate = playbackStore.getState().playbackRate;
-    let _lastIntFrame = _startFrame;
+    let _handedOffToMediaClock = false;
 
-    // Cache DOM refs once
-    const _rulerPH = document.querySelector('[data-playhead="ruler"]') as HTMLElement | null;
-    const _trackPHs = document.querySelectorAll('[data-playhead="track"]');
-    const _tcPreview = document.querySelector('[data-tc="preview"]') as HTMLElement | null;
-    const _tcRuler = document.querySelector('[data-tc="ruler"]') as HTMLElement | null;
-    const _tracksEl = document.getElementById('tracks-container');
-    const _vpWidth = _tracksEl ? _tracksEl.clientWidth - 120 : 800;
+    const tick = (tnow: number) => {
+      if (!_clock) return;
+      const c = _clock;
 
-    let _init = false;
-
-    const tick = (now: number) => {
-      // ── Absolute time → frame ──
-      const wallMs = now - _startTime;
-      const exactFrame = _startFrame + (wallMs / _fd) * _rate;
+      const exactFrame = computeExactFrame(tnow);
       const intFrame = Math.floor(exactFrame);
 
-      // ── Smooth playhead every tick (ALWAYS runs first, never blocked) ──
-      const smoothPx = exactFrame * _pxPerFrame;
-      const sl = itemsStore.getState().scrollLeft;
-      if (_rulerPH) _rulerPH.style.transform = `translate3d(${smoothPx - sl}px,0,0)`;
-      for (let i = 0; i < _trackPHs.length; i++) {
-        (_trackPHs[i] as HTMLElement).style.transform = `translate3d(${smoothPx}px,0,0)`;
+      // Detect the wall-clock → media-clock handoff and rebase the fallback
+      // anchor so any fallback read afterwards stays in phase with media.
+      const vid = playbackVideoEl;
+      const mediaReady = !!(vid && !vid.paused && vid.readyState >= 2 && activePlaybackItemId);
+      if (!_handedOffToMediaClock && mediaReady) {
+        _handedOffToMediaClock = true;
+        rebaseClock(exactFrame, tnow);
       }
 
-      // ── Frame boundary ──
-      if (intFrame !== _lastIntFrame) {
-        _lastIntFrame = intFrame;
+      // ── Smooth playhead every tick ──
+      const pxPerFrame = c.pps / c.fps;
+      const smoothPx = exactFrame * pxPerFrame;
+      const sl = itemsStore.getState().scrollLeft;
+      if (c.rulerPH) c.rulerPH.style.transform = `translate3d(${smoothPx - sl}px,0,0)`;
+      for (let i = 0; i < c.trackPHs.length; i++) {
+        (c.trackPHs[i] as HTMLElement).style.transform = `translate3d(${smoothPx}px,0,0)`;
+      }
+
+      // ── Frame boundary work ──
+      if (intFrame !== c.lastIntFrame) {
+        c.lastIntFrame = intFrame;
         lastPlaybackFrame = intFrame;
 
-        if (intFrame >= _maxFrames) {
+        if (intFrame >= c.maxFrames) {
           playbackStore.getState().pause();
           return;
         }
@@ -336,55 +464,54 @@
 
         // Timecodes every 5 frames
         if (audioSyncCounter % 5 === 0) {
-          const tc = formatTimecode(intFrame, _fps);
-          if (_tcPreview) _tcPreview.textContent = tc;
-          if (_tcRuler) _tcRuler.textContent = tc;
+          const tc = formatTimecode(intFrame, c.fps);
+          if (c.tcPreview) c.tcPreview.textContent = tc;
+          if (c.tcRuler) c.tcRuler.textContent = tc;
         }
 
-        const _c = audioSyncCounter;
-        const _f = intFrame;
-
-        // Video + audio init on first frame
-        if (!_init) {
-          _init = true;
-          setTimeout(() => {
-            updatePlaybackVideo(_startFrame);
-            syncAudioToFrame(_startFrame, true, _fps);
-          }, 0);
+        // Clip-transition detection: if the topmost video item at this frame
+        // changed, immediately re-init the <video> element. Fast O(N) scan
+        // over items but only runs on frame boundaries (30×/s at most).
+        const topItem = findTopmostVideoItem(intFrame);
+        const topItemId = topItem?.id ?? null;
+        if (topItemId !== activePlaybackItemId) {
+          updatePlaybackVideo(intFrame);
+          // Hand back to wall-clock briefly while new clip's decoder warms up.
+          _handedOffToMediaClock = false;
+          rebaseClock(intFrame, tnow);
         }
 
-        // Video sync every 30 frames (~1s) — deferred after paint.
-        // Minimise interference: only checks clip transitions + drift.
-        if (_c % 30 === 0 && _c > 0) {
-          setTimeout(() => updatePlaybackVideo(_f), 0);
+        // Audio re-sync throttled to every ~1s to activate/deactivate clips
+        // without blasting el.currentTime writes on every frame.
+        if (intFrame - c.lastAudioSyncFrame >= c.fps) {
+          c.lastAudioSyncFrame = intFrame;
+          syncAudioToFrame(intFrame, true, c.fps);
         }
 
-        // Audio drift-check + constants refresh every 60 frames (~2s)
-        if (_c % 60 === 0 && _c > 0) {
-          setTimeout(() => syncAudioToFrame(_f, true, _fps), 0);
-          const prevRate = _rate;
-          _rate = playbackStore.getState().playbackRate;
-          _pps = zoomStore.getState().pixelsPerSecond;
-          _fps = itemsStore.getState().fps;
-          _fd = 1000 / _fps;
-          _pxPerFrame = _pps / _fps;
-          _maxFrames = itemsStore.getState().maxItemEndFrame || 1;
+        // Refresh snapshotted constants every ~2s; honour rate changes.
+        if (intFrame - c.lastVideoCheckFrame >= c.fps * 2) {
+          c.lastVideoCheckFrame = intFrame;
+          const prevRate = c.rate;
+          c.rate = playbackStore.getState().playbackRate;
+          c.pps = zoomStore.getState().pixelsPerSecond;
+          c.fps = itemsStore.getState().fps;
+          c.maxFrames = itemsStore.getState().maxItemEndFrame || 1;
 
-          // If timeline rate changed mid-playback, immediately update video element
-          if (_rate !== prevRate) {
-            const vid = playbackVideoEl;
-            if (vid && !vid.paused) {
-              const topItem = findTopmostVideoItem(_f);
-              if (topItem) {
-                const sourceFps = topItem.sourceFps ?? _fps;
-                const newRate = Math.abs(topItem.speed ?? 1) * _rate * (_fps / sourceFps);
-                vid.playbackRate = newRate;
-                lastSetVideoRate = newRate;
-              }
+          if (c.rate !== prevRate) {
+            const v = playbackVideoEl;
+            if (v && !v.paused && topItem) {
+              const sourceFps = topItem.sourceFps ?? c.fps;
+              const newRate = Math.abs(topItem.speed ?? 1) * c.rate * (c.fps / sourceFps);
+              v.playbackRate = newRate;
+              lastSetVideoRate = newRate;
             }
+            // Rate is item-specific for audio; force an audio resync next tick
+            // so syncAudioToFrame recomputes el.playbackRate.
+            c.lastAudioSyncFrame = intFrame - c.fps;
           }
         }
       }
+
       animFrame = requestAnimationFrame(tick);
     };
     animFrame = requestAnimationFrame(tick);
@@ -394,8 +521,17 @@
     if (animFrame) { cancelAnimationFrame(animFrame); animFrame = null; }
     isPlayingRaw = false;
     lastSetVideoRate = -1;
+    _clock = null;
     pausePlaybackVideo();
+    pauseAllAudio();
+    // Use the full setCurrentFrame (with epoch bump) on stop
+    // so the UI updates the playhead position, render preview, etc.
     playbackStore.getState().setCurrentFrame(lastPlaybackFrame);
+  }
+
+  /** Pause all active audio elements without altering their currentTime. */
+  function pauseAllAudio() {
+    audioElements.forEach((el) => { if (!el.paused) el.pause(); });
   }
 
   // Subscribe to playbackStore — only react to isPlaying changes
@@ -526,13 +662,21 @@
       el.playbackRate = Math.abs(speed) * pbState.playbackRate * (currentFps / sourceFps);
 
       if (playing) {
-        // Drift threshold 0.25s — tight enough to prevent audible drift,
-        // loose enough to avoid seek loops (elements take ~100ms to start).
-        if (!el.seeking && Math.abs(el.currentTime - targetTime) > 0.25) {
+        // Only seek when the audio element was PAUSED (first activation of
+        // this clip) or when drift is absolutely massive (>1s — indicates
+        // the audio fell off a cliff, e.g. system sleep or decoder error).
+        // During normal playback we let the audio element play naturally;
+        // the rAF tick derives the playhead from a media clock, so a small
+        // audio drift costs us nothing visually and avoids audible glitches.
+        if (el.paused) {
+          if (effectiveVol > 0) {
+            if (!el.seeking && Math.abs(el.currentTime - targetTime) > 0.1) {
+              el.currentTime = targetTime;
+            }
+            el.play().catch(() => {});
+          }
+        } else if (!el.seeking && Math.abs(el.currentTime - targetTime) > 1.0) {
           el.currentTime = targetTime;
-        }
-        if (el.paused && effectiveVol > 0) {
-          el.play().catch(() => {});
         }
       } else {
         if (!el.paused) el.pause();
@@ -562,15 +706,20 @@
     return topmost;
   }
 
-  /** Start or update the native preview <video> to show the topmost clip. */
+  /**
+   * Start or update the native preview <video> to show the topmost clip
+   * at `frame`. Must be idempotent — re-calling with the same active item
+   * and close-enough currentTime should be a no-op (no extra seek).
+   */
   function updatePlaybackVideo(frame: number) {
     const video = playbackVideoEl;
     if (!video) return;
 
     const item = findTopmostVideoItem(frame);
     if (!item || !item.src) {
-      if (activePlaybackVideoSrc) {
+      if (activePlaybackItemId) {
         video.pause();
+        activePlaybackItemId = null;
         activePlaybackVideoSrc = null;
       }
       return;
@@ -584,33 +733,55 @@
     const sourceFrame = sourceStartFrame + frameInClip * speed;
     const sourceFps = item.sourceFps ?? currentFps;
     const targetTime = sourceFrame / sourceFps;
-    // Rate must account for project↔source FPS ratio so the video
-    // advances at the same wall-clock rate as the timeline.
     const effectiveRate = Math.abs(speed) * timelineRate * (currentFps / sourceFps);
 
-    if (activePlaybackVideoSrc !== item.src) {
-      // Different video clip — load new source
+    const itemChanged = activePlaybackItemId !== item.id;
+    const srcChanged = activePlaybackVideoSrc !== item.src;
+
+    if (srcChanged) {
+      // Different source file — load new source.
       activePlaybackVideoSrc = item.src;
+      activePlaybackItemId = item.id;
       video.src = assetUrl(item.src);
       video.currentTime = targetTime;
       video.playbackRate = effectiveRate;
       lastSetVideoRate = effectiveRate;
       video.play().catch(() => {});
-    } else {
-      // Same video — only touch playbackRate when it actually changed to
-      // avoid resetting the browser's internal decoder timing.
+      return;
+    }
+
+    if (itemChanged) {
+      // Same source file, different clip — seek to new in-point.
+      // This path fires on split-clip transitions (A/B both use same video).
+      activePlaybackItemId = item.id;
+      if (Math.abs(video.currentTime - targetTime) > 0.05) {
+        video.currentTime = targetTime;
+      }
       if (lastSetVideoRate !== effectiveRate) {
         video.playbackRate = effectiveRate;
         lastSetVideoRate = effectiveRate;
       }
-      // Seek on drift > 0.5s — loose enough to prevent seek loops,
-      // tight enough to keep preview useful.
-      if (!video.seeking && Math.abs(video.currentTime - targetTime) > 0.5) {
-        video.currentTime = targetTime;
-      }
-      if (video.paused) {
-        video.play().catch(() => {});
-      }
+      if (video.paused) video.play().catch(() => {});
+      return;
+    }
+
+    // Same clip, same source. This path fires on play-start after a scrub
+    // (where the video element's currentTime is stale) AND on legitimate
+    // "keep playing" state refreshes. Seek only when there's an actual
+    // drift — avoids unnecessary decoder resets during normal playback.
+    //
+    // During active playback the rAF tick derives the playhead from
+    // video.currentTime, so drift stays near-zero and this check is a
+    // no-op. On play-start after scrub it correctly re-seeks.
+    if (!video.seeking && Math.abs(video.currentTime - targetTime) > 0.1) {
+      video.currentTime = targetTime;
+    }
+    if (lastSetVideoRate !== effectiveRate) {
+      video.playbackRate = effectiveRate;
+      lastSetVideoRate = effectiveRate;
+    }
+    if (video.paused) {
+      video.play().catch(() => {});
     }
   }
 
@@ -620,15 +791,49 @@
     if (video && !video.paused) {
       video.pause();
     }
-    // Keep activePlaybackVideoSrc cached — avoids reloading the same
+    // Keep activePlaybackVideoSrc/Id cached — avoids reloading the same
     // video from disk on every play/pause cycle.
   }
 
   // During playback, audio sync is handled by the rAF tick.
-  // When paused/scrubbing, sync reactively on every frame change.
+  // When paused/scrubbing, sync with throttle to prevent 30fps reactive iterations.
+  let _audioSyncTimer: ReturnType<typeof setTimeout> | null = null;
   $effect(() => {
     if (pb.isPlaying) return;
-    syncAudioToFrame(pb.currentFrame, false, fps);
+    const frame = pb.currentFrame;
+    const currentFps = fps;
+    // Throttle: don't sync more than ~15fps during rapid scrubbing
+    if (_audioSyncTimer) clearTimeout(_audioSyncTimer);
+    _audioSyncTimer = setTimeout(() => {
+      _audioSyncTimer = null;
+      syncAudioToFrame(frame, false, currentFps);
+    }, 30);
+  });
+
+  // Pre-warm audio elements when items change so the first play doesn't
+  // stutter while the audio decoder loads from disk. Elements are created
+  // with preload='auto' and kept paused at currentTime=0 until needed.
+  let _prewarmedItemIds: Set<string> = new Set();
+  $effect(() => {
+    const items = ti.items;
+    const stillPresent = new Set<string>();
+    for (const item of items) {
+      if (item.type !== 'video' && item.type !== 'audio') continue;
+      if (!item.src) continue;
+      stillPresent.add(item.id);
+      if (_prewarmedItemIds.has(item.id)) continue;
+      // getOrCreateAudioEl handles creation + src assignment; calling it
+      // here warms the browser decoder before playback starts.
+      const el = getOrCreateAudioEl(item);
+      if (el) {
+        el.volume = 0; // silent until real sync sets volume
+        _prewarmedItemIds.add(item.id);
+      }
+    }
+    // Remove dead entries
+    for (const id of _prewarmedItemIds) {
+      if (!stillPresent.has(id)) _prewarmedItemIds.delete(id);
+    }
   });
 
   onDestroy(() => {
@@ -640,6 +845,7 @@
   let isRendering = false;
   let renderEpoch = $state(0);
   let pendingRenderFrame: number | null = null;
+  let _renderDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 
   function requestRender(frame: number) {
     if (!currentProject) return;
@@ -688,15 +894,18 @@
   // Skip FFmpeg per-frame renders during playback — the native <video>
   // preview handles smooth real-time display. Only render when paused
   // (scrubbing / seeking) for accurate composited preview.
+  // PERF: Debounce render requests by 80ms during rapid scrubbing to
+  // avoid stacking FFmpeg subprocess calls.
   $effect(() => {
-    // Read isPlaying FIRST — if true, return before reading currentFrame.
-    // This prevents Svelte from tracking currentFrame as a dependency
-    // during playback, avoiding 30+ unnecessary effect runs per second.
     const playing = pb.isPlaying;
     if (playing) return;
     const frame = pb.currentFrame;
     if (frame !== lastRenderedFrame && currentProject) {
-      requestRender(frame);
+      if (_renderDebounceTimer) clearTimeout(_renderDebounceTimer);
+      _renderDebounceTimer = setTimeout(() => {
+        _renderDebounceTimer = null;
+        requestRender(frame);
+      }, 80);
     }
   });
 
@@ -2376,25 +2585,28 @@
             <div class="flex-1 relative h-full overflow-hidden">
               <div class="absolute top-0 h-full pointer-events-none will-change-transform" style:transform="translate3d({-ti.scrollLeft}px, 0, 0)">
                 {#each Array(Math.ceil((totalFrames / fps) + 10)) as _, i}
-                  <!-- Major tick (every second) -->
-                  <div class="absolute bottom-0" style:left="{frameToPixel(i * fps)}px">
-                    <div class="w-px h-3 bg-white/15"></div>
-                    <span class="absolute top-0 left-1 text-[7px] text-white/20 select-none">{i}s</span>
-                  </div>
-                  <!-- Half-second subdivisions (shown when zoomed enough) -->
-                  {#if zm.pixelsPerSecond > 60}
-                    <div class="absolute bottom-0" style:left="{frameToPixel(i * fps + Math.round(fps / 2))}px">
-                      <div class="w-px h-1.5 bg-white/8"></div>
+                  {@const tickPx = frameToPixel(i * fps)}
+                  {#if tickPx >= ti.scrollLeft - 100 && tickPx <= ti.scrollLeft + 2000}
+                    <!-- Major tick (every second) — only render visible range -->
+                    <div class="absolute bottom-0" style:left="{tickPx}px">
+                      <div class="w-px h-3 bg-white/15"></div>
+                      <span class="absolute top-0 left-1 text-[7px] text-white/20 select-none">{i}s</span>
                     </div>
-                  {/if}
-                  <!-- Quarter-second subdivisions (shown when more zoomed) -->
-                  {#if zm.pixelsPerSecond > 150}
-                    <div class="absolute bottom-0" style:left="{frameToPixel(i * fps + Math.round(fps / 4))}px">
-                      <div class="w-px h-1 bg-white/5"></div>
-                    </div>
-                    <div class="absolute bottom-0" style:left="{frameToPixel(i * fps + Math.round(fps * 3 / 4))}px">
-                      <div class="w-px h-1 bg-white/5"></div>
-                    </div>
+                    <!-- Half-second subdivisions (shown when zoomed enough) -->
+                    {#if zm.pixelsPerSecond > 60}
+                      <div class="absolute bottom-0" style:left="{frameToPixel(i * fps + Math.round(fps / 2))}px">
+                        <div class="w-px h-1.5 bg-white/8"></div>
+                      </div>
+                    {/if}
+                    <!-- Quarter-second subdivisions (shown when more zoomed) -->
+                    {#if zm.pixelsPerSecond > 150}
+                      <div class="absolute bottom-0" style:left="{frameToPixel(i * fps + Math.round(fps / 4))}px">
+                        <div class="w-px h-1 bg-white/5"></div>
+                      </div>
+                      <div class="absolute bottom-0" style:left="{frameToPixel(i * fps + Math.round(fps * 3 / 4))}px">
+                        <div class="w-px h-1 bg-white/5"></div>
+                      </div>
+                    {/if}
                   {/if}
                 {/each}
               </div>
@@ -2484,7 +2696,7 @@
                           <div
                             role="button"
                             tabindex="-1"
-                            class="absolute top-[2px] rounded-[3px] transition-shadow cursor-pointer select-none ring-offset-black"
+                            class="absolute top-[2px] rounded-[3px] cursor-pointer select-none ring-offset-black"
                             class:ring-2={isSelected}
                             class:ring-white={isSelected}
                             style:left="{startPx}px"
@@ -2579,10 +2791,13 @@
                           <div class="absolute top-0 bottom-0 w-px bg-white/15 pointer-events-none z-5" style:left="{frameToPixel(previewFrame)}px"></div>
                         {/if}
 
-                        <!-- Snap indicator lines (at second boundaries when snap enabled) -->
+                        <!-- Snap indicator lines (at second boundaries when snap enabled) — virtualized -->
                         {#if ti.snapEnabled && zm.pixelsPerSecond > 40}
                           {#each Array(Math.ceil((totalFrames / fps) + 5)) as _, i}
-                            <div class="absolute top-0 bottom-0 w-px bg-white/2 pointer-events-none" style:left="{frameToPixel(i * fps)}px"></div>
+                            {@const snapPx = frameToPixel(i * fps)}
+                            {#if snapPx >= ti.scrollLeft - 50 && snapPx <= ti.scrollLeft + 2000}
+                              <div class="absolute top-0 bottom-0 w-px bg-white/2 pointer-events-none" style:left="{snapPx}px"></div>
+                            {/if}
                           {/each}
                         {/if}
                       </div>
