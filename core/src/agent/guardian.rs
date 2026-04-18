@@ -255,6 +255,7 @@ impl Guardian {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::security::ToolRisk;
 
     fn test_guardian_with_dir() -> (Guardian, tempfile::TempDir) {
         let dir = tempfile::tempdir().unwrap();

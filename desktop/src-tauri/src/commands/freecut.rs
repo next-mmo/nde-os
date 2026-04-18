@@ -325,10 +325,16 @@ pub async fn freecut_generate_thumbnails(
     let _ = app.emit(
         "freecut://thumbnails-ready",
         ThumbnailsReadyEvent {
-            media_id,
+            media_id: media_id.clone(),
             thumbnail_paths: paths.clone(),
         },
     );
+
+    // Persist the first thumbnail path so list_media returns it on reload.
+    if let Some(thumb) = paths.first() {
+        let store = state.store.lock().await;
+        let _ = store.update_media_thumbnail(&media_id, thumb);
+    }
 
     Ok(paths)
 }
@@ -678,4 +684,39 @@ pub async fn freecut_remove_background(
     .await
     .map_err(|e| e.to_string())?
     .map_err(|e| e.to_string())
+}
+
+// ─── Settings ──────────────────────────────────────────────────────────────────
+
+/// Read a UI setting from the FreeCut SQLite DB.
+/// Returns `null` (serialised as `None`) if the key does not exist.
+#[tauri::command]
+pub async fn freecut_get_setting(
+    state: tauri::State<'_, FreeCutState>,
+    key: String,
+) -> Result<Option<String>, String> {
+    let store = state.store.lock().await;
+    store.get_setting(&key).map_err(|e| e.to_string())
+}
+
+/// Persist a UI setting into the FreeCut SQLite DB (upsert).
+#[tauri::command]
+pub async fn freecut_set_setting(
+    state: tauri::State<'_, FreeCutState>,
+    key: String,
+    value: String,
+) -> Result<(), String> {
+    let store = state.store.lock().await;
+    store.set_setting(&key, &value).map_err(|e| e.to_string())
+}
+
+/// Delete a UI setting from the FreeCut SQLite DB.
+/// Returns `true` if the key existed.
+#[tauri::command]
+pub async fn freecut_delete_setting(
+    state: tauri::State<'_, FreeCutState>,
+    key: String,
+) -> Result<bool, String> {
+    let store = state.store.lock().await;
+    store.delete_setting(&key).map_err(|e| e.to_string())
 }

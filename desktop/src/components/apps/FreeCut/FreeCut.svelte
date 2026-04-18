@@ -221,8 +221,18 @@
   // ─── Lifecycle ────────────────────────────────────────────────────────
   let unlisten: Array<() => void> = [];
 
+  const LAST_PROJECT_KEY = "last_project_id";
+
   onMount(async () => {
     await loadProjects();
+
+    // Restore the last open project after a hard reload so that the
+    // imported media library (fetched via freecut_list_media on openProject)
+    // is immediately available without requiring the user to re-click.
+    const lastId: string | null = await invoke("freecut_get_setting", { key: LAST_PROJECT_KEY }).catch(() => null);
+    if (lastId && projects.some((p) => p.id === lastId)) {
+      await openProject(lastId);
+    }
 
 
     unlisten.push(
@@ -961,6 +971,8 @@
         // ensureSourceMediaSelection is now handled by DubbingPanel
         historyStore.getState().clear();
         currentView = "editor";
+        // Persist so a hard reload returns to the same project (DB-backed).
+        invoke("freecut_set_setting", { key: LAST_PROJECT_KEY, value: id }).catch(console.error);
       }
     } catch (e) { console.error(e); } finally { isLoading = false; }
   }
@@ -1558,6 +1570,9 @@
   }
 
   function goBack() {
+    // Clear the persisted project ID so the next hard reload starts at the
+    // projects list rather than re-opening the closed project.
+    invoke("freecut_delete_setting", { key: LAST_PROJECT_KEY }).catch(console.error);
     currentProject = null;
     currentView = "projects";
     mediaLibrary = [];

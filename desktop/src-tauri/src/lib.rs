@@ -211,6 +211,9 @@ pub fn run() {
             commands::freecut::freecut_generate_dub_assets,
             commands::freecut::freecut_install_dubbing_runtime,
             commands::freecut::freecut_remove_background,
+            commands::freecut::freecut_get_setting,
+            commands::freecut::freecut_set_setting,
+            commands::freecut::freecut_delete_setting,
             // service hub
             commands::service_hub::service_hub_status,
             commands::service_hub::service_hub_install,

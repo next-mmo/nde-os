@@ -52,7 +52,12 @@ impl FreeCutStore {
                 FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
             );
 
-            CREATE INDEX IF NOT EXISTS idx_media_project ON media(project_id);",
+            CREATE INDEX IF NOT EXISTS idx_media_project ON media(project_id);
+
+            CREATE TABLE IF NOT EXISTS settings (
+                key   TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            );",
         )?;
         Ok(())
     }
@@ -163,11 +168,70 @@ impl FreeCutStore {
         Ok(media)
     }
 
+    /// Update the thumbnail_path in an existing media record.
+    ///
+    /// Called after async thumbnail generation so that `list_media` returns
+    /// the correct path on the next call (e.g. after a hard reload).
+    pub fn update_media_thumbnail(&self, media_id: &str, thumbnail_path: &str) -> Result<bool> {
+        // Read the current JSON blob, patch it, and write it back to keep
+        // the denormalised `data` column in sync with the individual columns.
+        let mut stmt = self
+            .conn
+            .prepare("SELECT data FROM media WHERE id = ?1")?;
+        let existing: Option<String> = stmt
+            .query_row(params![media_id], |row| row.get(0))
+            .optional()?;
+
+        let Some(json) = existing else {
+            return Ok(false);
+        };
+
+        let mut meta: super::project::MediaMetadata = serde_json::from_str(&json)?;
+        meta.thumbnail_path = Some(thumbnail_path.to_string());
+        let updated_json = serde_json::to_string(&meta)?;
+
+        let affected = self.conn.execute(
+            "UPDATE media SET data = ?1 WHERE id = ?2",
+            params![updated_json, media_id],
+        )?;
+        Ok(affected > 0)
+    }
+
     /// Delete a media entry by ID.
     pub fn delete_media(&self, media_id: &str) -> Result<bool> {
         let affected = self
             .conn
             .execute("DELETE FROM media WHERE id = ?1", params![media_id])?;
+        Ok(affected > 0)
+    }
+
+    // ── Settings ───────────────────────────────────────────────────────────
+
+    /// Read a setting value by key. Returns `None` if the key does not exist.
+    pub fn get_setting(&self, key: &str) -> Result<Option<String>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT value FROM settings WHERE key = ?1")?;
+        let result = stmt
+            .query_row(params![key], |row| row.get::<_, String>(0))
+            .optional()?;
+        Ok(result)
+    }
+
+    /// Insert or replace a setting value.
+    pub fn set_setting(&self, key: &str, value: &str) -> Result<()> {
+        self.conn.execute(
+            "INSERT OR REPLACE INTO settings (key, value) VALUES (?1, ?2)",
+            params![key, value],
+        )?;
+        Ok(())
+    }
+
+    /// Delete a setting by key. Returns `true` if the key existed.
+    pub fn delete_setting(&self, key: &str) -> Result<bool> {
+        let affected = self
+            .conn
+            .execute("DELETE FROM settings WHERE key = ?1", params![key])?;
         Ok(affected > 0)
     }
 }
@@ -302,5 +366,78 @@ mod tests {
         store.delete_project("cd").unwrap();
         let list = store.list_media("cd").unwrap();
         assert_eq!(list.len(), 0);
+    }
+
+    #[test]
+    fn update_thumbnail_path() {
+        let store = temp_store();
+        store.save_project(&sample_project("tp")).unwrap();
+
+        let media = MediaMetadata {
+            id: "m3".to_string(),
+            file_name: "thumb_test.mp4".to_string(),
+            file_path: "/tmp/thumb_test.mp4".to_string(),
+            file_size: 2048,
+            media_type: MediaType::Video,
+            width: Some(1280),
+            height: Some(720),
+            duration_secs: Some(30.0),
+            fps: Some(30.0),
+            codec: Some("h264".to_string()),
+            audio_codec: None,
+            sample_rate: None,
+            channels: None,
+            thumbnail_path: None,
+            imported_at: Utc::now(),
+        };
+
+        store.save_media("tp", &media).unwrap();
+
+        // Initially no thumbnail.
+        let before = store.list_media("tp").unwrap();
+        assert!(before[0].thumbnail_path.is_none());
+
+        // Update the thumbnail path.
+        let updated = store.update_media_thumbnail("m3", "/tmp/thumbs/thumb0.jpg").unwrap();
+        assert!(updated);
+
+        // list_media now returns the thumbnail path.
+        let after = store.list_media("tp").unwrap();
+        assert_eq!(after[0].thumbnail_path.as_deref(), Some("/tmp/thumbs/thumb0.jpg"));
+
+        // Updating a nonexistent ID returns false.
+        let not_found = store.update_media_thumbnail("does-not-exist", "/x").unwrap();
+        assert!(!not_found);
+    }
+
+    #[test]
+    fn settings_get_set_delete() {
+        let store = temp_store();
+
+        // Key missing initially.
+        assert!(store.get_setting("last_project_id").unwrap().is_none());
+
+        // Set then get.
+        store.set_setting("last_project_id", "proj-abc").unwrap();
+        assert_eq!(
+            store.get_setting("last_project_id").unwrap().as_deref(),
+            Some("proj-abc")
+        );
+
+        // Overwrite via set (INSERT OR REPLACE).
+        store.set_setting("last_project_id", "proj-xyz").unwrap();
+        assert_eq!(
+            store.get_setting("last_project_id").unwrap().as_deref(),
+            Some("proj-xyz")
+        );
+
+        // Delete returns true when key existed.
+        assert!(store.delete_setting("last_project_id").unwrap());
+
+        // Returns false when key is already gone.
+        assert!(!store.delete_setting("last_project_id").unwrap());
+
+        // Gone after delete.
+        assert!(store.get_setting("last_project_id").unwrap().is_none());
     }
 }
