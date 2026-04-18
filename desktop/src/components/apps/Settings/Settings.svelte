@@ -8,7 +8,8 @@
     resourceUsage,
     systemInfo,
   } from "$lib/stores/state";
-  import { onDestroy } from "svelte";
+  import { invoke } from "@tauri-apps/api/core";
+  import { onDestroy, onMount } from "svelte";
   import { desktop, toggleDockAutoHide, toggleTheme, resetIconPositions, setWallpaper, toggleStartExpanded } from "🍎/state/desktop.svelte";
   import {
     wallpaperSettings,
@@ -85,8 +86,53 @@
     { id: "general", label: "General", icon: "⚙️" },
     { id: "appearance", label: "Appearance", icon: "🌗" },
     { id: "desktop-dock", label: "Desktop & Dock", icon: "🖥️" },
+    { id: "api-keys", label: "API Keys & Tokens", icon: "🔑" },
     { id: "control-center", label: "Control Center", icon: "🎛️" },
   ];
+
+  // ── Global Settings (API keys / tokens) ────────────────────────────────
+  type GlobalSettings = {
+    hfToken?: string | null;
+    openaiApiKey?: string | null;
+    anthropicApiKey?: string | null;
+    whisperDefaultModel?: string | null;
+    defaultTargetLanguage?: string | null;
+  };
+
+  let globalSettings = $state<GlobalSettings>({});
+  let settingsSaving = $state(false);
+  let settingsSaved = $state(false);
+  let settingsError = $state<string | null>(null);
+  let showHfToken = $state(false);
+  let showOpenaiKey = $state(false);
+  let showAnthropicKey = $state(false);
+
+  async function loadGlobalSettings() {
+    try {
+      globalSettings = await invoke<GlobalSettings>("get_global_settings");
+    } catch (e: any) {
+      console.error("Failed to load settings:", e);
+    }
+  }
+
+  async function saveGlobalSettings() {
+    settingsSaving = true;
+    settingsSaved = false;
+    settingsError = null;
+    try {
+      await invoke("set_global_settings", { settings: globalSettings });
+      settingsSaved = true;
+      setTimeout(() => settingsSaved = false, 2000);
+    } catch (e: any) {
+      settingsError = String(e);
+    } finally {
+      settingsSaving = false;
+    }
+  }
+
+  onMount(() => {
+    loadGlobalSettings();
+  });
 
   // ── Online Wallpaper Handlers ─────────────────────────────────────────
   const wpSetSettings = wallpaperSettings;
@@ -717,6 +763,182 @@
             <h2 class="text-sm font-medium text-black dark:text-white">Control Center configuration is coming soon.</h2>
             <p class="text-[12px] text-gray-500 mt-2 text-center max-w-sm">Future updates will allow you to manage which modules appear in the menu bar and Control Center dropdown.</p>
           </div>
+        </div>
+      </div>
+    {/if}
+
+    <!-- API KEYS & TOKENS PANE -->
+    {#if activeTab === "api-keys"}
+      <div class="max-w-2xl mx-auto animate-in fade-in slide-in-from-bottom-2 duration-300">
+        <header class="flex items-center justify-between mb-8">
+          <div class="flex items-center gap-4">
+            <div class="w-14 h-14 bg-linear-to-br from-amber-500 to-orange-600 rounded-lg shadow-md border border-white/20 flex items-center justify-center text-3xl">🔑</div>
+            <div>
+              <h1 class="text-[28px] font-semibold tracking-tight text-black dark:text-white">API Keys & Tokens</h1>
+              <p class="text-[12px] text-gray-500 mt-0.5">Manage API keys and tokens used by NDE-OS apps.</p>
+            </div>
+          </div>
+          <button
+            class="px-4 py-1.5 rounded-full bg-blue-500 hover:bg-blue-600 text-white text-[13px] font-medium transition shadow-sm disabled:opacity-50"
+            onclick={saveGlobalSettings}
+            disabled={settingsSaving}
+          >
+            {settingsSaving ? "Saving..." : "Save"}
+          </button>
+        </header>
+
+        {#if settingsSaved}
+          <div class="mb-4 px-4 py-2.5 rounded-lg bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/20 text-emerald-700 dark:text-emerald-300 text-[13px] font-medium flex items-center gap-2">
+            <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
+            Saved — API keys encrypted in OS keychain
+          </div>
+        {/if}
+        {#if settingsError}
+          <div class="mb-4 px-4 py-2.5 rounded-lg bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/20 text-red-700 dark:text-red-300 text-[13px]">
+            {settingsError}
+          </div>
+        {/if}
+
+        <!-- HuggingFace Token -->
+        <div class="bg-white/60 dark:bg-black/30 backdrop-blur-xl border border-black/5 dark:border-white/10 rounded-xl overflow-hidden shadow-sm mb-4">
+          <div class="px-5 py-3 border-b border-black/5 dark:border-white/5 flex justify-between items-center bg-black/5 dark:bg-white/5">
+            <div class="flex items-center gap-2">
+              <span class="text-lg">🤗</span>
+              <span class="text-[13px] font-semibold text-black dark:text-white">HuggingFace</span>
+            </div>
+            <span class="text-[10px] px-2 py-0.5 rounded-full bg-violet-100 dark:bg-violet-500/15 text-violet-600 dark:text-violet-300 font-medium">Speaker Diarization</span>
+          </div>
+          <div class="p-5 space-y-3">
+            <p class="text-[12px] text-gray-500">Required for automatic speaker detection (pyannote.audio). Get your token at <a href="https://huggingface.co/settings/tokens" class="text-blue-500 hover:underline" target="_blank" rel="noopener">huggingface.co/settings/tokens</a></p>
+            <div class="flex gap-2">
+              <div class="flex-1 relative">
+                <input
+                  type={showHfToken ? "text" : "password"}
+                  class="w-full px-3 py-2.5 rounded-lg bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 text-[13px] text-black dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 pr-10"
+                  placeholder="hf_..."
+                  value={globalSettings.hfToken ?? ""}
+                  oninput={(e) => globalSettings.hfToken = e.currentTarget.value || null}
+                />
+                <button
+                  class="absolute right-2 top-1/2 -translate-y-1/2 text-[11px] text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition"
+                  onclick={() => showHfToken = !showHfToken}
+                >
+                  {showHfToken ? "🙈" : "👁️"}
+                </button>
+              </div>
+            </div>
+            {#if globalSettings.hfToken}
+              <p class="text-[11px] text-emerald-500 font-medium">✓ Token configured</p>
+            {/if}
+          </div>
+        </div>
+
+        <!-- OpenAI API Key -->
+        <div class="bg-white/60 dark:bg-black/30 backdrop-blur-xl border border-black/5 dark:border-white/10 rounded-xl overflow-hidden shadow-sm mb-4">
+          <div class="px-5 py-3 border-b border-black/5 dark:border-white/5 flex justify-between items-center bg-black/5 dark:bg-white/5">
+            <div class="flex items-center gap-2">
+              <span class="text-lg">🤖</span>
+              <span class="text-[13px] font-semibold text-black dark:text-white">OpenAI</span>
+            </div>
+            <span class="text-[10px] px-2 py-0.5 rounded-full bg-gray-100 dark:bg-white/10 text-gray-500 dark:text-gray-400 font-medium">Optional</span>
+          </div>
+          <div class="p-5 space-y-3">
+            <p class="text-[12px] text-gray-500">API key for OpenAI models (GPT-4, Whisper API, etc.).</p>
+            <div class="flex gap-2">
+              <div class="flex-1 relative">
+                <input
+                  type={showOpenaiKey ? "text" : "password"}
+                  class="w-full px-3 py-2.5 rounded-lg bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 text-[13px] text-black dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 pr-10"
+                  placeholder="sk-..."
+                  value={globalSettings.openaiApiKey ?? ""}
+                  oninput={(e) => globalSettings.openaiApiKey = e.currentTarget.value || null}
+                />
+                <button
+                  class="absolute right-2 top-1/2 -translate-y-1/2 text-[11px] text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition"
+                  onclick={() => showOpenaiKey = !showOpenaiKey}
+                >
+                  {showOpenaiKey ? "🙈" : "👁️"}
+                </button>
+              </div>
+            </div>
+            {#if globalSettings.openaiApiKey}
+              <p class="text-[11px] text-emerald-500 font-medium">✓ Key configured</p>
+            {/if}
+          </div>
+        </div>
+
+        <!-- Anthropic API Key -->
+        <div class="bg-white/60 dark:bg-black/30 backdrop-blur-xl border border-black/5 dark:border-white/10 rounded-xl overflow-hidden shadow-sm mb-4">
+          <div class="px-5 py-3 border-b border-black/5 dark:border-white/5 flex justify-between items-center bg-black/5 dark:bg-white/5">
+            <div class="flex items-center gap-2">
+              <span class="text-lg">🧠</span>
+              <span class="text-[13px] font-semibold text-black dark:text-white">Anthropic</span>
+            </div>
+            <span class="text-[10px] px-2 py-0.5 rounded-full bg-gray-100 dark:bg-white/10 text-gray-500 dark:text-gray-400 font-medium">Optional</span>
+          </div>
+          <div class="p-5 space-y-3">
+            <p class="text-[12px] text-gray-500">API key for Anthropic models (Claude).</p>
+            <div class="flex gap-2">
+              <div class="flex-1 relative">
+                <input
+                  type={showAnthropicKey ? "text" : "password"}
+                  class="w-full px-3 py-2.5 rounded-lg bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 text-[13px] text-black dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 pr-10"
+                  placeholder="sk-ant-..."
+                  value={globalSettings.anthropicApiKey ?? ""}
+                  oninput={(e) => globalSettings.anthropicApiKey = e.currentTarget.value || null}
+                />
+                <button
+                  class="absolute right-2 top-1/2 -translate-y-1/2 text-[11px] text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition"
+                  onclick={() => showAnthropicKey = !showAnthropicKey}
+                >
+                  {showAnthropicKey ? "🙈" : "👁️"}
+                </button>
+              </div>
+            </div>
+            {#if globalSettings.anthropicApiKey}
+              <p class="text-[11px] text-emerald-500 font-medium">✓ Key configured</p>
+            {/if}
+          </div>
+        </div>
+
+        <!-- Defaults -->
+        <div class="bg-white/60 dark:bg-black/30 backdrop-blur-xl border border-black/5 dark:border-white/10 rounded-xl overflow-hidden shadow-sm mb-4">
+          <div class="px-5 py-3 border-b border-black/5 dark:border-white/5 bg-black/5 dark:bg-white/5">
+            <span class="text-[13px] font-semibold text-black dark:text-white">Defaults</span>
+          </div>
+          <div class="p-5 grid grid-cols-2 gap-4">
+            <div>
+              <label class="block text-[12px] text-gray-500 mb-1.5" for="settings-whisper-model">Whisper Model</label>
+              <select
+                id="settings-whisper-model"
+                class="w-full px-3 py-2 rounded-lg bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 text-[13px] text-black dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                value={globalSettings.whisperDefaultModel ?? "base"}
+                onchange={(e) => globalSettings.whisperDefaultModel = e.currentTarget.value}
+              >
+                <option value="tiny">tiny</option>
+                <option value="base">base</option>
+                <option value="small">small</option>
+                <option value="medium">medium</option>
+                <option value="large-v2">large-v2</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-[12px] text-gray-500 mb-1.5" for="settings-target-lang">Default Target Language</label>
+              <input
+                id="settings-target-lang"
+                type="text"
+                class="w-full px-3 py-2 rounded-lg bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 text-[13px] text-black dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder="en"
+                value={globalSettings.defaultTargetLanguage ?? ""}
+                oninput={(e) => globalSettings.defaultTargetLanguage = e.currentTarget.value || null}
+              />
+            </div>
+          </div>
+        </div>
+
+        <div class="flex items-center justify-center gap-2 mt-6">
+          <svg class="w-3.5 h-3.5 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
+          <p class="text-[11px] text-gray-400">API keys are encrypted in your OS keychain (macOS Keychain / Windows Credential Manager). Never stored as plaintext.</p>
         </div>
       </div>
     {/if}

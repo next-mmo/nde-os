@@ -71,6 +71,7 @@ export type DubbingSession = {
 
 export type DubbingToolReport = {
   whisperAvailable: boolean;
+  whisperxAvailable: boolean;
   edgeTtsAvailable: boolean;
   ndeLlmAvailable: boolean;
   pythonAvailable: boolean;
@@ -105,6 +106,10 @@ export type WhisperSettings = {
   model?: string | null;
   language?: string | null;
   task?: string | null;
+  diarize?: boolean | null;
+  hfToken?: string | null;
+  minSpeakers?: number | null;
+  maxSpeakers?: number | null;
 };
 
 export type DubStudioJob = {

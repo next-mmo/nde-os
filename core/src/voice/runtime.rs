@@ -101,6 +101,7 @@ impl VoiceRuntime {
         self.with_runtime_path(|| {
             let edge_tts = resolve_system_command("edge-tts").is_some();
             let whisper = resolve_system_command("whisper").is_some();
+            let whisperx = resolve_system_command("whisperx").is_some();
             let python = resolve_python().is_some();
 
             let mut details = Vec::new();
@@ -109,6 +110,9 @@ impl VoiceRuntime {
             }
             if !whisper {
                 details.push("whisper CLI not found".to_string());
+            }
+            if whisperx {
+                details.push("whisperx available (speaker diarization ready)".to_string());
             }
             if !python {
                 details.push("Python not found (needed for RVC)".to_string());
@@ -125,6 +129,7 @@ impl VoiceRuntime {
                 runtime_path: Some(self.workspace.to_string_lossy().to_string()),
                 edge_tts_available: edge_tts,
                 whisper_available: whisper,
+                whisperx_available: whisperx,
                 python_available: python,
                 rvc_available: python,
                 voices,
@@ -151,6 +156,7 @@ impl VoiceRuntime {
                 }
                 "whisper" => packages.push("openai-whisper".to_string()),
                 "edge_tts" | "edge-tts" => packages.push("edge-tts".to_string()),
+                "diarization" | "whisperx" => packages.push("whisperx".to_string()),
                 other => return Err(anyhow!("unknown voice component: '{other}'")),
             }
         }

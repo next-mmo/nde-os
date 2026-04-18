@@ -636,6 +636,7 @@ pub async fn freecut_install_dubbing_runtime(
             "core" => vec!["openai-whisper".to_string(), "edge-tts".to_string()],
             "whisper" => vec!["openai-whisper".to_string()],
             "edge_tts" => vec!["edge-tts".to_string()],
+            "diarization" => vec!["whisperx".to_string()],
             other => return Err(format!("unknown runtime '{other}'")),
         };
 

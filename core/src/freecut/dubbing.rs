@@ -38,6 +38,7 @@ use crate::voice::{
 #[serde(rename_all = "camelCase")]
 pub struct DubbingToolReport {
     pub whisper_available: bool,
+    pub whisperx_available: bool,
     pub edge_tts_available: bool,
     pub nde_llm_available: bool,
     pub python_available: bool,
@@ -67,6 +68,18 @@ pub struct WhisperSettings {
     pub language: Option<String>,
     #[serde(default)]
     pub task: Option<String>,
+    /// Enable speaker diarization via whisperx + pyannote.
+    #[serde(default)]
+    pub diarize: Option<bool>,
+    /// HuggingFace auth token for pyannote speaker models.
+    #[serde(default)]
+    pub hf_token: Option<String>,
+    /// Minimum expected speakers (hint for pyannote).
+    #[serde(default)]
+    pub min_speakers: Option<u32>,
+    /// Maximum expected speakers (hint for pyannote).
+    #[serde(default)]
+    pub max_speakers: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -113,6 +126,7 @@ pub fn detect_local_tools() -> Result<DubbingToolReport> {
 
     Ok(DubbingToolReport {
         whisper_available: status.whisper_available,
+        whisperx_available: status.whisperx_available,
         edge_tts_available: status.edge_tts_available,
         nde_llm_available: nde_llm_status.is_some(),
         python_available: status.python_available,
@@ -437,6 +451,15 @@ fn transcribe_with_whisper(
     whisper: WhisperSettings,
     runtime: &VoiceRuntime,
 ) -> Result<PathBuf> {
+    // Check if diarization is requested and whisperx is available.
+    let want_diarize = whisper.diarize.unwrap_or(false);
+    if want_diarize {
+        if let Some(result) = try_transcribe_with_diarization(source_media_path, output_dir, &whisper, runtime) {
+            return result;
+        }
+        // Fall through to plain whisper if diarization script fails to start.
+    }
+
     let whisper_cli = runtime
         .resolve_tool("whisper")
         .ok_or_else(|| anyhow!("Whisper CLI not found; install the voice runtime via Service Hub or switch to SRT import"))?;
@@ -489,6 +512,166 @@ fn transcribe_with_whisper(
     }
 
     fallback.ok_or_else(|| anyhow!("Whisper completed but no SRT output was found"))
+}
+
+/// Attempt transcription with speaker diarization via the diarize.py script.
+///
+/// Returns `None` if the diarization script cannot be located (caller should
+/// fall back to plain Whisper). Returns `Some(Result)` if it was attempted.
+fn try_transcribe_with_diarization(
+    source_media_path: &Path,
+    output_dir: &Path,
+    whisper: &WhisperSettings,
+    runtime: &VoiceRuntime,
+) -> Option<Result<PathBuf>> {
+    // Resolve the diarize.py script — shipped alongside the core crate.
+    let script_path = locate_diarize_script();
+    if !script_path.exists() {
+        tracing::warn!("diarize.py not found at {}, falling back to plain Whisper", script_path.display());
+        return None;
+    }
+
+    // We need python from the runtime venv (whisperx must be installed there).
+    let python = runtime.resolve_tool("python3")
+        .or_else(|| runtime.resolve_tool("python"));
+    let python = match python {
+        Some(p) => p,
+        None => {
+            tracing::warn!("Python not found for diarization, falling back to plain Whisper");
+            return None;
+        }
+    };
+
+    let output_json = output_dir.join("diarized_output.json");
+    let model = whisper.model.as_deref().unwrap_or("base");
+
+    let mut command = Command::new(&python);
+    command.arg(&script_path);
+    command.arg(source_media_path);
+    command.arg(&output_json);
+    command.arg("--model").arg(model);
+
+    if let Some(ref token) = whisper.hf_token {
+        if !token.trim().is_empty() {
+            command.arg("--hf_token").arg(token);
+        }
+    }
+    if let Some(ref lang) = whisper.language {
+        if !lang.trim().is_empty() && lang != "auto" {
+            command.arg("--language").arg(lang);
+        }
+    }
+    if let Some(min_spk) = whisper.min_speakers {
+        command.arg("--min_speakers").arg(min_spk.to_string());
+    }
+    if let Some(max_spk) = whisper.max_speakers {
+        command.arg("--max_speakers").arg(max_spk.to_string());
+    }
+
+    // Prepend the runtime venv bin to PATH so whisperx imports work.
+    let runtime_path = runtime.prepend_path();
+    command.env("PATH", &runtime_path);
+
+    tracing::info!("Running diarize.py for speaker detection...");
+    Some(run_diarization_and_build_srt(command, &output_json, output_dir, source_media_path))
+}
+
+/// Execute the diarization command and convert its JSON output to an SRT file
+/// that includes speaker labels (e.g. `[SPEAKER_00]: text`).
+fn run_diarization_and_build_srt(
+    mut command: Command,
+    json_path: &Path,
+    output_dir: &Path,
+    source_media_path: &Path,
+) -> Result<PathBuf> {
+    let output = command
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .output()
+        .context("failed to execute diarize.py")?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        bail!("Diarization failed: {stderr}");
+    }
+
+    // Parse the JSON output.
+    let data = fs::read_to_string(json_path)
+        .with_context(|| format!("failed to read diarization output: {}", json_path.display()))?;
+
+    #[derive(Deserialize)]
+    struct DiarizeOutput {
+        #[allow(dead_code)]
+        language: Option<String>,
+        #[allow(dead_code)]
+        speakers: Option<Vec<String>>,
+        segments: Vec<DiarizeSegment>,
+    }
+    #[derive(Deserialize)]
+    struct DiarizeSegment {
+        start: f64,
+        end: f64,
+        text: String,
+        speaker: Option<String>,
+    }
+
+    let parsed: DiarizeOutput = serde_json::from_str(&data)
+        .context("failed to parse diarization JSON")?;
+
+    // Build SRT with speaker labels embedded.
+    let stem = source_media_path
+        .file_stem()
+        .and_then(|v| v.to_str())
+        .unwrap_or("output");
+    let srt_path = output_dir.join(format!("{stem}.srt"));
+
+    let mut srt_content = String::new();
+    for (i, seg) in parsed.segments.iter().enumerate() {
+        let start_ts = format_srt_timestamp(seg.start);
+        let end_ts = format_srt_timestamp(seg.end);
+        let text = match &seg.speaker {
+            Some(spk) if !spk.is_empty() => format!("[{}]: {}", spk, seg.text.trim()),
+            _ => seg.text.trim().to_string(),
+        };
+        srt_content.push_str(&format!("{}\n{} --> {}\n{}\n\n", i + 1, start_ts, end_ts, text));
+    }
+
+    fs::write(&srt_path, &srt_content)
+        .with_context(|| format!("failed to write diarized SRT: {}", srt_path.display()))?;
+
+    tracing::info!("Diarized SRT written: {} ({} segments)", srt_path.display(), parsed.segments.len());
+    Ok(srt_path)
+}
+
+/// Format seconds as SRT timestamp: HH:MM:SS,mmm
+fn format_srt_timestamp(secs: f64) -> String {
+    let total_ms = (secs * 1000.0) as u64;
+    let h = total_ms / 3_600_000;
+    let m = (total_ms % 3_600_000) / 60_000;
+    let s = (total_ms % 60_000) / 1_000;
+    let ms = total_ms % 1_000;
+    format!("{:02}:{:02}:{:02},{:03}", h, m, s, ms)
+}
+
+/// Locate the diarize.py script relative to the binary or source tree.
+fn locate_diarize_script() -> PathBuf {
+    // In development: relative to the workspace root.
+    let candidates = [
+        // Running from repo root or cargo test
+        PathBuf::from("core/scripts/diarize.py"),
+        // Running from core/ crate directory
+        PathBuf::from("scripts/diarize.py"),
+        // Walk up from CWD (Tauri dev runs from desktop/src-tauri/)
+        PathBuf::from("../../core/scripts/diarize.py"),
+    ];
+    for candidate in &candidates {
+        if candidate.exists() {
+            return candidate.clone();
+        }
+    }
+    // Try absolute using CARGO_MANIFEST_DIR (set at compile time for core crate)
+    let manifest_dir = option_env!("CARGO_MANIFEST_DIR").unwrap_or(".");
+    PathBuf::from(manifest_dir).join("scripts").join("diarize.py")
 }
 
 // ─── SRT parsing ─────────────────────────────────────────────────────────────
@@ -554,6 +737,19 @@ fn parse_timestamp(raw: &str) -> Result<f64> {
 // ─── Speaker management ───────────────────────────────────────────────────────
 
 fn build_speakers_from_segments(segments: &mut [DubbingSegment]) -> Vec<DubbingSpeaker> {
+    /// A curated palette of distinct Edge TTS voices for auto-assignment.
+    /// Includes diverse genders and styles to make multi-speaker dubs distinguishable.
+    const VOICE_PALETTE: &[&str] = &[
+        "en-US-AriaNeural",
+        "en-US-GuyNeural",
+        "en-US-JennyNeural",
+        "en-US-DavisNeural",
+        "en-US-AmberNeural",
+        "en-US-AndrewNeural",
+        "en-US-EmmaNeural",
+        "en-US-BrianNeural",
+    ];
+
     let mut labels = BTreeSet::new();
     for segment in segments.iter_mut() {
         if let Some(existing) = segment.speaker_id.clone() {
@@ -569,7 +765,7 @@ fn build_speakers_from_segments(segments: &mut [DubbingSegment]) -> Vec<DubbingS
         return vec![DubbingSpeaker {
             id: default_id,
             label: "Narrator".to_string(),
-            voice: "en-US-AriaNeural".to_string(),
+            voice: VOICE_PALETTE[0].to_string(),
             rate: Some("+0%".to_string()),
             pitch: None,
             volume: None,
@@ -583,7 +779,7 @@ fn build_speakers_from_segments(segments: &mut [DubbingSegment]) -> Vec<DubbingS
         .map(|(idx, speaker_id)| DubbingSpeaker {
             id: speaker_id.clone(),
             label: prettify_speaker_label(&speaker_id, idx + 1),
-            voice: "en-US-AriaNeural".to_string(),
+            voice: VOICE_PALETTE[idx % VOICE_PALETTE.len()].to_string(),
             rate: Some("+0%".to_string()),
             pitch: None,
             volume: None,

@@ -10,6 +10,7 @@ pub mod pty;
 pub mod sandbox;
 pub mod screenshot;
 pub mod service_hub;
+pub mod settings;
 pub mod shield;
 pub mod system;
 pub mod viking;

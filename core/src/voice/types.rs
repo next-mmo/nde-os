@@ -95,6 +95,7 @@ pub struct VoiceRuntimeStatus {
     pub runtime_path: Option<String>,
     pub edge_tts_available: bool,
     pub whisper_available: bool,
+    pub whisperx_available: bool,
     pub python_available: bool,
     pub rvc_available: bool,
     #[serde(default)]

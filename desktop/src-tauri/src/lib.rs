@@ -234,6 +234,9 @@ pub fn run() {
             // vibe studio chat persistence
             commands::workspace::load_vibe_chat_history,
             commands::workspace::save_vibe_chat_history,
+            // global settings
+            commands::settings::get_global_settings,
+            commands::settings::set_global_settings,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

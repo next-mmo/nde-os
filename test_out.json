@@ -1,0 +1,36 @@
+{
+  "language": "en",
+  "speakers": [],
+  "segments": [
+    {
+      "start": 0.233,
+      "end": 0.835,
+      "text": "Hello there.",
+      "speaker": null
+    },
+    {
+      "start": 1.897,
+      "end": 2.759,
+      "text": "My name is John.",
+      "speaker": null
+    },
+    {
+      "start": 3.742,
+      "end": 4.504,
+      "text": "Can you hear me?",
+      "speaker": null
+    },
+    {
+      "start": 5.627,
+      "end": 7.953,
+      "text": "Hi John, I can hear you perfectly fine.",
+      "speaker": null
+    },
+    {
+      "start": 9.015,
+      "end": 9.637,
+      "text": "I am Jenny.",
+      "speaker": null
+    }
+  ]
+}

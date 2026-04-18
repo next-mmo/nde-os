@@ -87,6 +87,10 @@
   let setupCopyStatus = $state<string | null>(null);
   let whisperModel = $state("base");
   let whisperLanguage = $state("auto");
+  let diarizeEnabled = $state(false);
+  let hfToken = $state("");
+  let diarizeMinSpeakers = $state<number | null>(null);
+  let diarizeMaxSpeakers = $state<number | null>(null);
 
   let needsDubbingSetup = $derived.by(() => {
     if (!dubbingTools) return true;
@@ -207,7 +211,7 @@
     }
   }
 
-    async function installDubbingRuntime(runtime: "core" | "whisper" | "edge_tts") {
+    async function installDubbingRuntime(runtime: "core" | "whisper" | "edge_tts" | "diarization") {
     try {
       runtimeInstallBusy = true;
       dubbingError = null;
@@ -268,6 +272,10 @@
         model: whisperModel,
         language: whisperLanguage,
         task: "transcribe",
+        diarize: diarizeEnabled || null,
+        hfToken: diarizeEnabled && hfToken.trim() ? hfToken.trim() : null,
+        minSpeakers: diarizeEnabled ? diarizeMinSpeakers : null,
+        maxSpeakers: diarizeEnabled ? diarizeMaxSpeakers : null,
       };
       const generated: DubbingSession = await invoke("freecut_generate_dub_assets", {
         projectId: currentProject.id,
@@ -521,6 +529,13 @@
   let unlisten: Array<() => void> = [];
   onMount(async () => {
     detectDubbingTools().catch(() => {});
+    // Auto-load global HF token from persisted settings
+    try {
+      const globalSettings = await invoke<{ hfToken?: string | null }>("get_global_settings");
+      if (globalSettings.hfToken && !hfToken) {
+        hfToken = globalSettings.hfToken;
+      }
+    } catch {}
     unlisten.push(
       await listen("freecut://dubbing-progress", (event: any) => {
         dubbingProgress = event.payload;
@@ -550,7 +565,7 @@
                     </button>
                   </div>
 
-                  <div class="grid grid-cols-2 gap-2">
+                  <div class="grid grid-cols-3 gap-2">
                     <div class="rounded-xl border border-white/6 bg-black/20 px-2.5 py-2">
                       <p class="text-[9px] uppercase tracking-wider text-white/30">Whisper</p>
                       <p class="text-[11px] mt-1 {dubbingTools?.whisperAvailable ? 'text-emerald-300' : 'text-white/45'}">
@@ -561,6 +576,12 @@
                       <p class="text-[9px] uppercase tracking-wider text-white/30">Edge TTS</p>
                       <p class="text-[11px] mt-1 {dubbingTools?.edgeTtsAvailable ? 'text-emerald-300' : 'text-white/45'}">
                         {dubbingTools?.edgeTtsAvailable ? "Ready" : "Missing"}
+                      </p>
+                    </div>
+                    <div class="rounded-xl border border-white/6 bg-black/20 px-2.5 py-2">
+                      <p class="text-[9px] uppercase tracking-wider text-white/30">WhisperX</p>
+                      <p class="text-[11px] mt-1 {dubbingTools?.whisperxAvailable ? 'text-emerald-300' : 'text-amber-300/70'}">
+                        {dubbingTools?.whisperxAvailable ? "Ready" : "Not installed"}
                       </p>
                     </div>
                     <div class="rounded-xl border border-white/6 bg-black/20 px-2.5 py-2">
@@ -834,6 +855,50 @@
                           <span class="text-[9px] uppercase tracking-wider text-white/35">Whisper Language</span>
                           <input type="text" class="mt-1 w-full rounded-lg border border-white/10 bg-white/5 px-2 py-2 text-[11px] text-white" bind:value={whisperLanguage} />
                         </label>
+                      </div>
+
+                      <!-- Speaker Diarization -->
+                      <div class="rounded-xl border border-white/6 bg-black/20 p-2.5 space-y-2">
+                        <div class="flex items-center justify-between">
+                          <label class="flex items-center gap-2 text-[10px] text-white/70 cursor-pointer">
+                            <input type="checkbox" bind:checked={diarizeEnabled} />
+                            🎯 Auto-detect speakers
+                          </label>
+                          {#if !dubbingTools?.whisperxAvailable}
+                            <button
+                              class="rounded-md bg-violet-600/60 px-2 py-1 text-[9px] text-white/80 hover:bg-violet-500/60 transition-colors disabled:opacity-40"
+                              onclick={() => installDubbingRuntime('diarization')}
+                              disabled={runtimeInstallBusy}
+                            >
+                              {runtimeInstallBusy ? '⏳ Installing...' : '📦 Install WhisperX'}
+                            </button>
+                          {/if}
+                        </div>
+                        {#if diarizeEnabled}
+                          <p class="text-[9px] text-white/35">Uses WhisperX + pyannote.audio to detect and label each speaker automatically.</p>
+                          <div class="space-y-2">
+                            <label class="block">
+                              <span class="text-[9px] uppercase tracking-wider text-white/35">HuggingFace Token</span>
+                              <input type="password" class="mt-1 w-full rounded-lg border border-white/10 bg-white/5 px-2 py-2 text-[11px] text-white" bind:value={hfToken} placeholder="hf_..." />
+                            </label>
+                            <p class="text-[8px] text-white/25">Set globally in ⚙️ Settings → 🔑 API Keys & Tokens, or override per-project here.</p>
+                            <div class="grid grid-cols-2 gap-2">
+                              <label class="block">
+                                <span class="text-[9px] uppercase tracking-wider text-white/35">Min Speakers</span>
+                                <input type="number" min="1" max="20" class="mt-1 w-full rounded-lg border border-white/10 bg-white/5 px-2 py-2 text-[11px] text-white" value={diarizeMinSpeakers ?? ''} onchange={(e) => diarizeMinSpeakers = e.currentTarget.value ? parseInt(e.currentTarget.value) : null} placeholder="Auto" />
+                              </label>
+                              <label class="block">
+                                <span class="text-[9px] uppercase tracking-wider text-white/35">Max Speakers</span>
+                                <input type="number" min="1" max="20" class="mt-1 w-full rounded-lg border border-white/10 bg-white/5 px-2 py-2 text-[11px] text-white" value={diarizeMaxSpeakers ?? ''} onchange={(e) => diarizeMaxSpeakers = e.currentTarget.value ? parseInt(e.currentTarget.value) : null} placeholder="Auto" />
+                              </label>
+                            </div>
+                          </div>
+                          {#if !dubbingTools?.whisperxAvailable}
+                            <div class="rounded-lg border border-amber-400/20 bg-amber-400/8 px-2.5 py-2">
+                              <p class="text-[9px] text-amber-200/80">⚠️ WhisperX not installed. Click "Install WhisperX" above or install via Service Hub.</p>
+                            </div>
+                          {/if}
+                        {/if}
                       </div>
                     {/if}
 
