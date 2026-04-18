@@ -147,6 +147,11 @@
   let toastMessage = $state<string | null>(null);
   let toastTimer: ReturnType<typeof setTimeout> | null = null;
 
+  // ─── Dirty state ───────────────────────────────────────────────────
+  let isDirty = $state(false);
+  let showUnsavedModal = $state(false);
+  let pendingGoBack = $state(false);
+
 
   // Markers
   // Markers (type imported from ./types)
@@ -231,6 +236,12 @@
 
   const LAST_PROJECT_KEY = "last_project_id";
 
+  // Subscribe to itemsStore to detect changes → mark dirty
+  const unsubItems = itemsStore.subscribe(() => {
+    if (!currentProject) return;
+    isDirty = true;
+  });
+
   onMount(async () => {
     await loadProjects();
 
@@ -291,6 +302,7 @@
 
   onDestroy(() => {
     unlisten.forEach((fn) => fn());
+    unsubItems();
   });
 
   // ─── Playback engine (pure vanilla — zero Svelte reactivity) ─────────
@@ -958,6 +970,7 @@
       currentProject = { ...project, dubbing: project.dubbing ?? createDefaultDubbingSession() };
       itemsStore.getState().setFps(project.metadata.fps);
       historyStore.getState().clear();
+      isDirty = false;
       showNewProjectModal = false;
       currentView = "editor";
       await loadProjects();
@@ -978,6 +991,7 @@
         mediaLibrary = await invoke("freecut_list_media", { projectId: id });
         // ensureSourceMediaSelection is now handled by DubbingPanel
         historyStore.getState().clear();
+        isDirty = false;
         currentView = "editor";
         // Persist so a hard reload returns to the same project (DB-backed).
         invoke("freecut_set_setting", { key: LAST_PROJECT_KEY, value: id }).catch(console.error);
@@ -989,23 +1003,27 @@
     try { await invoke("freecut_delete_project", { id }); await loadProjects(); } catch (e) { console.error(e); }
   }
 
+  /** Build the serializable project snapshot for saving. */
+  function buildProjectSnapshot() {
+    const state = itemsStore.getState();
+    return {
+      ...currentProject!,
+      duration: state.maxItemEndFrame,
+      timeline: { items: state.items, tracks: state.tracks },
+      dubbing: currentProject!.dubbing ?? createDefaultDubbingSession(),
+    };
+  }
+
   async function saveProject() {
     if (!currentProject) return;
     try {
-      const state = itemsStore.getState();
-      const project = {
-        ...currentProject,
-        duration: state.maxItemEndFrame,
-        timeline: { items: state.items, tracks: state.tracks },
-        dubbing: currentProject.dubbing ?? createDefaultDubbingSession(),
-      };
-      await invoke("freecut_save_project", { project });
-      
+      await invoke("freecut_save_project", { project: buildProjectSnapshot() });
+      isDirty = false;
+
       // Show success toast
-      toastMessage = "Project saved successfully";
+      toastMessage = "Project saved";
       if (toastTimer) clearTimeout(toastTimer);
       toastTimer = setTimeout(() => { toastMessage = null; }, 2000);
-      
     } catch (e) {
       console.error(e);
       toastMessage = "Failed to save project";
@@ -1589,18 +1607,28 @@
   }
 
   function goBack() {
+    // If there are unsaved changes, show confirmation modal instead of leaving.
+    if (isDirty) {
+      pendingGoBack = true;
+      showUnsavedModal = true;
+      return;
+    }
+    doGoBack();
+  }
+
+  /** Actually navigate back — called after save/discard decision. */
+  function doGoBack() {
     // Clear the persisted project ID so the next hard reload starts at the
     // projects list rather than re-opening the closed project.
     invoke("freecut_delete_setting", { key: LAST_PROJECT_KEY }).catch(console.error);
+    isDirty = false;
+    pendingGoBack = false;
+    showUnsavedModal = false;
     currentProject = null;
     currentView = "projects";
     mediaLibrary = [];
     renderedFramePath = null;
-    
-    
-    
-    
-    
+
     playbackStore.getState().setCurrentFrame(0);
     playbackStore.getState().pause();
     itemsStore.getState().setItems([]);
@@ -1611,6 +1639,19 @@
     inPoint = null;
     outPoint = null;
     clipboardItems = [];
+  }
+
+  async function handleUnsavedSave() {
+    await saveProject();
+    if (pendingGoBack) doGoBack();
+  }
+  function handleUnsavedDiscard() {
+    isDirty = false;
+    if (pendingGoBack) doGoBack();
+  }
+  function handleUnsavedCancel() {
+    pendingGoBack = false;
+    showUnsavedModal = false;
   }
 
   // ─── In/Out Points ────────────────────────────────────────────────────
@@ -2289,6 +2330,11 @@
       </button>
       <div class="w-px h-4 bg-white/10 mx-1"></div>
       <span class="text-xs font-medium text-white/50 truncate max-w-[160px] px-1">{currentProject.name}</span>
+      {#if isDirty}
+        <span class="w-2 h-2 rounded-full bg-amber-400 animate-pulse" title="Unsaved changes"></span>
+      {:else}
+        <span class="w-2 h-2 rounded-full bg-emerald-500/60" title="Saved"></span>
+      {/if}
       <div class="flex-1"></div>
 
       <!-- Tools -->
@@ -2311,7 +2357,7 @@
       <div class="w-px h-4 bg-white/10 mx-2"></div>
 
       <!-- Actions -->
-      <button class="p-1.5 rounded-md hover:bg-white/5 text-white/40 hover:text-white/70 transition-colors" onclick={saveProject} aria-label="Save (Ctrl+S)">
+      <button class="p-1.5 rounded-md transition-colors {isDirty ? 'text-amber-400 hover:bg-amber-500/10 hover:text-amber-300' : 'text-white/40 hover:bg-white/5 hover:text-white/70'}" onclick={saveProject} aria-label="Save (Ctrl+S)">
         <Save class="w-3.5 h-3.5" />
       </button>
       <button class="p-1.5 rounded-md hover:bg-white/5 text-white/40 hover:text-white/70 transition-colors" onclick={importMedia} aria-label="Import (Ctrl+I)">
@@ -2394,9 +2440,9 @@
                     <div class="w-10 h-7 rounded bg-white/5 grid place-items-center shrink-0 overflow-hidden">
                       {#if media.thumbnailPath}
                         <img src={assetUrl(media.thumbnailPath)} alt="" class="w-full h-full object-cover" />
-                      {#else if media.mediaType === "image"}
+                      {:else if media.mediaType === "image"}
                         <img src={assetUrl(media.filePath)} alt="" class="w-full h-full object-cover" />
-                      {#else}
+                      {:else}
                         <MediaIcon class="w-4 h-4 text-white/20" />
                       {/if}
                     </div>
@@ -3189,5 +3235,33 @@
     {:else}
       Title Text
     {/if}
+  </div>
+{/if}
+
+<!-- ─── Unsaved Changes Modal ─────────────────────────────────────────── -->
+{#if showUnsavedModal}
+  <div class="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm">
+    <div class="w-[380px] rounded-2xl border border-white/10 bg-zinc-900 shadow-2xl overflow-hidden" style="color-scheme: dark;">
+      <div class="px-6 pt-6 pb-3">
+        <h2 class="text-white text-base font-semibold">Unsaved Changes</h2>
+        <p class="text-[12px] text-white/50 mt-2 leading-relaxed">
+          You have unsaved changes. Would you like to save before leaving?
+        </p>
+      </div>
+      <div class="flex items-center justify-end gap-2 px-6 py-4 border-t border-white/5">
+        <button
+          class="px-4 py-2 text-[12px] text-white/50 hover:bg-white/5 rounded-lg transition-colors"
+          onclick={handleUnsavedCancel}
+        >Cancel</button>
+        <button
+          class="px-4 py-2 text-[12px] text-red-400 hover:bg-red-500/10 rounded-lg font-medium transition-colors"
+          onclick={handleUnsavedDiscard}
+        >Discard</button>
+        <button
+          class="px-5 py-2 text-[12px] bg-violet-600 hover:bg-violet-500 text-white rounded-lg font-medium transition-colors shadow-lg shadow-violet-600/25"
+          onclick={handleUnsavedSave}
+        >Save & Exit</button>
+      </div>
+    </div>
   </div>
 {/if}
