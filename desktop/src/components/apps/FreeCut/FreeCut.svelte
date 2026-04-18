@@ -12,7 +12,7 @@
     ChevronRight, Repeat, PanelLeftClose, PanelRightClose, PanelLeft, PanelRight,
     MousePointer2, Slice, GripHorizontal, FolderOpen, Download, Sparkles,
     Circle, Triangle, RectangleHorizontal, Undo2, Redo2, Grid,
-    Magnet, Maximize2, Minus, GripVertical
+    Magnet, Maximize2, Minus, GripVertical, Check, AlertCircle
   } from "@lucide/svelte";
 
   // ─── Stores (Zustand vanilla → Svelte 5 reactive) ─────────────────────
@@ -41,6 +41,9 @@
   const ti = useStore(itemsStore);
   const zm = useStore(zoomStore);
   const hist = useStore(historyStore);
+
+  // Derive primitive value for safer template bindings and cross-branch reactivity in Svelte 5
+  let activeTab = $derived(ed.activeTab);
 
   // ─── Local state ─────────────────────────────────────────────────────
 
@@ -139,6 +142,11 @@
   // In/Out points
   let inPoint = $state<number | null>(null);
   let outPoint = $state<number | null>(null);
+
+  // Toast notification for saving
+  let toastMessage = $state<string | null>(null);
+  let toastTimer: ReturnType<typeof setTimeout> | null = null;
+
 
   // Markers
   // Markers (type imported from ./types)
@@ -992,7 +1000,18 @@
         dubbing: currentProject.dubbing ?? createDefaultDubbingSession(),
       };
       await invoke("freecut_save_project", { project });
-    } catch (e) { console.error(e); }
+      
+      // Show success toast
+      toastMessage = "Project saved successfully";
+      if (toastTimer) clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => { toastMessage = null; }, 2000);
+      
+    } catch (e) {
+      console.error(e);
+      toastMessage = "Failed to save project";
+      if (toastTimer) clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => { toastMessage = null; }, 3000);
+    }
   }
 
   async function importMedia() {
@@ -2337,7 +2356,7 @@
             {#each sidebarTabs as tab (tab.id)}
               {@const TabIcon = tabIcons[tab.id]}
               <button
-                class="flex min-w-0 items-center justify-center gap-1 rounded-md px-1.5 py-2 text-[10px] font-medium tracking-wide transition-colors {ed.activeTab === tab.id ? 'bg-violet-500/12 text-violet-300 ring-1 ring-violet-400/25' : 'bg-white/[0.02] text-white/45 hover:bg-white/[0.05] hover:text-white/70'}"
+                class="flex min-w-0 items-center justify-center gap-1 rounded-md px-1.5 py-2 text-[10px] font-medium tracking-wide transition-colors {activeTab === tab.id ? 'bg-violet-500/12 text-violet-300 ring-1 ring-violet-400/25' : 'bg-white/[0.02] text-white/45 hover:bg-white/[0.05] hover:text-white/70'}"
                 onclick={() => editorStore.getState().setActiveTab(tab.id)}
                 title={tab.label}
               >
@@ -2349,7 +2368,7 @@
           </div>
 
           <div class="flex-1 overflow-y-auto">
-            {#if ed.activeTab === "media"}
+            {#if activeTab === "media"}
               <div class="p-2">
                 <button
                   class="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg border border-dashed border-white/10 hover:border-violet-500/30 hover:bg-violet-500/5 text-white/40 hover:text-violet-400 text-xs transition-all"
@@ -2375,9 +2394,9 @@
                     <div class="w-10 h-7 rounded bg-white/5 grid place-items-center shrink-0 overflow-hidden">
                       {#if media.thumbnailPath}
                         <img src={assetUrl(media.thumbnailPath)} alt="" class="w-full h-full object-cover" />
-                      {:else if media.mediaType === "image"}
+                      {#else if media.mediaType === "image"}
                         <img src={assetUrl(media.filePath)} alt="" class="w-full h-full object-cover" />
-                      {:else}
+                      {#else}
                         <MediaIcon class="w-4 h-4 text-white/20" />
                       {/if}
                     </div>
@@ -2398,7 +2417,7 @@
                   </div>
                 {/each}
               </div>
-            {:else if ed.activeTab === "dubbing"}
+            {:else if activeTab === "dubbing"}
               {#if currentProject}
                 <DubbingPanel
                   mediaLibrary={mediaLibrary}
@@ -2411,9 +2430,21 @@
                   createDefaultTrack={createDefaultTrack}
                 />
               {/if}
-            {:else if ed.activeTab === "tools"}
+            {:else if activeTab === "tools"}
               <ToolsPanel mediaLibrary={mediaLibrary} />
-            {:else if ed.activeTab === "text"}
+            {:else if activeTab === "effects"}
+              <div class="p-4 flex flex-col items-center justify-center text-white/40 h-full text-center">
+                <Sparkles class="w-10 h-10 mb-3 opacity-50" />
+                <p class="text-sm font-medium">Effects</p>
+                <p class="text-[10px] text-white/30 mt-1">Coming soon</p>
+              </div>
+            {:else if activeTab === "transitions"}
+              <div class="p-4 flex flex-col items-center justify-center text-white/40 h-full text-center">
+                <ChevronRight class="w-10 h-10 mb-3 opacity-50" />
+                <p class="text-sm font-medium">Transitions</p>
+                <p class="text-[10px] text-white/30 mt-1">Coming soon</p>
+              </div>
+            {:else if activeTab === "text"}
               <div class="p-2 space-y-2">
                 <div 
                   role="button"
@@ -2593,8 +2624,8 @@
             onwheel={handleTimelineWheel}
           >
             <!-- Track header spacer -->
-            <div class="w-[120px] shrink-0 flex items-center justify-center">
-              <span data-tc="ruler" class="text-[9px] text-white/20 font-mono">{currentTime}</span>
+            <div class="w-[120px] shrink-0 flex items-center justify-center bg-[#111] border-r border-white/5 z-20">
+              <span data-tc="ruler" class="text-[9px] text-white/40 font-mono tracking-wider">{currentTime}</span>
             </div>
             <!-- Ruler area -->
             <div class="flex-1 relative h-full overflow-hidden">
@@ -2626,8 +2657,10 @@
                 {/each}
               </div>
               <!-- Playhead indicator on ruler -->
-              <div data-playhead="ruler" class="absolute top-0 bottom-0 w-px bg-violet-500 z-10 pointer-events-none will-change-transform" style:transform="translate3d({frameToPixel(pb.currentFrame) - ti.scrollLeft}px, 0, 0)">
-                <div class="absolute -bottom-0.5 -left-[4px] w-0 h-0 border-l-[5px] border-l-transparent border-r-[5px] border-r-transparent border-t-[5px] border-t-violet-500"></div>
+              <div data-playhead="ruler" class="absolute top-0 bottom-0 w-px bg-white z-20 pointer-events-none will-change-transform drop-shadow-[0_0_2px_rgba(255,255,255,0.5)]" style:transform="translate3d({frameToPixel(pb.currentFrame) - ti.scrollLeft}px, 0, 0)">
+                <div class="absolute top-0 -left-[5px] w-[11px] h-[14px] bg-white rounded-b-sm flex items-center justify-center">
+                  <div class="w-px h-2 bg-black/30"></div>
+                </div>
               </div>
 
               <!-- In/Out point indicators on ruler -->
@@ -2697,7 +2730,7 @@
 
                     <!-- Track Canvas -->
                     <!-- svelte-ignore a11y_click_events_have_key_events -->
-                    <div class="absolute top-0 bottom-0 right-0 bg-white/1 overflow-hidden" style="left: 120px;">
+                    <div class="absolute top-0 bottom-0 right-0 bg-[#161616] overflow-hidden" style="left: 120px;">
                       <div class="relative w-full h-full will-change-transform" style:transform="translate3d({-ti.scrollLeft}px, 0, 0)">
                         
                         <!-- Clips -->
@@ -2711,14 +2744,12 @@
                           <div
                             role="button"
                             tabindex="-1"
-                            class="absolute top-[2px] rounded-[3px] cursor-pointer select-none ring-offset-black"
-                            class:ring-2={isSelected}
-                            class:ring-white={isSelected}
+                            class="absolute top-[3px] rounded-md cursor-pointer select-none overflow-hidden transition-all duration-75"
                             style:left="{startPx}px"
-                            style:width="{Math.max(4, widthPx)}px"
-                            style:height="calc(100% - 4px)"
-                            style:background="{isSelected ? `${color}40` : `${color}18`}"
-                            style:border="1px solid {isSelected ? `${color}90` : `${color}30`}"
+                            style:width="{Math.max(8, widthPx)}px"
+                            style:height="calc(100% - 6px)"
+                            style:background="{isSelected ? `${color}50` : `${color}30`}"
+                            style:box-shadow="inset 0 0 0 1px {isSelected ? '#ffffff' : `${color}40`}{isSelected ? ', 0 0 0 2px rgba(255,255,255,1)' : ''}"
                             onclick={(e) => handleClipClick(e, item)}
                             onmousedown={(e) => startClipDrag(e, item.id, item.from, item.trackId)}
                           >
@@ -2726,7 +2757,7 @@
                               {@const thumb = item.type === "image" ? media.filePath : (media.thumbnailPath ?? "")}
                               {#if thumb}
                                 <div 
-                                  class="absolute inset-0 opacity-40 rounded-[2px] pointer-events-none"
+                                  class="absolute inset-0 opacity-100 pointer-events-none bg-black/40 mix-blend-screen"
                                   style:background-image="url('{assetUrl(thumb)}')"
                                   style:background-size="auto 100%"
                                   style:background-repeat="repeat-x"
@@ -2734,9 +2765,11 @@
                               {/if}
                             {/if}
 
-                            <div class="relative z-10 flex items-center gap-1 px-1.5 h-full overflow-hidden pointer-events-none bg-gradient-to-r from-black/80 via-black/20 to-transparent w-full">
-                              <MediaIcon2 class="w-2.5 h-2.5 shrink-0" style="color: {color}80; filter: drop-shadow(0 1px 2px rgba(0,0,0,0.8));" />
-                              <span class="text-[9px] font-medium text-white/90 truncate whitespace-nowrap pr-4" style="text-shadow: 0 1px 3px rgba(0,0,0,0.9), 0 1px 1px rgba(0,0,0,1);">{item.label}</span>
+                            <div class="relative z-10 flex items-center gap-1.5 px-2 h-full pointer-events-none bg-gradient-to-r from-black/90 via-black/40 to-transparent w-full">
+                              <div class="p-1 rounded-sm bg-black/40 backdrop-blur-sm">
+                                <MediaIcon2 class="w-2.5 h-2.5 shrink-0" style="color: {color}; filter: drop-shadow(0 1px 1px rgba(0,0,0,1));" />
+                              </div>
+                              <span class="text-[10px] font-medium text-white tracking-wide truncate pr-4" style="text-shadow: 0 1px 2px rgba(0,0,0,0.8), 0 0 4px rgba(0,0,0,1);">{item.label}</span>
                             </div>
                             
                             <!-- Trim Handles -->
@@ -2782,7 +2815,7 @@
                         {/each}
 
                         <!-- Playhead through tracks -->
-                        <div data-playhead="track" class="absolute top-0 bottom-0 w-px bg-violet-500/50 pointer-events-none z-10 will-change-transform" style:transform="translate3d({frameToPixel(pb.currentFrame)}px, 0, 0)"></div>
+                        <div data-playhead="track" class="absolute top-0 bottom-0 w-px bg-white drop-shadow-[0_0_2px_rgba(255,255,255,0.7)] pointer-events-none z-10 will-change-transform" style:transform="translate3d({frameToPixel(pb.currentFrame)}px, 0, 0)"></div>
 
                         <!-- Active snap guide line (shown during drag) -->
                         {#if activeSnapFrame !== null && isDraggingClip}
