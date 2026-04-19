@@ -13,5 +13,6 @@ pub mod service_hub;
 pub mod settings;
 pub mod shield;
 pub mod system;
+pub mod updater;
 pub mod viking;
 pub mod workspace;

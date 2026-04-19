@@ -63,7 +63,8 @@ impl AuditTrail {
         hasher.update(&timestamp);
         hasher.update(event_type);
         hasher.update(&data);
-        let hash = format!("{:x}", hasher.finalize());
+        let hash = hasher.finalize();
+        let hash = hash.iter().map(|b| format!("{:02x}", b)).collect::<String>();
 
         let entry = serde_json::json!({
             "timestamp": timestamp,
@@ -119,7 +120,8 @@ impl AuditTrail {
             hasher.update(timestamp);
             hasher.update(event);
             hasher.update(data);
-            let computed = format!("{:x}", hasher.finalize());
+            let computed = hasher.finalize();
+            let computed = computed.iter().map(|b| format!("{:02x}", b)).collect::<String>();
 
             let stored = entry.get("hash").and_then(|v| v.as_str()).unwrap_or("");
             if computed != stored {

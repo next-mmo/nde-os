@@ -240,6 +240,8 @@ pub fn run() {
             // global settings
             commands::settings::get_global_settings,
             commands::settings::set_global_settings,
+            // update checker
+            commands::updater::check_for_updates,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

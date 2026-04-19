@@ -5,18 +5,18 @@ edition = "2021"
 description = "Shared core library: sandbox, uv_env, app_manager, manifest, agent, LLM, plugins, MCP"
 
 [dependencies]
-serde = { version = "1.0.197", features = ["derive"] }
-serde_json = "1.0.114"
-anyhow = "1.0.81"
-chrono = { version = "0.4.35", features = ["serde"] }
-sysinfo = { version = "0.30.13", default-features = false }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+anyhow = "1"
+chrono = { version = "0.4", features = ["serde"] }
+sysinfo = { version = "0.38", default-features = false, features = ["system", "disk"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "process", "io-util", "io-std"] }
-reqwest = { version = "0.12", features = ["json", "stream", "blocking"] }
+reqwest = { version = "0.13", features = ["json", "stream", "blocking", "form"] }
 async-trait = "0.1"
 uuid = { version = "1", features = ["v4"] }
-toml = "0.8"
-rusqlite = { version = "0.31", features = ["bundled"] }
-sha2 = "0.10"
+toml = "1"
+rusqlite = { version = "0.39", features = ["bundled"] }
+sha2 = "0.11"
 aes-gcm = "0.10"
 glob = "0.3"
 tracing = "0.1"
@@ -27,11 +27,11 @@ tokio-util = "0.7"
 async-stream = "0.3"
 pin-project-lite = "0.2"
 zip = { version = "2", default-features = false, features = ["deflate"] }
-rand = "0.8"
+rand = "0.10"
 urlencoding = "2"
 # Shield Browser (anti-detect)
 tar = "0.4"
-bzip2 = "0.5"
+bzip2 = "0.6"
 flate2 = "1"
 # Movie dub WAV I/O
 hound = "3.5"
@@ -39,7 +39,7 @@ hound = "3.5"
 [dev-dependencies]
 tempfile = "3"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "test-util"] }
-dirs = "5"
+dirs = "6"
 tracing-subscriber = "0.3"
 
 [features]

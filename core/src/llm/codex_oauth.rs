@@ -66,8 +66,8 @@ pub struct PkceChallenge {
 
 impl PkceChallenge {
     pub fn generate() -> Self {
-        let mut rng = rand::thread_rng();
-        let bytes: Vec<u8> = (0..32).map(|_| rand::Rng::gen::<u8>(&mut rng)).collect();
+        let mut rng = rand::rng();
+        let bytes: Vec<u8> = (0..32).map(|_| rand::RngExt::random::<u8>(&mut rng)).collect();
         let verifier = base64url_encode(&bytes);
         let digest = Sha256::digest(verifier.as_bytes());
         let challenge = base64url_encode(&digest);

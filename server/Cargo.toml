@@ -6,14 +6,14 @@ description = "HTTP server for AI Launcher (tiny_http)"
 
 [dependencies]
 ai-launcher-core = { path = "../core" }
-serde = { version = "1.0.197", features = ["derive"] }
-serde_json = "1.0.114"
-anyhow = "1.0.81"
-chrono = "0.4.35"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+anyhow = "1"
+chrono = "0.4"
 tiny_http = "0.12"
 tokio = { version = "1", features = ["rt-multi-thread"] }
 futures = "0.3"
 urlencoding = "2"
 tracing = "0.1"
 uuid = { version = "1", features = ["v4"] }
-reqwest = { version = "0.12", features = ["json", "multipart"] }
+reqwest = { version = "0.13", features = ["json", "multipart"] }

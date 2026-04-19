@@ -88,7 +88,7 @@ impl ConversationStore {
              FROM conversations ORDER BY updated_at DESC LIMIT ?1",
         )?;
 
-        let rows = stmt.query_map(rusqlite::params![limit], |row| {
+        let rows = stmt.query_map(rusqlite::params![limit as i64], |row| {
             Ok(ConversationSummary {
                 id: row.get(0)?,
                 title: row.get(1)?,

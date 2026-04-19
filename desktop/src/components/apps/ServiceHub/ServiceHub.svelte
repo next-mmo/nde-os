@@ -4,7 +4,7 @@
   import { invoke } from "@tauri-apps/api/core";
   import { listen, type UnlistenFn } from "@tauri-apps/api/event";
   import { onMount, onDestroy } from "svelte";
-  import { Download, CircleCheck, CircleAlert, ArrowLeft, Loader2, ExternalLink, Wrench, Mic, Film, Code2, Cpu, Play, Square, RefreshCw, Settings, X, Save, List as ListIcon, LayoutGrid, Search } from "@lucide/svelte";
+  import { Download, CircleCheck, CircleAlert, ArrowLeft, Loader2, ExternalLink, Wrench, Mic, Film, Code2, Cpu, Play, Square, RefreshCw, Settings, X, Save, List as ListIcon, LayoutGrid, Search, ArrowUpCircle } from "@lucide/svelte";
   import { vikingStatus, vikingInstall, vikingStart, vikingStop, getServiceConfig, setServiceConfig } from "$lib/api/backend";
   import type { VikingStatus, ServiceConfig, ConfigField } from "$lib/api/types";
   import { desktop, setVikingInstalled, openGenericBrowserWindow } from "🍎/state/desktop.svelte";
@@ -38,6 +38,19 @@
   let activeTab = $state<string>("All");
   let viewMode = $state<"list" | "grid">("list");
   let drawerService = $state<ServiceStatus | null>(null);
+
+  // Update check state
+  let updateChecking = $state(false);
+  let updateResult = $state<{
+    currentVersion: string;
+    latestVersion: string | null;
+    updateAvailable: boolean;
+    releaseName: string | null;
+    releaseUrl: string | null;
+    releaseBody: string | null;
+    publishedAt: string | null;
+    error: string | null;
+  } | null>(null);
   let searchQuery = $state("");
 
   // Viking-specific state
@@ -88,6 +101,25 @@
       console.error("Failed to load service status", e);
     } finally {
       loading = false;
+    }
+  }
+
+  async function checkForUpdates() {
+    try {
+      updateChecking = true;
+      logStore.info("Checking for updates...", "service-hub");
+      updateResult = await invoke("check_for_updates");
+      if (updateResult?.error) {
+        logStore.error(`Update check failed: ${updateResult.error}`, "service-hub");
+      } else if (updateResult?.updateAvailable) {
+        logStore.success(`Update available: v${updateResult.latestVersion}`, "service-hub");
+      } else {
+        logStore.info(`You're on the latest version (v${updateResult?.currentVersion})`, "service-hub");
+      }
+    } catch (e: any) {
+      logStore.error(`Update check failed: ${e?.toString?.() ?? "Unknown error"}`, "service-hub");
+    } finally {
+      updateChecking = false;
     }
   }
 
@@ -368,6 +400,23 @@
     </div>
     <div class="flex items-center gap-2">
       <button
+        onclick={checkForUpdates}
+        disabled={updateChecking}
+        title="Check for updates"
+        class="flex items-center gap-1.5 rounded-lg {updateResult?.updateAvailable ? 'bg-emerald-600/20 border border-emerald-500/30 text-emerald-300 hover:bg-emerald-600/30' : 'bg-white/5 border border-white/10 text-white/70 hover:bg-white/10 hover:text-white'} px-3 py-1.5 text-[11px] font-medium transition-colors disabled:opacity-50"
+      >
+        {#if updateChecking}
+          <Loader2 class="w-3.5 h-3.5 animate-spin" />
+          Checking...
+        {:else if updateResult?.updateAvailable}
+          <ArrowUpCircle class="w-3.5 h-3.5" />
+          Update Available
+        {:else}
+          <ArrowUpCircle class="w-3.5 h-3.5" />
+          Check Updates
+        {/if}
+      </button>
+      <button
         onclick={() => openGenericBrowserWindow("http://localhost:8080/swagger-ui/", "NDE-OS API Swagger")}
         title="NDE-OS API Swagger"
         class="flex items-center gap-1.5 rounded-lg bg-white/5 border border-white/10 px-3 py-1.5 text-[11px] font-medium text-white/70 transition-colors hover:bg-white/10 hover:text-white"
@@ -384,6 +433,70 @@
       </button>
     </div>
   </div>
+
+  <!-- Update available banner -->
+  {#if updateResult?.updateAvailable}
+    <div class="mx-4 mt-4 rounded-xl border border-emerald-400/20 bg-gradient-to-r from-emerald-500/8 to-teal-500/8 p-3.5">
+      <div class="flex items-start justify-between gap-3">
+        <div class="flex items-center gap-3 min-w-0">
+          <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center shadow-lg shrink-0">
+            <ArrowUpCircle class="w-5 h-5 text-white" />
+          </div>
+          <div class="min-w-0">
+            <p class="text-xs font-semibold text-emerald-200">Update Available — v{updateResult.latestVersion}</p>
+            <p class="text-[10px] text-emerald-200/60 mt-0.5">
+              {updateResult.releaseName ?? "New release"} · Current: v{updateResult.currentVersion}
+            </p>
+          </div>
+        </div>
+        <div class="shrink-0 flex items-center gap-2">
+          {#if updateResult.releaseUrl}
+            <button
+              class="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-[11px] font-medium text-white transition-colors hover:bg-emerald-500"
+              onclick={() => openGenericBrowserWindow(updateResult!.releaseUrl!, `NDE-OS ${updateResult!.latestVersion}`)}
+            >
+              <ExternalLink class="w-3.5 h-3.5" /> Download
+            </button>
+          {/if}
+          <button
+            class="rounded-lg p-1.5 text-emerald-300/40 transition-colors hover:bg-white/5 hover:text-emerald-300"
+            onclick={() => updateResult = null}
+            title="Dismiss"
+          >
+            <X class="w-3.5 h-3.5" />
+          </button>
+        </div>
+      </div>
+    </div>
+  {:else if updateResult && !updateResult.updateAvailable && !updateResult.error}
+    <div class="mx-4 mt-4 rounded-xl border border-white/8 bg-white/2 p-3 flex items-center justify-between">
+      <div class="flex items-center gap-2">
+        <CircleCheck class="w-4 h-4 text-emerald-400" />
+        <span class="text-[11px] text-white/60">You're running the latest version <span class="font-mono text-white/80">v{updateResult.currentVersion}</span></span>
+      </div>
+      <button
+        class="rounded-lg p-1 text-white/20 transition-colors hover:bg-white/5 hover:text-white/50"
+        onclick={() => updateResult = null}
+        title="Dismiss"
+      >
+        <X class="w-3 h-3" />
+      </button>
+    </div>
+  {:else if updateResult?.error}
+    <div class="mx-4 mt-4 rounded-xl border border-red-400/20 bg-red-400/5 p-3 flex items-center justify-between">
+      <div class="flex items-center gap-2 min-w-0">
+        <CircleAlert class="w-4 h-4 text-red-400 shrink-0" />
+        <span class="text-[11px] text-red-300/80 truncate">{updateResult.error}</span>
+      </div>
+      <button
+        class="rounded-lg p-1 text-red-300/20 transition-colors hover:bg-white/5 hover:text-red-300/50 shrink-0"
+        onclick={() => updateResult = null}
+        title="Dismiss"
+      >
+        <X class="w-3 h-3" />
+      </button>
+    </div>
+  {/if}
 
   <!-- Required banner (deep-link context) -->
   {#if require.length > 0}

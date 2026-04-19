@@ -357,9 +357,9 @@ impl CdpClient {
 
 /// Generate a random base64-encoded WebSocket key.
 fn base64_encode_ws_key() -> String {
-    use rand::Rng;
-    let mut rng = rand::thread_rng();
-    let bytes: [u8; 16] = rng.gen();
+    use rand::RngExt;
+    let mut rng = rand::rng();
+    let bytes: [u8; 16] = rng.random();
 
     // Simple base64 encoding
     const CHARS: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
@@ -390,9 +390,9 @@ fn base64_encode_ws_key() -> String {
 
 /// Build a masked WebSocket text frame (client → server must be masked per RFC 6455).
 fn build_ws_frame(payload: &[u8]) -> Vec<u8> {
-    use rand::Rng;
-    let mut rng = rand::thread_rng();
-    let mask_key: [u8; 4] = rng.gen();
+    use rand::RngExt;
+    let mut rng = rand::rng();
+    let mask_key: [u8; 4] = rng.random();
 
     let mut frame = Vec::new();
 
