@@ -48,6 +48,32 @@ impl VoiceRuntime {
         self.bin_dir().exists()
     }
 
+    /// Resolve the Python interpreter inside the sandboxed venv.
+    ///
+    /// Prefers the venv's own interpreter regardless of name (`python.exe` on
+    /// Windows; `python3` or `python` on Unix) before considering system PATH.
+    /// Packages installed via `uv pip install` into this venv are only
+    /// importable by THIS interpreter, so using it is mandatory for running
+    /// scripts that depend on those packages (e.g. whisperx, demucs).
+    pub fn venv_python(&self) -> Option<PathBuf> {
+        let bin = self.bin_dir();
+        if !bin.exists() {
+            return None;
+        }
+        let names: &[&str] = if cfg!(windows) {
+            &["python.exe", "python3.exe"]
+        } else {
+            &["python3", "python"]
+        };
+        for name in names {
+            let candidate = bin.join(name);
+            if candidate.exists() {
+                return Some(candidate);
+            }
+        }
+        None
+    }
+
     /// Resolve a tool by name inside the runtime venv, falling back to system PATH.
     pub fn resolve_tool(&self, name: &str) -> Option<PathBuf> {
         let bin = self.bin_dir();

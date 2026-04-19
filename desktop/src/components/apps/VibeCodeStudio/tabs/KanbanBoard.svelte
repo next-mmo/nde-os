@@ -151,6 +151,13 @@
     pointerDownPos = { x: e.clientX, y: e.clientY };
     pendingDragTask = task;
     dragStarted = false;
+
+    // Capture immediately so all move/up/cancel events always route to boardEl
+    // even if the pointer leaves the board before the drag threshold is reached.
+    try {
+      boardEl.setPointerCapture(e.pointerId);
+      capturedPointerId = e.pointerId;
+    } catch {}
   }
 
   function onBoardPointerMove(e: PointerEvent) {
@@ -164,12 +171,6 @@
       if (Math.abs(dx) + Math.abs(dy) < DRAG_THRESHOLD) return;
       dragStarted = true;
       draggedFilename = pendingDragTask.filename;
-
-      // Capture pointer so we keep receiving events even outside the board
-      try {
-        boardEl.setPointerCapture(e.pointerId);
-        capturedPointerId = e.pointerId;
-      } catch {}
     }
 
     ghostX = e.clientX;
@@ -205,23 +206,43 @@
     // dragOverColumn instead of nulling it — prevents dropped targets on release
   }
 
-  function onBoardPointerUp(e: PointerEvent) {
-    // Release pointer capture
+  function resetDragState() {
+    draggedFilename = null;
+    dragOverColumn  = null;
+    insertBefore    = null;
+    pointerDownPos  = null;
+    pendingDragTask = null;
+    dragStarted     = false;
     if (capturedPointerId !== null) {
       try { boardEl.releasePointerCapture(capturedPointerId); } catch {}
       capturedPointerId = null;
     }
+  }
 
+  function onBoardPointerUp(e: PointerEvent) {
     if (dragStarted && draggedFilename) {
-      // Final hit-test at release point as a safety net
-      let dropColumn = dragOverColumn;
-      if (!dropColumn) {
-        const colEl = hitTestColumn(e.clientX, e.clientY);
-        if (colEl) dropColumn = colEl.dataset.colId!;
-      }
+      // Always hit-test at the exact release point — dragOverColumn can be stale
+      // if the user releases fast before the last pointermove fires for the new column.
+      const colEl = hitTestColumn(e.clientX, e.clientY);
+      const dropColumn = colEl?.dataset.colId ?? dragOverColumn;
 
       if (dropColumn) {
-        kanbanState.updateStatus(draggedFilename, dropColumn, insertBefore);
+        // If the release column differs from last tracked column, recompute insertBefore
+        // so we don't insert relative to cards in the wrong column.
+        let finalInsertBefore = insertBefore;
+        if (colEl && colEl.dataset.colId !== dragOverColumn) {
+          const cards = Array.from(colEl.querySelectorAll<HTMLElement>("[data-card-id]"))
+            .filter(c => c.dataset.cardId !== draggedFilename);
+          finalInsertBefore = null;
+          for (const card of cards) {
+            const rect = card.getBoundingClientRect();
+            if (e.clientY < rect.top + rect.height / 2) {
+              finalInsertBefore = card.dataset.cardId!;
+              break;
+            }
+          }
+        }
+        kanbanState.updateStatus(draggedFilename, dropColumn, finalInsertBefore);
       }
     }
 
@@ -230,13 +251,11 @@
       openDetail(pendingDragTask);
     }
 
-    // Reset all drag state
-    draggedFilename = null;
-    dragOverColumn  = null;
-    insertBefore    = null;
-    pointerDownPos  = null;
-    pendingDragTask = null;
-    dragStarted     = false;
+    resetDragState();
+  }
+
+  function onBoardPointerCancel(_e: PointerEvent) {
+    resetDragState();
   }
 
   function onBoardPointerLeave(e: PointerEvent) {
@@ -257,8 +276,10 @@
 <div
   bind:this={boardEl}
   class="h-full w-full p-4 flex gap-4 overflow-x-auto overflow-y-hidden text-sm bg-black/40 select-none"
+  style:touch-action="none"
   onpointermove={onBoardPointerMove}
   onpointerup={onBoardPointerUp}
+  onpointercancel={onBoardPointerCancel}
   onpointerleave={onBoardPointerLeave}
 >
   {#each columns as column}
@@ -430,7 +451,7 @@
     <div
       id="drag-ghost"
       class="fixed pointer-events-none z-999 w-64 p-3 rounded-lg border border-indigo-500/60 bg-neutral-900/95 shadow-2xl shadow-indigo-500/20 backdrop-blur-sm"
-      style="left: {ghostX + 12}px; top: {ghostY - 16}px;"
+      style="left: 0; top: 0; transform: translate({ghostX + 12}px, {ghostY - 16}px); will-change: transform;"
     >
       <h4 class="font-medium text-white/90 text-[13px] leading-snug mb-1 truncate">{dragTask.title}</h4>
       <span class="text-[10px] text-indigo-400/80 font-mono">{dragTask.id ? `NDE-${dragTask.id}` : dragTask.filename}</span>

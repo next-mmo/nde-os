@@ -205,6 +205,14 @@
     if (entry.is_dir) {
       await navigate(entry.path);
     } else {
+      if (desktopWindow?.data?.onSelectFile) {
+        desktopWindow.data.onSelectFile(entry.path);
+        if (desktopWindow?.id) {
+          import("🍎/state/desktop.svelte").then(m => m.closeWindow(desktopWindow.id));
+        }
+        return;
+      }
+      
       const ext = entry.name.split(".").pop()?.toLowerCase() ?? "";
       if (VIDEO_EXTS.has(ext)) {
         openStaticApp("video-player", { filePath: entry.path });

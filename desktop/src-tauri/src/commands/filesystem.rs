@@ -285,6 +285,73 @@ pub async fn scan_videos(state: State<'_, AppState>) -> Result<Vec<FileEntry>, S
     .map_err(|e| e.to_string())?
 }
 
+/// Recursively scan for all media files (video, audio, image) in the sandbox.
+#[tauri::command]
+pub async fn scan_media(state: State<'_, AppState>) -> Result<Vec<FileEntry>, String> {
+    let base_dir = state.base_dir.clone();
+
+    tauri::async_runtime::spawn_blocking(move || {
+        let sandbox = create_explorer_sandbox(&base_dir)?;
+        let mut results = Vec::new();
+
+        let media_exts = [
+            // Video
+            "mp4", "mkv", "avi", "mov", "webm", "m4v", "wmv", "flv",
+            // Audio
+            "mp3", "wav", "flac", "aac", "ogg", "m4a",
+            // Image
+            "png", "jpg", "jpeg", "gif", "webp", "bmp"
+        ];
+
+        let mut stack = vec![sandbox.root().to_path_buf()];
+        let max_depth = 10;
+
+        while let Some(current_dir) = stack.pop() {
+            let entries = match std::fs::read_dir(&current_dir) {
+                Ok(e) => e,
+                Err(_) => continue,
+            };
+
+            for entry in entries.filter_map(|e| e.ok()) {
+                let path = entry.path();
+                let meta = match std::fs::metadata(&path) {
+                    Ok(m) => m,
+                    Err(_) => continue,
+                };
+
+                if meta.is_dir() {
+                    let name = entry.file_name().to_string_lossy().to_string();
+                    if !name.starts_with('.') {
+                        if let Ok(rel) = path.strip_prefix(sandbox.root()) {
+                            if rel.components().count() <= max_depth {
+                                stack.push(path);
+                            }
+                        }
+                    }
+                } else if meta.is_file() {
+                    if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
+                        if media_exts.contains(&ext.to_lowercase().as_str()) {
+                            let name = entry.file_name().to_string_lossy().to_string();
+                            results.push(FileEntry {
+                                name,
+                                path: path.to_string_lossy().to_string(),
+                                is_dir: false,
+                                size: meta.len(),
+                                modified: None,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
+        results.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+        Ok(results)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

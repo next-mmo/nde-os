@@ -1,7 +1,7 @@
 # LDPlayer Emulator Full Management
 
 - **ID:** NDE-10
-- **Status:** 🟢 `done by AI`
+- **Status:** 🔴 waiting approval
 
 ## Feature
 Comprehensive LDPlayer emulator management: auto-detect installations, manage instances (create/clone/launch/quit/remove/configure), persist profiles in SQLite DB, and display everything in a rich profiles table in the Shield Browser UI.

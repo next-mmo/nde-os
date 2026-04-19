@@ -1,7 +1,7 @@
 # Research & Build Counter App with Vanilla.js
 
 - **ID:** NDE-9
-- **Status:** 🔴 `plan`
+- **Status:** 🔴 waiting approval
 
 ## Description
 

@@ -1,7 +1,7 @@
 # Build a sample app
 
 - **ID:** NDE-10
-- **Status:** 🔴 `plan`
+- **Status:** 🟡 yolo mode
 - **Created:** 2026-04-29
 
 ## Description

@@ -60,6 +60,23 @@ pub fn detect_all(base_dir: &Path) -> Vec<ServiceStatus> {
             },
         },
         ServiceStatus {
+            id: "whisperx".to_string(),
+            name: "WhisperX".to_string(),
+            description: "Speaker diarization and word-level alignment on top of Whisper".to_string(),
+            group: ServiceGroup::Voice,
+            installed: voice_status.whisperx_available,
+            version: None,
+            path: voice_rt.resolve_tool("whisperx")
+                .map(|p| p.to_string_lossy().to_string()),
+            used_by: vec!["FreeCut".to_string(), "MovieDub".to_string()],
+            optional: true,
+            details: if voice_status.whisperx_available {
+                Some("Ready for multi-speaker detection".to_string())
+            } else {
+                Some("Install to enable automatic speaker diarization".to_string())
+            },
+        },
+        ServiceStatus {
             id: "rvc".to_string(),
             name: "RVC Voice Conversion".to_string(),
             description: "Retrieval-based Voice Conversion for voice cloning".to_string(),
@@ -199,6 +216,18 @@ pub fn install_service(service_id: &str, base_dir: &Path) -> Result<String> {
             let rt = VoiceRuntime::new(base_dir);
             let result = rt.install_components(&["core".to_string()])?;
             Ok(result.message)
+        }
+        "whisperx" => {
+            // Install whisperx directly into the voice runtime venv via sandbox uv
+            let rt = VoiceRuntime::new(base_dir);
+            let uv_bin = crate::uv_env::ensure_uv(base_dir)
+                .context("failed to ensure uv binary for whisperx install")?;
+            let uv = crate::uv_env::UvEnv::new(&uv_bin, rt.workspace_dir(), "3.11");
+            uv.ensure_python().context("failed to ensure Python for whisperx")?;
+            uv.create_venv().context("failed to create venv for whisperx")?;
+            uv.install_deps(&["whisperx".to_string()])
+                .context("failed to install whisperx")?;
+            Ok("WhisperX installed into NDE-OS voice runtime".to_string())
         }
         "uv" => {
             crate::uv_env::ensure_uv(base_dir)?;

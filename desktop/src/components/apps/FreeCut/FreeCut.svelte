@@ -5,6 +5,7 @@
   import { listen } from "@tauri-apps/api/event";
   import { open, save } from "@tauri-apps/plugin-dialog";
   import { onMount, onDestroy } from "svelte";
+  import { openStaticApp } from "🍎/state/desktop.svelte";
   import {
     Film, Play, Pause, Square, SkipBack, SkipForward, Plus, Save, Upload,
     Scissors, Trash2, Volume2, VolumeX, Eye, EyeOff, Lock, Unlock,
@@ -12,7 +13,7 @@
     ChevronRight, Repeat, PanelLeftClose, PanelRightClose, PanelLeft, PanelRight,
     MousePointer2, Slice, GripHorizontal, FolderOpen, Download, Sparkles,
     Circle, Triangle, RectangleHorizontal, Undo2, Redo2, Grid,
-    Magnet, Maximize2, Minus, GripVertical, Check, AlertCircle
+    Magnet, Maximize2, Minus, GripVertical, Check, AlertCircle, File
   } from "@lucide/svelte";
 
   // ─── Stores (Zustand vanilla → Svelte 5 reactive) ─────────────────────
@@ -31,6 +32,7 @@
   import ExportModal from "./panels/ExportModal.svelte";
   import PropertiesPanel from "./panels/PropertiesPanel.svelte";
   import DubbingPanel from "./panels/DubbingPanel.svelte";
+  import FileExplorer from "../FileExplorer/FileExplorer.svelte";
 
   import type { TimelineItem, TimelineTrack, EditorTab, ActiveTool } from "./stores";
 
@@ -121,6 +123,9 @@
   function closeContextMenu() {
     contextMenuMedia = null;
   }
+
+  // NDE Media Import Modal state
+  let showNdeExplorerModal = $state(false);
 
   // Preview Tabs
   let activePreviewTab = $state<"timeline" | "media">("timeline");
@@ -1065,6 +1070,31 @@
             }
           }
         }
+      }
+    } catch (e) { console.error(e); }
+  }
+
+  function openNdeImport() {
+    showNdeExplorerModal = true;
+  }
+
+  async function handleNdeImport(file: { path: string }) {
+    if (!currentProject) return;
+    try {
+      const media: MediaItem = await invoke("freecut_import_media", { projectId: currentProject.id, filePath: file.path });
+      mediaLibrary = [...mediaLibrary, media];
+      if (media.mediaType !== "image" && !dubbingSession.sourceMediaId) {
+        patchCurrentProjectDubbing({ sourceMediaId: media.id, sourceMediaPath: media.filePath });
+      }
+      if (media.mediaType === "video" || media.mediaType === "image") {
+        invoke("freecut_generate_thumbnails", {
+          mediaId: media.id, filePath: media.filePath, count: 8,
+        }).catch(console.error);
+      }
+      if (media.mediaType === "audio" || media.mediaType === "video") {
+        invoke("freecut_generate_waveform", {
+          mediaId: media.id, filePath: media.filePath, sampleCount: 500,
+        }).catch(console.error);
       }
     } catch (e) { console.error(e); }
   }
@@ -2362,8 +2392,11 @@
       <button class="p-1.5 rounded-md transition-colors {isDirty ? 'text-amber-400 hover:bg-amber-500/10 hover:text-amber-300' : 'text-white/40 hover:bg-white/5 hover:text-white/70'}" onclick={saveProject} aria-label="Save (Ctrl+S)">
         <Save class="w-3.5 h-3.5" />
       </button>
-      <button class="p-1.5 rounded-md hover:bg-white/5 text-white/40 hover:text-white/70 transition-colors" onclick={importMedia} aria-label="Import (Ctrl+I)">
+      <button class="p-1.5 rounded-md hover:bg-white/5 text-white/40 hover:text-white/70 transition-colors" onclick={importMedia} aria-label="Import Media (Host)">
         <Upload class="w-3.5 h-3.5" />
+      </button>
+      <button class="p-1.5 rounded-md hover:bg-white/5 text-white/40 hover:text-white/70 transition-colors" onclick={openNdeImport} aria-label="Import from NDE">
+        <FolderOpen class="w-3.5 h-3.5" />
       </button>
 
       <div class="w-px h-4 bg-white/10 mx-2"></div>
@@ -2417,13 +2450,20 @@
 
           <div class="flex-1 overflow-y-auto">
             {#if activeTab === "media"}
-              <div class="p-2">
+              <div class="p-2 space-y-1">
                 <button
                   class="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg border border-dashed border-white/10 hover:border-violet-500/30 hover:bg-violet-500/5 text-white/40 hover:text-violet-400 text-xs transition-all"
                   onclick={importMedia}
                 >
                   <Upload class="w-3.5 h-3.5" />
                   Import Media
+                </button>
+                <button
+                  class="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg border border-dashed border-white/10 hover:border-violet-500/30 hover:bg-violet-500/5 text-white/40 hover:text-violet-400 text-xs transition-all"
+                  onclick={openNdeImport}
+                >
+                  <FolderOpen class="w-3.5 h-3.5" />
+                  Import from NDE
                 </button>
               </div>
               <div class="px-2 pb-2 space-y-0.5">
@@ -3237,6 +3277,26 @@
     {:else}
       Title Text
     {/if}
+  </div>
+{/if}
+
+<!-- ─── NDE Media Import Modal (Using FileExplorer) ───────────────────── -->
+{#if showNdeExplorerModal}
+  <div class="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm">
+    <div class="w-[900px] h-[650px] flex flex-col rounded-2xl border border-white/10 bg-zinc-950 shadow-2xl overflow-hidden" style="color-scheme: dark;">
+      <div class="flex items-center justify-between px-6 pt-5 pb-4 border-b border-white/5 bg-zinc-900 flex-shrink-0">
+        <h2 class="text-white text-lg font-semibold flex items-center gap-2">
+          <FolderOpen class="w-5 h-5 text-violet-400" />
+          Select Media from NDE Workspace
+        </h2>
+        <button class="p-1.5 rounded-lg hover:bg-white/10 text-white/40 hover:text-white/80 transition-colors" onclick={() => showNdeExplorerModal = false}>
+          <Plus class="w-5 h-5 rotate-45" />
+        </button>
+      </div>
+      <div class="flex-1 relative overflow-hidden bg-background">
+        <FileExplorer window={{ data: { onSelectFile: (path) => { showNdeExplorerModal = false; handleNdeImport({ path }); } } }} />
+      </div>
+    </div>
   </div>
 {/if}
 

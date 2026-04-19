@@ -531,13 +531,16 @@ fn try_transcribe_with_diarization(
         return None;
     }
 
-    // We need python from the runtime venv (whisperx must be installed there).
-    let python = runtime.resolve_tool("python3")
-        .or_else(|| runtime.resolve_tool("python"));
-    let python = match python {
+    // We MUST use the sandboxed venv python — whisperx is installed there, not
+    // on system PATH. Falling back to a system interpreter causes
+    // `ImportError: whisperx` even after a successful Service Hub install.
+    let python = match runtime.venv_python() {
         Some(p) => p,
         None => {
-            tracing::warn!("Python not found for diarization, falling back to plain Whisper");
+            tracing::warn!(
+                "Sandboxed voice-runtime venv not found at {}. Install the Voice Runtime (or WhisperX) via Service Hub first; falling back to plain Whisper.",
+                runtime.bin_dir().display()
+            );
             return None;
         }
     };

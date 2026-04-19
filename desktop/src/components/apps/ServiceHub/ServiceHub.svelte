@@ -21,9 +21,11 @@
 
   let { window: win }: Props = $props();
 
-  // Deep-link context passed via openServiceHub({ require, returnTo })
+  // Deep-link context passed via openServiceHub({ require, returnTo, autoInstall })
   let require = $derived<string[]>(win.data?.require ?? []);
   let returnTo = $derived<string | null>(win.data?.returnTo ?? null);
+  let autoInstall = $derived<boolean>(win.data?.autoInstall === true);
+  let autoInstallTriggered = $state(new Set<string>());
 
   // ─── State ───────────────────────────────────────────────────────────────
   let services = $state<ServiceStatus[]>([]);
@@ -101,6 +103,19 @@
       console.error("Failed to load service status", e);
     } finally {
       loading = false;
+    }
+    maybeAutoInstall();
+  }
+
+  function maybeAutoInstall() {
+    if (!autoInstall || require.length === 0 || installing) return;
+    for (const id of require) {
+      if (autoInstallTriggered.has(id)) continue;
+      const svc = services.find((s) => s.id === id);
+      if (!svc || svc.installed) continue;
+      autoInstallTriggered.add(id);
+      installService(id);
+      break; // install one at a time; next one kicks off after refreshStatus()
     }
   }
 

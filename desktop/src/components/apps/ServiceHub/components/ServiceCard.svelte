@@ -69,7 +69,7 @@
         {:else}
           <span class="ml-auto flex items-center gap-1 rounded-full bg-amber-500/15 px-2 py-0.5 text-[9px] text-amber-300">
             <CircleAlert class="w-2.5 h-2.5" />
-            {svc.id === "voice-runtime" || svc.id === "uv" || svc.id === "ai-vision-runtime" ? "Not Installed" : "Manual"}
+            {svc.id === "voice-runtime" || svc.id === "whisperx" || svc.id === "uv" || svc.id === "ai-vision-runtime" || svc.id === "demucs" || svc.id === "ldplayer" ? "Not Installed" : "Manual"}
           </span>
         {/if}
       </div>
@@ -131,7 +131,7 @@
   <!-- ─── 4 Action Buttons (+ 5th drawer when installed) ─── -->
   <div class="{viewMode === 'grid' ? 'flex w-full items-center justify-between pt-2 mt-auto border-t border-white/5' : 'flex items-center gap-1 mt-2 pt-2 border-t border-white/5'}">
     <!-- Action 1: Install / Re-install -->
-    {#if !svc.installed && (svc.id === "voice-runtime" || svc.id === "uv" || svc.id === "ai-vision-runtime" || svc.id === "ldplayer")}
+    {#if !svc.installed && (svc.id === "voice-runtime" || svc.id === "whisperx" || svc.id === "demucs" || svc.id === "uv" || svc.id === "ai-vision-runtime" || svc.id === "ldplayer")}
       <button
         class="flex items-center gap-1.5 rounded-lg bg-violet-600 px-2.5 py-1 text-[10px] font-medium text-white transition-all hover:bg-violet-500 disabled:opacity-50 active:scale-95"
         onclick={onInstall}

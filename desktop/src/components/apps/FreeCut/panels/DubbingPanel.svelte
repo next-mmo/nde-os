@@ -232,6 +232,26 @@
     });
   }
 
+    function openServiceHubForWhisperX() {
+    import("🍎/state/desktop.svelte").then(({ openServiceHub }) => {
+      openServiceHub({ require: ["whisperx"], returnTo: "freecut", autoInstall: true });
+    });
+  }
+
+    function openSettingsApiKeys() {
+    import("🍎/state/desktop.svelte").then(({ openStaticApp }) => {
+      openStaticApp("settings" as any, { tab: "api-keys", returnTo: "freecut" });
+    });
+  }
+
+    async function reloadGlobalHfToken() {
+    try {
+      const globalSettings = await invoke<{ hfToken?: string | null }>("get_global_settings");
+      if (globalSettings.hfToken) hfToken = globalSettings.hfToken;
+      else if (!globalSettings.hfToken) hfToken = "";
+    } catch {}
+  }
+
     async function importDubbingSrt() {
     if (!currentProject) return;
     try {
@@ -546,6 +566,10 @@
         dubbingStatus = `Generated ${event.payload?.session?.segments?.length ?? 0} dub segments`;
       })
     );
+
+    const onGlobalSettingsUpdated = () => { reloadGlobalHfToken(); };
+    globalThis.addEventListener("nde:global-settings-updated", onGlobalSettingsUpdated);
+    unlisten.push(() => globalThis.removeEventListener("nde:global-settings-updated", onGlobalSettingsUpdated));
   });
   onDestroy(() => {
     unlisten.forEach((fn) => fn());
@@ -578,12 +602,18 @@
                         {dubbingTools?.edgeTtsAvailable ? "Ready" : "Missing"}
                       </p>
                     </div>
-                    <div class="rounded-xl border border-white/6 bg-black/20 px-2.5 py-2">
+                    <button
+                      type="button"
+                      class="rounded-xl border border-white/6 bg-black/20 px-2.5 py-2 text-left transition-colors {dubbingTools?.whisperxAvailable ? '' : 'hover:border-violet-400/40 hover:bg-violet-500/10 cursor-pointer'}"
+                      onclick={() => { if (!dubbingTools?.whisperxAvailable) openServiceHubForWhisperX(); }}
+                      disabled={dubbingTools?.whisperxAvailable}
+                      title={dubbingTools?.whisperxAvailable ? "WhisperX ready" : "Install via Service Hub"}
+                    >
                       <p class="text-[9px] uppercase tracking-wider text-white/30">WhisperX</p>
                       <p class="text-[11px] mt-1 {dubbingTools?.whisperxAvailable ? 'text-emerald-300' : 'text-amber-300/70'}">
-                        {dubbingTools?.whisperxAvailable ? "Ready" : "Not installed"}
+                        {dubbingTools?.whisperxAvailable ? "Ready" : "Install →"}
                       </p>
-                    </div>
+                    </button>
                     <div class="rounded-xl border border-white/6 bg-black/20 px-2.5 py-2">
                       <p class="text-[9px] uppercase tracking-wider text-white/30">NDE LLM</p>
                       <p class="text-[11px] mt-1 {dubbingTools?.ndeLlmAvailable ? 'text-emerald-300' : 'text-white/45'}">
@@ -877,11 +907,22 @@
                         {#if diarizeEnabled}
                           <p class="text-[9px] text-white/35">Uses WhisperX + pyannote.audio to detect and label each speaker automatically.</p>
                           <div class="space-y-2">
-                            <label class="block">
-                              <span class="text-[9px] uppercase tracking-wider text-white/35">HuggingFace Token</span>
-                              <input type="password" class="mt-1 w-full rounded-lg border border-white/10 bg-white/5 px-2 py-2 text-[11px] text-white" bind:value={hfToken} placeholder="hf_..." />
-                            </label>
-                            <p class="text-[8px] text-white/25">Set globally in ⚙️ Settings → 🔑 API Keys & Tokens, or override per-project here.</p>
+                            <div class="rounded-lg border border-white/10 bg-white/5 px-2.5 py-2 flex items-center justify-between gap-2">
+                              <div class="min-w-0">
+                                <p class="text-[9px] uppercase tracking-wider text-white/35">HuggingFace Token</p>
+                                <p class="text-[11px] mt-0.5 {hfToken ? 'text-emerald-300' : 'text-amber-300/70'}">
+                                  {hfToken ? "✓ Set in NDE Settings" : "Not set"}
+                                </p>
+                              </div>
+                              <button
+                                type="button"
+                                class="shrink-0 rounded-md bg-violet-600/70 px-2.5 py-1.5 text-[10px] text-white hover:bg-violet-500/70 transition-colors"
+                                onclick={openSettingsApiKeys}
+                              >
+                                ⚙️ Open NDE Settings
+                              </button>
+                            </div>
+                            <p class="text-[8px] text-white/25">Manage the token in ⚙️ Settings → 🔑 API Keys & Tokens. It's encrypted in your OS keychain and shared across projects.</p>
                             <div class="grid grid-cols-2 gap-2">
                               <label class="block">
                                 <span class="text-[9px] uppercase tracking-wider text-white/35">Min Speakers</span>

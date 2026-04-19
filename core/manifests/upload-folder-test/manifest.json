@@ -4,7 +4,7 @@
   "disk_size": "1MB",
   "env": [],
   "id": "upload-folder-test",
-  "launch_cmd": "python3 -c \"print('hello')\"",
+  "launch_cmd": "python -c \"print('hello')\"",
   "name": "Test Upload upload-folder-test",
   "needs_gpu": false,
   "pip_deps": [],

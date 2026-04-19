@@ -588,8 +588,15 @@ export function openStaticApp(app_id: StaticAppID, data?: any) {
     return;
   }
   if (app_id === "browser") {
-    openGenericBrowserWindow();
-    return;
+    const existing = [...desktop.windows]
+      .sort((a, b) => b.z_index - a.z_index)
+      .find((item) => item.app_id === "browser");
+    if (existing) {
+      if (data) existing.data = data;
+      focusWindow(existing.id);
+      return existing;
+    }
+    return openGenericBrowserWindow();
   }
 
   const existing = desktop.windows.find((item) => item.app_id === app_id);
@@ -763,7 +770,7 @@ export function closeFullscreenSession() {
   desktop.fullscreen_session_id = null;
 }
 
-export function openGenericBrowserWindow(initialUrl = "http://localhost:3000", title = apps_config.browser.title) {
+export function openGenericBrowserWindow(initialUrl = "", title = apps_config.browser.title) {
   const browserConfig = apps_config.browser;
   const window = createWindow("browser", title, browserConfig.width!, browserConfig.height!);
   window.browser = {
@@ -948,7 +955,7 @@ export function showDesktopIcon(id: string) {
 }
 
 /** Open the Service Hub with deep-link context (required services + return-to app). */
-export function openServiceHub(options: { require?: string[]; returnTo?: string; returnData?: any } = {}) {
+export function openServiceHub(options: { require?: string[]; returnTo?: string; returnData?: any; autoInstall?: boolean } = {}) {
   const existing = desktop.windows.find((item) => item.app_id === "service-hub");
   if (existing) {
     // Update context on re-open

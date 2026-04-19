@@ -10,7 +10,7 @@
   } from "$lib/stores/state";
   import { invoke } from "@tauri-apps/api/core";
   import { onDestroy, onMount } from "svelte";
-  import { desktop, toggleDockAutoHide, toggleTheme, resetIconPositions, setWallpaper, toggleStartExpanded } from "🍎/state/desktop.svelte";
+  import { desktop, toggleDockAutoHide, toggleTheme, resetIconPositions, setWallpaper, toggleStartExpanded, closeWindow, focusWindow } from "🍎/state/desktop.svelte";
   import {
     wallpaperSettings,
     fetchWallpaper,
@@ -39,6 +39,22 @@
     window?: any;
   }
   let { window }: Props = $props();
+
+  // Deep-link context: openStaticApp("settings", { tab, returnTo })
+  let returnTo = $derived<string | null>(window?.data?.returnTo ?? null);
+
+  function returnToLabel(id: string | null): string {
+    if (!id) return "";
+    const map: Record<string, string> = { freecut: "FreeCut", "service-hub": "Service Hub" };
+    return map[id] ?? id;
+  }
+
+  function goBackToCaller() {
+    if (!returnTo) return;
+    const target = desktop.windows.find((w) => w.app_id === returnTo);
+    if (target) focusWindow(target.id);
+    if (window?.id) closeWindow(window.id);
+  }
 
   function getSavedSettingsTab(): string {
     try {
@@ -122,6 +138,9 @@
     try {
       await invoke("set_global_settings", { settings: globalSettings });
       settingsSaved = true;
+      try {
+        globalThis.dispatchEvent(new CustomEvent("nde:global-settings-updated", { detail: globalSettings }));
+      } catch {}
       setTimeout(() => settingsSaved = false, 2000);
     } catch (e: any) {
       settingsError = String(e);
@@ -770,6 +789,19 @@
     <!-- API KEYS & TOKENS PANE -->
     {#if activeTab === "api-keys"}
       <div class="max-w-2xl mx-auto animate-in fade-in slide-in-from-bottom-2 duration-300">
+        {#if returnTo}
+          <div class="mb-4 px-3 py-2 rounded-lg bg-violet-50 dark:bg-violet-500/10 border border-violet-200 dark:border-violet-500/20 flex items-center justify-between gap-3">
+            <p class="text-[12px] text-violet-700 dark:text-violet-200">
+              Set your API key, then return to <span class="font-semibold">{returnToLabel(returnTo)}</span>.
+            </p>
+            <button
+              class="shrink-0 px-3 py-1 rounded-full bg-violet-500 hover:bg-violet-600 text-white text-[12px] font-medium transition"
+              onclick={goBackToCaller}
+            >
+              ← Back to {returnToLabel(returnTo)}
+            </button>
+          </div>
+        {/if}
         <header class="flex items-center justify-between mb-8">
           <div class="flex items-center gap-4">
             <div class="w-14 h-14 bg-linear-to-br from-amber-500 to-orange-600 rounded-lg shadow-md border border-white/20 flex items-center justify-center text-3xl">🔑</div>
