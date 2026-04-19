@@ -127,6 +127,11 @@ export const apps_config = {
     height: 720,
     dock_breaks_before: true,
   }),
+  "video-player": create_app_config({
+    title: "Video Player",
+    width: 1120,
+    height: 720,
+  }),
 };
 
 export type StaticAppID = keyof typeof apps_config;

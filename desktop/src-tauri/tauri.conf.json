@@ -31,7 +31,8 @@
         "scope": [
           "$HOME/.ai-launcher/**/*",
           "$APPLOCALDATA/**/*",
-          "$LOCALAPPDATA/ai-launcher/**/*"
+          "$HOME/AppData/Local/ai-launcher/**/*",
+          "C:/ai-launcher-data/**/*"
         ]
       }
     }

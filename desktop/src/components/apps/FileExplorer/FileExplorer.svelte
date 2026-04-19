@@ -2,6 +2,15 @@
 
 <script lang="ts">
   import { invoke } from "@tauri-apps/api/core";
+  import { openStaticApp, type DesktopWindow } from "🍎/state/desktop.svelte";
+
+  interface Props {
+    window?: DesktopWindow;
+  }
+
+  let { window: desktopWindow }: Props = $props();
+
+  const VIDEO_EXTS = new Set(["mp4", "mov", "avi", "mkv", "webm", "m4v", "wmv", "flv"]);
 
   interface FileEntry {
     name: string;
@@ -108,7 +117,13 @@
   async function init() {
     try {
       sandboxRoot = await invoke<string>("get_home_dir");
-      await navigate("");
+      // If opened with a specific path (e.g. from DownloadCenter), navigate there
+      const initialPath = desktopWindow?.data?.path;
+      if (initialPath) {
+        await navigate(initialPath);
+      } else {
+        await navigate("");
+      }
     } catch (e) {
       error = String(e);
     }
@@ -190,10 +205,15 @@
     if (entry.is_dir) {
       await navigate(entry.path);
     } else {
-      try {
-        await invoke("open_file", { path: entry.path });
-      } catch (e) {
-        error = String(e);
+      const ext = entry.name.split(".").pop()?.toLowerCase() ?? "";
+      if (VIDEO_EXTS.has(ext)) {
+        openStaticApp("video-player", { filePath: entry.path });
+      } else {
+        try {
+          await invoke("open_file", { path: entry.path });
+        } catch (e) {
+          error = String(e);
+        }
       }
     }
   }
@@ -335,6 +355,16 @@
 
   // Init on mount
   init();
+
+  // React to window data changes (e.g. FileExplorer already open, user clicks "Open" on another download)
+  let lastNavPath = $state("");
+  $effect(() => {
+    const newPath = desktopWindow?.data?.path;
+    if (newPath && newPath !== lastNavPath && sandboxRoot) {
+      lastNavPath = newPath;
+      navigate(newPath);
+    }
+  });
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -643,6 +673,11 @@
         <button class="flex items-center gap-2 w-full px-3 py-1.5 text-[0.8rem] text-left bg-transparent border-none cursor-default rounded-md mx-1 hover:bg-blue-500/15 dark:hover:bg-blue-500/20" onclick={() => { if (contextMenu?.entry) handleEntryDblClick(contextMenu.entry); }}>
           <span>📂</span> Open
         </button>
+        {#if contextMenu.entry && VIDEO_EXTS.has(contextMenu.entry.name.split('.').pop()?.toLowerCase() ?? '')}
+          <button class="flex items-center gap-2 w-full px-3 py-1.5 text-[0.8rem] text-left bg-transparent border-none cursor-default rounded-md mx-1 hover:bg-blue-500/15 dark:hover:bg-blue-500/20" onclick={() => { if (contextMenu?.entry) { invoke('open_file', { path: contextMenu.entry.path }).catch(console.error); contextMenu = null; } }}>
+            <span>📁</span> Open with System
+          </button>
+        {/if}
         <button class="flex items-center gap-2 w-full px-3 py-1.5 text-[0.8rem] text-left bg-transparent border-none cursor-default rounded-md mx-1 hover:bg-blue-500/15 dark:hover:bg-blue-500/20" onclick={() => { if (contextMenu?.entry) startRename(contextMenu.entry); }}>
           <span>✏️</span> Rename
         </button>
