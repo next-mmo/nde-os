@@ -2,13 +2,14 @@
 
 <script lang="ts">
   import { onMount, onDestroy, tick } from "svelte";
-  import { convertFileSrc } from "@tauri-apps/api/core";
+  import { convertFileSrc, invoke } from "@tauri-apps/api/core";
   import { Button } from "$lib/components/ui/button";
   import { ScrollArea } from "$lib/components/ui/scroll-area";
   import { Badge } from "$lib/components/ui/badge";
   import {
     Play, Pause, SkipBack, SkipForward, Volume2, VolumeX,
     Maximize, Minimize, FolderOpen, Film, ChevronLeft, ChevronRight,
+    PictureInPicture2, MonitorSmartphone, LayoutGrid, RotateCcw
   } from "@lucide/svelte";
   import type { DesktopWindow } from "🍎/state/desktop.svelte";
 
@@ -59,6 +60,54 @@
   let currentItem = $derived(playlist[currentIndex] || null);
   let videoSrc = $derived(currentItem ? convertFileSrc(currentItem.path) : "");
 
+  // ── Gallery state ────────────────────────────────────────────────────────
+  let galleryVideos = $state<{ name: string; path: string; size: number }[]>([]);
+  let isLoadingGallery = $state(false);
+
+  $effect(() => {
+    if (playlist.length === 0 && galleryVideos.length === 0 && !isLoadingGallery) {
+      loadGallery();
+    }
+  });
+
+  async function loadGallery() {
+    isLoadingGallery = true;
+    try {
+      galleryVideos = await invoke("scan_videos");
+    } catch (e) {
+      console.error("Failed to scan videos", e);
+    } finally {
+      isLoadingGallery = false;
+    }
+  }
+
+  function playGalleryItem(item: { name: string; path: string }) {
+    desktopWindow.data = { filePath: item.path };
+  }
+
+  // ── Mini Player ─────────────────────────────────────────────────────────
+
+  function toggleMiniPlayer() {
+    if (desktopWindow.width <= 400) {
+      // Restore large
+      desktopWindow.width = 1120;
+      desktopWindow.height = 720;
+    } else {
+      // Small vertical size for dramas
+      desktopWindow.width = 360;
+      desktopWindow.height = 640;
+    }
+  }
+
+  function togglePiP() {
+    if (!videoEl) return;
+    if (document.pictureInPictureElement) {
+      document.exitPictureInPicture().catch(console.error);
+    } else if (document.pictureInPictureEnabled) {
+      videoEl.requestPictureInPicture().catch(console.error);
+    }
+  }
+
   // When window data changes (e.g. re-opened with new playlist), reset index
   let lastDataId = $state("");
   $effect(() => {
@@ -107,6 +156,26 @@
     videoError = err ? `Error ${err.code}: ${err.message || "Cannot play this video"}` : "Unknown video error";
     console.error("[VideoPlayer] Video error:", videoError, "src:", videoSrc);
   }
+
+  function handleLeavePiP() {
+    // Chromium WebView2 bug: exiting PiP sometimes leaves the video surface detached/invisible.
+    // Toggling the display CSS forces the compositor to redraw the video surface.
+    if (videoEl) {
+      const orig = videoEl.style.display;
+      videoEl.style.display = 'none';
+      setTimeout(() => { 
+        if (videoEl) videoEl.style.display = orig; 
+      }, 50);
+    }
+  }
+
+  onDestroy(() => {
+    if (videoEl) {
+      videoEl.pause();
+      videoEl.removeAttribute('src');
+      videoEl.load();
+    }
+  });
 
   function onPlay() { isPlaying = true; }
   function onPause() { isPlaying = false; }
@@ -312,11 +381,58 @@
   <!-- Main video area -->
   <div class="flex-1 flex flex-col relative overflow-hidden">
     {#if !currentItem}
-      <!-- Empty state -->
-      <div class="flex-1 flex flex-col items-center justify-center text-white/30 gap-4">
-        <Film class="w-16 h-16" />
-        <p class="text-lg">No video to play</p>
-        <p class="text-sm text-white/20">Open a video from File Explorer or Download Center</p>
+      <!-- Gallery view -->
+      <div class="flex-1 flex flex-col p-6 overflow-hidden bg-neutral-950">
+        <div class="flex items-center justify-between mb-6 shrink-0">
+          <div class="flex items-center gap-3">
+            <Film class="w-6 h-6 text-indigo-400" />
+            <h2 class="text-2xl font-bold font-display tracking-tight text-neutral-100">Video Gallery</h2>
+          </div>
+          <Button variant="outline" size="sm" class="bg-white/5 border-white/10 hover:bg-white/10 text-white/80 cursor-pointer" onclick={loadGallery}>
+            <RotateCcw class="w-4 h-4 mr-2 {isLoadingGallery ? 'animate-spin' : ''}" />
+            Refresh
+          </Button>
+        </div>
+        
+        <ScrollArea class="flex-1 -mx-2 px-2" viewportClasses="pe-4">
+          {#if isLoadingGallery && galleryVideos.length === 0}
+            <div class="flex justify-center items-center h-48 text-neutral-500">Scanning for videos...</div>
+          {:else if galleryVideos.length === 0}
+            <div class="flex flex-col items-center justify-center text-white/30 h-64 gap-4">
+              <FolderOpen class="w-12 h-12" />
+              <p>No videos found in your workspace.</p>
+            </div>
+          {:else}
+            <div class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4 pb-8">
+              {#each galleryVideos as vid}
+                <button
+                  class="flex flex-col text-left group overflow-hidden rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition-all cursor-pointer focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+                  onclick={() => playGalleryItem(vid)}
+                >
+                  <div class="w-full aspect-video bg-black flex items-center justify-center relative overflow-hidden group-hover:bg-neutral-900 transition-colors">
+                    <!-- svelte-ignore a11y_media_has_caption -->
+                    <video 
+                      src="{convertFileSrc(vid.path)}#t=1.5" 
+                      class="absolute inset-0 w-full h-full object-cover opacity-70 group-hover:opacity-100 group-hover:scale-105 transition-all duration-500 pointer-events-none"
+                      preload="metadata"
+                      muted
+                      playsinline
+                    ></video>
+                    
+                    <div class="absolute inset-0 bg-black/30 group-hover:bg-transparent transition-colors z-0"></div>
+                    <Play class="w-10 h-10 text-white opacity-0 group-hover:opacity-100 transition-opacity drop-shadow-xl z-10 drop-shadow-[0_0_8px_rgba(0,0,0,0.8)]" />
+                  </div>
+                  <div class="p-3">
+                    <p class="text-sm font-medium text-neutral-200 line-clamp-2 leading-snug" title={vid.name}>
+                      {vid.name}
+                    </p>
+                    <p class="text-xs text-neutral-500 mt-1 uppercase">{(vid.size / (1024 * 1024)).toFixed(1)} MB</p>
+                  </div>
+                </button>
+              {/each}
+            </div>
+          {/if}
+        </ScrollArea>
       </div>
     {:else}
       <!-- Video element -->
@@ -333,6 +449,7 @@
         onpause={onPause}
         onended={onEnded}
         onerror={onVideoError}
+        onleavepictureinpicture={handleLeavePiP}
         preload="metadata"
         playsinline
       ></video>
@@ -348,18 +465,6 @@
       {/if}
 
       <!-- Show playlist button (when hidden) -->
-      {#if playlist.length > 1 && !showPlaylist}
-        <button
-          class="absolute top-3 left-3 bg-black/60 hover:bg-black/80 backdrop-blur-sm text-white/70 hover:text-white
-                 p-1.5 rounded-lg transition-all opacity-0 hover:opacity-100
-                 {showControls ? '!opacity-100' : ''}"
-          onclick={() => showPlaylist = true}
-          title="Show playlist"
-        >
-          <ChevronRight class="w-4 h-4" />
-        </button>
-      {/if}
-
       <!-- Big play button overlay when paused -->
       {#if !isPlaying && duration > 0}
         <button
@@ -505,6 +610,23 @@
                 {playbackRate}x
               </button>
 
+              <!-- Mini Player / PiP -->
+              <button
+                class="p-1.5 text-white/60 hover:text-white hover:bg-white/10 rounded transition-colors"
+                onclick={toggleMiniPlayer}
+                title="Mini Window"
+              >
+                <MonitorSmartphone class="w-4 h-4" />
+              </button>
+
+              <button
+                class="p-1.5 text-white/60 hover:text-white hover:bg-white/10 rounded transition-colors"
+                onclick={togglePiP}
+                title="Picture in Picture"
+              >
+                <PictureInPicture2 class="w-4 h-4" />
+              </button>
+
               <!-- Episode indicator -->
               {#if playlist.length > 1}
                 <span class="text-[11px] text-white/40 font-mono">
@@ -516,17 +638,52 @@
         </div>
       </div>
 
-      <!-- Paused title overlay (top) -->
-      {#if !isPlaying && showControls}
-        <div class="absolute top-0 left-0 right-0 p-4 bg-gradient-to-b from-black/60 to-transparent pointer-events-none">
-          <p class="text-sm font-medium text-white/80 truncate">{currentItem.title}</p>
+      <!-- Top controls overlay -->
+      <div 
+        class="absolute top-0 left-0 right-0 p-3 pt-4 flex items-start gap-3 transition-opacity duration-300
+               bg-gradient-to-b from-black/80 to-transparent pointer-events-none {showControls ? 'opacity-100' : 'opacity-0'}"
+      >
+        <button
+          class="shrink-0 bg-white/10 hover:bg-white/20 backdrop-blur-md text-white/80 hover:text-white 
+                 p-1.5 rounded-lg transition-all pointer-events-auto cursor-pointer"
+          onclick={() => { 
+            if (videoEl) {
+                videoEl.pause();
+            }
+            if (document.pictureInPictureElement) {
+                document.exitPictureInPicture().catch(() => {});
+            }
+            desktopWindow.data = null; 
+            if (desktopWindow.width <= 400) {
+              desktopWindow.width = 1120;
+              desktopWindow.height = 720;
+            }
+          }}
+          title="Back to Gallery"
+        >
+          <LayoutGrid class="w-4 h-4" />
+        </button>
+
+        {#if playlist.length > 1 && !showPlaylist}
+          <button
+            class="shrink-0 bg-white/10 hover:bg-white/20 backdrop-blur-md text-white/80 hover:text-white 
+                   p-1.5 rounded-lg transition-all pointer-events-auto cursor-pointer"
+            onclick={() => showPlaylist = true}
+            title="Show playlist"
+          >
+            <ChevronRight class="w-4 h-4" />
+          </button>
+        {/if}
+
+        <div class="flex-1 overflow-hidden min-w-0">
+          <p class="text-sm font-medium text-white/90 truncate drop-shadow-md">{currentItem.title}</p>
           {#if playlist.length > 1}
-            <p class="text-[11px] text-white/40 mt-0.5">
-              Episode {currentItem.index} of {playlist.length}
+            <p class="text-[11px] text-white/50 mt-0.5 drop-shadow-md font-mono">
+              Episode {currentIndex + 1}/{playlist.length}
             </p>
           {/if}
         </div>
-      {/if}
+      </div>
     {/if}
   </div>
 </div>

@@ -119,6 +119,7 @@ pub fn run() {
             commands::filesystem::rename_entry,
             commands::filesystem::read_file_content,
             commands::filesystem::write_file_content,
+            commands::filesystem::scan_videos,
             // shield browser
             commands::shield::list_shield_profiles,
             commands::shield::get_shield_profile,

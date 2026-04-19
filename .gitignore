@@ -34,3 +34,4 @@ openviking_workspace
 *.mp3
 *.srt
 .DS_Store
+.agents/chat/history.json
