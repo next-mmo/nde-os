@@ -37,6 +37,9 @@ pub mod actor;
 // FreeCut video editor engine
 pub mod freecut;
 
+// Download Center — provider-pluggable media downloader
+pub mod downloader;
+
 // Global voice services (Edge TTS + RVC)
 pub mod voice;
 

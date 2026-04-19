@@ -66,6 +66,19 @@ pub async fn check_for_updates() -> Result<UpdateCheckResult, String> {
 
     if !response.status().is_success() {
         let status = response.status();
+        // 404 means the repo has no published releases yet — not an error
+        if status == reqwest::StatusCode::NOT_FOUND {
+            return Ok(UpdateCheckResult {
+                current_version: CURRENT_VERSION.to_string(),
+                latest_version: None,
+                update_available: false,
+                release_name: None,
+                release_url: None,
+                release_body: None,
+                published_at: None,
+                error: None,
+            });
+        }
         return Ok(UpdateCheckResult {
             current_version: CURRENT_VERSION.to_string(),
             latest_version: None,

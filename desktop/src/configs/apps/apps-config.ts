@@ -121,6 +121,12 @@ export const apps_config = {
     should_open_window: false,
     dock_breaks_before: true,
   }),
+  "download-center": create_app_config({
+    title: "Download Center",
+    width: 1000,
+    height: 720,
+    dock_breaks_before: true,
+  }),
 };
 
 export type StaticAppID = keyof typeof apps_config;

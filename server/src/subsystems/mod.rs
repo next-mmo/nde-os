@@ -2,6 +2,7 @@
 /// These expose core subsystem data to the desktop UI.
 use crate::response::*;
 
+pub mod downloads;
 pub mod freecut;
 
 use serde_json::Value;

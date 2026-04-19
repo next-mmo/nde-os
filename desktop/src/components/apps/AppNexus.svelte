@@ -24,7 +24,8 @@
     "screenshot": () => import("🍎/components/apps/Screenshot/Screenshot.svelte"),
     "terminal": () => import("🍎/components/apps/Terminal/Terminal.svelte"),
     "freecut": () => import("🍎/components/apps/FreeCut/FreeCut.svelte"),
-    "service-hub": () => import("🍎/components/apps/ServiceHub/ServiceHub.svelte")
+    "service-hub": () => import("🍎/components/apps/ServiceHub/ServiceHub.svelte"),
+    "download-center": () => import("🍎/components/apps/DownloadCenter/DownloadCenter.svelte")
   };
 
   const needsWindowProp = new Set(["browser", "vibe-studio", "screenshot", "terminal", "settings", "service-hub", "shield-browser"]);

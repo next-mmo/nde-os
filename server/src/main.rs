@@ -15,7 +15,9 @@ use agent::AgentState;
 use ai_launcher_core::actor::runner::ActorRunner;
 use ai_launcher_core::agent::manager::{AgentManager, ManagerConfig};
 use ai_launcher_core::app_manager::AppManager;
+use ai_launcher_core::downloader::{DownloadEngine, JobStore};
 use ai_launcher_core::llm::manager::LlmManager;
+use ai_launcher_core::media::ffmpeg::ensure_ffmpeg;
 use ai_launcher_core::plugins::PluginEngine;
 use router::AppState;
 use std::sync::{Arc, Mutex};
@@ -269,6 +271,12 @@ fn main() {
     let actor_runner = Arc::new(tokio::sync::Mutex::new(ActorRunner::new(&base_dir)));
     println!("  Actors:      initialized (Shield Actor system)");
 
+    // Download Engine
+    let job_store = Arc::new(JobStore::open(&base_dir).expect("Failed to init JobStore"));
+    let ffmpeg_bins = ensure_ffmpeg(&base_dir).expect("Failed to get ffmpeg");
+    let download_engine = Arc::new(DownloadEngine::new(job_store, ffmpeg_bins));
+    println!("  Downloads:   initialized (DownloadEngine)");
+
     // Build shared AppState
     let state = Arc::new(AppState {
         mgr,
@@ -283,6 +291,7 @@ fn main() {
         log_buffer,
         actor_runner,
         desktop_actions,
+        download_engine,
     });
 
     let server = Server::http("0.0.0.0:8080").expect("Failed to bind :8080");

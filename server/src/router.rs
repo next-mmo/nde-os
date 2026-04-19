@@ -8,6 +8,7 @@ use std::sync::{Arc, Mutex};
 use ai_launcher_core::actor::runner::ActorRunner;
 use ai_launcher_core::agent::manager::AgentManager;
 use ai_launcher_core::app_manager::AppManager;
+use ai_launcher_core::downloader::DownloadEngine;
 use ai_launcher_core::llm::manager::LlmManager;
 use ai_launcher_core::plugins::PluginEngine;
 use tiny_http::{Method, Request};
@@ -42,6 +43,7 @@ pub struct AppState {
     pub log_buffer: SharedLogBuffer,
     pub actor_runner: Arc<tokio::sync::Mutex<ActorRunner>>,
     pub desktop_actions: DesktopActionQueue,
+    pub download_engine: Arc<DownloadEngine>,
 }
 
 impl AppState {
@@ -284,6 +286,19 @@ pub fn route(req: &mut Request, state: &AppState) -> HttpResponse {
         (Method::Post, "/api/freecut/ffmpeg/info") => {
             return subsystems::freecut::handle_ffmpeg_info(req, &state.data_dir, &state.rt)
         }
+        // ── Downloads ───────────────────────────────────────────────
+        (Method::Get, "/api/downloads/providers") => {
+            return subsystems::downloads::list_providers()
+        }
+        (Method::Post, "/api/downloads/resolve") => {
+            return subsystems::downloads::resolve(req, &state.rt)
+        }
+        (Method::Post, "/api/downloads") => {
+            return subsystems::downloads::start(req, &state.data_dir, &state.rt, &state.download_engine)
+        }
+        (Method::Get, "/api/downloads") => {
+            return subsystems::downloads::list(&state.download_engine)
+        }
         _ => {}
     }
 
@@ -452,6 +467,32 @@ pub fn route(req: &mut Request, state: &AppState) -> HttpResponse {
                 kanban::update_task(filename, req)
             }
             (Method::Delete, ["api", "kanban", "tasks", filename]) => kanban::delete_task(filename),
+            _ => err(404, &format!("Not found: {}", path)),
+        };
+    }
+
+    // Downloads dynamic routes: /api/downloads/{id}/...
+    if path.starts_with("/api/downloads/") {
+        let parts: Vec<&str> = path.trim_start_matches('/').split('/').collect();
+        return match (method.clone(), parts.as_slice()) {
+            (Method::Get, ["api", "downloads", "providers"]) => {
+                subsystems::downloads::list_providers()
+            }
+            (Method::Get, ["api", "downloads", id]) => {
+                subsystems::downloads::get(id, &state.download_engine)
+            }
+            (Method::Post, ["api", "downloads", id, "pause"]) => {
+                subsystems::downloads::pause(id, &state.rt, &state.download_engine)
+            }
+            (Method::Post, ["api", "downloads", id, "resume"]) => {
+                subsystems::downloads::resume(id, &state.rt, &state.download_engine)
+            }
+            (Method::Post, ["api", "downloads", id, "cancel"]) => {
+                subsystems::downloads::cancel(id, &state.download_engine)
+            }
+            (Method::Delete, ["api", "downloads", id]) => {
+                subsystems::downloads::delete(id, &state.download_engine)
+            }
             _ => err(404, &format!("Not found: {}", path)),
         };
     }
