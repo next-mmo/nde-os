@@ -974,6 +974,8 @@
       showNewProjectModal = false;
       currentView = "editor";
       await loadProjects();
+      // Persist so a hard reload returns to this project (same as openProject).
+      invoke("freecut_set_setting", { key: LAST_PROJECT_KEY, value: project.id }).catch(console.error);
     } catch (e) { console.error(e); }
   }
 
