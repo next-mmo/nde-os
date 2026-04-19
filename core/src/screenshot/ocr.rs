@@ -1,11 +1,11 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use image::DynamicImage;
 
 #[cfg(windows)]
 pub async fn extract_text(image: &DynamicImage) -> Result<String> {
     use windows::core::HSTRING;
     use windows::Globalization::Language;
-    use windows::Graphics::Imaging::{BitmapAlphaMode, BitmapPixelFormat, SoftwareBitmap};
+    use windows::Graphics::Imaging::{BitmapPixelFormat, SoftwareBitmap};
     use windows::Media::Ocr::OcrEngine;
     use windows::Storage::Streams::{DataWriter, InMemoryRandomAccessStream};
 

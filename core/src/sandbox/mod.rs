@@ -47,6 +47,7 @@ impl Sandbox {
 
     #[cfg(windows)]
     fn set_restrictive_permissions(path: &Path) -> Result<()> {
+        use std::process::Command;
         // Use icacls to restrict to current user only
         let path_str = path.to_string_lossy();
         // Remove inherited permissions, grant full control to current user

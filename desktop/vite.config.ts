@@ -11,7 +11,6 @@ export default defineConfig({
   ],
   resolve: {
     alias: {
-      "@lucide/svelte": "lucide-svelte",
       "🍎": new URL("./src/", import.meta.url).pathname,
       $lib: new URL("./src/lib/", import.meta.url).pathname,
     },

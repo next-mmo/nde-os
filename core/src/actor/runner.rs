@@ -161,12 +161,6 @@ impl ActorRunner {
         // Detach on Windows
         #[cfg(windows)]
         {
-            use tokio::process::Command as TokioCommand;
-            // Creation flags aren't directly exposed on tokio::process::Command without casting to std cmd
-            // Let's use the underlying std::process::Command representation if needed,
-            // but for portability let's use the wrapper methods if applicable.
-            // Tokio Command doesn't have creation_flags natively, we need to import std::os::windows::process::CommandExt
-            // and use it on the tokio command builder if it supports it, wait, tokio Command allows standard ext traits.
             const CREATE_NO_WINDOW: u32 = 0x08000000;
             cmd.creation_flags(CREATE_NO_WINDOW);
         }

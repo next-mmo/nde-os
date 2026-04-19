@@ -452,7 +452,7 @@ impl GgufProvider {
     /// Actually run nvidia-smi to detect GPU. Called once, result cached.
     fn detect_nvidia_gpu() -> bool {
         // Try nvidia-smi from PATH first (System32 on Windows, /usr/bin on Linux)
-        let result = std::process::Command::new("nvidia-smi")
+        let mut result = std::process::Command::new("nvidia-smi")
             .arg("--query-gpu=name")
             .arg("--format=csv,noheader")
             .stdout(std::process::Stdio::piped())
