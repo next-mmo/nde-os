@@ -2,7 +2,7 @@
 
 use anyhow::{anyhow, Result};
 use hound::{SampleFormat, WavReader};
-use std::io::Read;
+
 
 pub const TARGET_SR: u32 = 16_000;
 

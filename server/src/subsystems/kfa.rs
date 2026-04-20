@@ -1,6 +1,6 @@
 //! KFA (Khmer Forced Aligner) server endpoints.
 //!
-//! POST /api/kfa/align — multipart form: `audio` (WAV bytes) + `text` (Khmer transcript)
+//! POST /api/kfa/align      — multipart/form-data: `audio` (WAV) + `text` (Khmer)
 //! POST /api/kfa/align-json — JSON body: `{ "audio_base64": "...", "text": "..." }`
 
 use std::io::Read;
@@ -8,49 +8,43 @@ use std::sync::{Arc, Mutex};
 
 use ai_launcher_core::kfa::audio::load_wav_mono_16k_bytes;
 use ai_launcher_core::kfa::{Alignment, AlignmentSession};
+use once_cell::sync::OnceCell;
 use tiny_http::Request;
 
 use crate::response::{err, ok, HttpResponse};
 
 /// Shared lazy-initialized alignment session (model load is expensive).
-static SESSION: std::sync::OnceLock<Arc<Mutex<AlignmentSession>>> = std::sync::OnceLock::new();
+static SESSION: OnceCell<Arc<Mutex<AlignmentSession>>> = OnceCell::new();
 
 fn get_session() -> Result<Arc<Mutex<AlignmentSession>>, String> {
-    SESSION
-        .get_or_try_init(|| {
-            AlignmentSession::new(false)
-                .map(|s| Arc::new(Mutex::new(s)))
-                .map_err(|e| e.to_string())
-        })
-        .map(|s| s.clone())
-        .map_err(|e| e.to_string())
+    match SESSION.get_or_try_init(|| -> Result<_, String> {
+        AlignmentSession::new(false)
+            .map(|s| Arc::new(Mutex::new(s)))
+            .map_err(|e| e.to_string())
+    }) {
+        Ok(arc) => Ok(Arc::clone(arc)),
+        Err(e) => Err(e.clone()),
+    }
 }
 
 /// Parse a simple multipart/form-data body.
-/// Extracts fields by name into (name, content_bytes).
+/// Returns a list of `(field_name, field_bytes)` pairs.
 fn parse_multipart(body: &[u8], boundary: &str) -> Vec<(String, Vec<u8>)> {
     let delimiter = format!("--{}", boundary);
     let body_str = String::from_utf8_lossy(body);
     let mut fields = Vec::new();
 
-    for part in body_str.split(&delimiter) {
-        // Find the double CRLF that separates headers from body
+    for part in body_str.split(&delimiter as &str) {
         if let Some(header_end) = part.find("\r\n\r\n") {
             let headers = &part[..header_end];
-            // Extract the raw bytes after the header block
             let body_start = header_end + 4;
-            let raw_part = &body[..];
-
-            // Locate the part bytes in the original body
             let part_bytes = part[body_start..].trim_end_matches("\r\n").as_bytes().to_vec();
 
-            // Extract Content-Disposition: form-data; name="..."
             if let Some(cd_line) = headers.lines().find(|l| l.starts_with("Content-Disposition")) {
                 if let Some(name_start) = cd_line.find("name=\"") {
                     let after = &cd_line[name_start + 6..];
                     if let Some(name_end) = after.find('"') {
-                        let field_name = after[..name_end].to_string();
-                        fields.push((field_name, part_bytes));
+                        fields.push((after[..name_end].to_string(), part_bytes));
                     }
                 }
             }
@@ -61,18 +55,16 @@ fn parse_multipart(body: &[u8], boundary: &str) -> Vec<(String, Vec<u8>)> {
 
 /// POST /api/kfa/align — multipart form upload (audio WAV + text transcript).
 pub fn handle_align_multipart(req: &mut Request) -> HttpResponse {
-    // Parse content-type to get boundary
     let content_type = req
         .headers()
         .iter()
-        .find(|h| h.field.as_str().to_lowercase() == "content-type")
+        .find(|h| h.field.as_str().as_str().eq_ignore_ascii_case("content-type"))
         .map(|h| h.value.as_str().to_string())
         .unwrap_or_default();
 
-    let boundary = if let Some(b) = content_type.split("boundary=").nth(1) {
-        b.trim().to_string()
-    } else {
-        return err(400, "Missing multipart boundary in Content-Type header");
+    let boundary = match content_type.split("boundary=").nth(1) {
+        Some(b) => b.trim().to_string(),
+        None => return err(400, "Missing multipart boundary in Content-Type header"),
     };
 
     let mut body = Vec::new();
@@ -130,13 +122,11 @@ pub fn handle_align_json(req: &mut Request) -> HttpResponse {
 }
 
 fn run_alignment(audio_bytes: &[u8], text: &str) -> HttpResponse {
-    // Load audio
     let (samples, sr) = match load_wav_mono_16k_bytes(audio_bytes) {
         Ok(v) => v,
         Err(e) => return err(400, &format!("Failed to decode WAV: {e}")),
     };
 
-    // Get or init session
     let session_arc = match get_session() {
         Ok(s) => s,
         Err(e) => return err(500, &format!("KFA session init failed: {e}")),

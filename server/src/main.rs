@@ -1,3 +1,4 @@
+#![recursion_limit = "512"]
 mod actors;
 mod agent;
 mod apps;

@@ -146,6 +146,7 @@ dependencies = [
  "base64 0.22.1",
  "chrono",
  "futures",
+ "once_cell",
  "reqwest",
  "serde",
  "serde_json",
