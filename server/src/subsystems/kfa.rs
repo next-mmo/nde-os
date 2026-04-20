@@ -30,21 +30,38 @@ fn get_session() -> Result<Arc<Mutex<AlignmentSession>>, String> {
 /// Parse a simple multipart/form-data body.
 /// Returns a list of `(field_name, field_bytes)` pairs.
 fn parse_multipart(body: &[u8], boundary: &str) -> Vec<(String, Vec<u8>)> {
-    let delimiter = format!("--{}", boundary);
-    let body_str = String::from_utf8_lossy(body);
     let mut fields = Vec::new();
+    let delimiter = format!("--{}", boundary).into_bytes();
 
-    for part in body_str.split(&delimiter as &str) {
-        if let Some(header_end) = part.find("\r\n\r\n") {
-            let headers = &part[..header_end];
-            let body_start = header_end + 4;
-            let part_bytes = part[body_start..].trim_end_matches("\r\n").as_bytes().to_vec();
+    let parts = body
+        .windows(delimiter.len())
+        .enumerate()
+        .filter(|(_, w)| *w == delimiter.as_slice())
+        .map(|(i, _)| i)
+        .collect::<Vec<_>>();
+
+    for i in 0..parts.len().saturating_sub(1) {
+        let start = parts[i] + delimiter.len();
+        let end = parts[i + 1];
+
+        let mut part = &body[start..end];
+
+        if part.starts_with(b"\r\n") {
+            part = &part[2..];
+        }
+        if part.ends_with(b"\r\n") {
+            part = &part[..part.len() - 2];
+        }
+
+        if let Some(header_end) = part.windows(4).position(|w| w == b"\r\n\r\n") {
+            let headers = String::from_utf8_lossy(&part[..header_end]);
+            let data = part[header_end + 4..].to_vec();
 
             if let Some(cd_line) = headers.lines().find(|l| l.starts_with("Content-Disposition")) {
                 if let Some(name_start) = cd_line.find("name=\"") {
                     let after = &cd_line[name_start + 6..];
                     if let Some(name_end) = after.find('"') {
-                        fields.push((after[..name_end].to_string(), part_bytes));
+                        fields.push((after[..name_end].to_string(), data));
                     }
                 }
             }
@@ -53,8 +70,7 @@ fn parse_multipart(body: &[u8], boundary: &str) -> Vec<(String, Vec<u8>)> {
     fields
 }
 
-/// POST /api/kfa/align — multipart form upload (audio WAV + text transcript).
-pub fn handle_align_multipart(req: &mut Request) -> HttpResponse {
+fn extract_multipart(req: &mut Request, require_text: bool) -> Result<(Vec<u8>, String), HttpResponse> {
     let content_type = req
         .headers()
         .iter()
@@ -64,12 +80,12 @@ pub fn handle_align_multipart(req: &mut Request) -> HttpResponse {
 
     let boundary = match content_type.split("boundary=").nth(1) {
         Some(b) => b.trim().to_string(),
-        None => return err(400, "Missing multipart boundary in Content-Type header"),
+        None => return Err(err(400, "Missing multipart boundary in Content-Type header")),
     };
 
     let mut body = Vec::new();
     if let Err(e) = req.as_reader().read_to_end(&mut body) {
-        return err(500, &format!("Failed to read request body: {e}"));
+        return Err(err(500, &format!("Failed to read request body: {e}")));
     }
 
     let fields = parse_multipart(&body, &boundary);
@@ -82,43 +98,90 @@ pub fn handle_align_multipart(req: &mut Request) -> HttpResponse {
 
     let audio_bytes = match audio_bytes {
         Some(b) => b,
-        None => return err(400, "Missing 'audio' field in multipart form"),
+        None => return Err(err(400, "Missing 'audio' field in multipart form")),
     };
-    if text.trim().is_empty() {
-        return err(400, "Missing 'text' field in multipart form");
+    if require_text && text.trim().is_empty() {
+        return Err(err(400, "Missing 'text' field in multipart form"));
     }
 
-    run_alignment(&audio_bytes, &text)
+    Ok((audio_bytes, text))
 }
 
-/// POST /api/kfa/align-json — JSON body: `{ "audio_base64": "...", "text": "..." }`.
-pub fn handle_align_json(req: &mut Request) -> HttpResponse {
+fn extract_json(req: &mut Request, require_text: bool) -> Result<(Vec<u8>, String), HttpResponse> {
     let mut body = String::new();
     if let Err(e) = req.as_reader().read_to_string(&mut body) {
-        return err(500, &format!("Failed to read body: {e}"));
+        return Err(err(500, &format!("Failed to read body: {e}")));
     }
     let v: serde_json::Value = match serde_json::from_str(&body) {
         Ok(v) => v,
-        Err(e) => return err(400, &format!("Invalid JSON: {e}")),
+        Err(e) => return Err(err(400, &format!("Invalid JSON: {e}"))),
     };
 
     let audio_b64 = v["audio_base64"].as_str().unwrap_or("");
     let text = v["text"].as_str().unwrap_or("").to_string();
 
     if audio_b64.is_empty() {
-        return err(400, "Missing 'audio_base64' field");
+        return Err(err(400, "Missing 'audio_base64' field"));
     }
-    if text.trim().is_empty() {
-        return err(400, "Missing 'text' field");
+    if require_text && text.trim().is_empty() {
+        return Err(err(400, "Missing 'text' field"));
     }
 
     use base64::Engine;
     let audio_bytes = match base64::engine::general_purpose::STANDARD.decode(audio_b64) {
         Ok(b) => b,
-        Err(e) => return err(400, &format!("Invalid base64 in 'audio_base64': {e}")),
+        Err(e) => return Err(err(400, &format!("Invalid base64 in 'audio_base64': {e}"))),
     };
 
-    run_alignment(&audio_bytes, &text)
+    Ok((audio_bytes, text))
+}
+
+/// POST /api/kfa/align — multipart form upload (audio WAV + text transcript).
+pub fn handle_align_multipart(req: &mut Request) -> HttpResponse {
+    match extract_multipart(req, true) {
+        Ok((audio_bytes, text)) => run_alignment(&audio_bytes, &text),
+        Err(e) => e,
+    }
+}
+
+/// POST /api/kfa/align-json — JSON body
+pub fn handle_align_json(req: &mut Request) -> HttpResponse {
+    match extract_json(req, true) {
+        Ok((audio_bytes, text)) => run_alignment(&audio_bytes, &text),
+        Err(e) => e,
+    }
+}
+
+/// POST /api/kfa/align-srt — multipart form upload (audio WAV + text transcript) -> SRT
+pub fn handle_align_srt_multipart(req: &mut Request) -> HttpResponse {
+    match extract_multipart(req, true) {
+        Ok((audio_bytes, text)) => run_alignment_srt(&audio_bytes, &text),
+        Err(e) => e,
+    }
+}
+
+/// POST /api/kfa/align-srt-json — JSON body -> SRT
+pub fn handle_align_srt_json(req: &mut Request) -> HttpResponse {
+    match extract_json(req, true) {
+        Ok((audio_bytes, text)) => run_alignment_srt(&audio_bytes, &text),
+        Err(e) => e,
+    }
+}
+
+/// POST /api/kfa/transcribe — multipart form upload (audio WAV) -> text
+pub fn handle_transcribe_multipart(req: &mut Request) -> HttpResponse {
+    match extract_multipart(req, false) {
+        Ok((audio_bytes, _)) => run_transcription(&audio_bytes),
+        Err(e) => e,
+    }
+}
+
+/// POST /api/kfa/transcribe-json — JSON body -> text
+pub fn handle_transcribe_json(req: &mut Request) -> HttpResponse {
+    match extract_json(req, false) {
+        Ok((audio_bytes, _)) => run_transcription(&audio_bytes),
+        Err(e) => e,
+    }
 }
 
 fn run_alignment(audio_bytes: &[u8], text: &str) -> HttpResponse {
@@ -146,5 +209,63 @@ fn run_alignment(audio_bytes: &[u8], text: &str) -> HttpResponse {
     ok(
         &format!("{} segments aligned", results.len()),
         serde_json::json!({ "segments": results }),
+    )
+}
+
+fn run_alignment_srt(audio_bytes: &[u8], text: &str) -> HttpResponse {
+    let (samples, sr) = match load_wav_mono_16k_bytes(audio_bytes) {
+        Ok(v) => v,
+        Err(e) => return err(400, &format!("Failed to decode WAV: {e}")),
+    };
+
+    let session_arc = match get_session() {
+        Ok(s) => s,
+        Err(e) => return err(500, &format!("KFA session init failed: {e}")),
+    };
+
+    let results: Vec<Alignment> = {
+        let mut session = match session_arc.lock() {
+            Ok(s) => s,
+            Err(_) => return err(500, "KFA session mutex poisoned"),
+        };
+        match session.align(&samples, sr, text, None) {
+            Ok(r) => r,
+            Err(e) => return err(500, &format!("Alignment failed: {e}")),
+        }
+    };
+
+    let srt_content = ai_launcher_core::kfa::srt::alignments_to_srt_by_duration(&results, 5.0);
+
+    ok(
+        "SRT generated",
+        serde_json::json!({ "srt": srt_content }),
+    )
+}
+
+fn run_transcription(audio_bytes: &[u8]) -> HttpResponse {
+    let (samples, sr) = match load_wav_mono_16k_bytes(audio_bytes) {
+        Ok(v) => v,
+        Err(e) => return err(400, &format!("Failed to decode WAV: {e}")),
+    };
+
+    let session_arc = match get_session() {
+        Ok(s) => s,
+        Err(e) => return err(500, &format!("KFA session init failed: {e}")),
+    };
+
+    let text = {
+        let mut session = match session_arc.lock() {
+            Ok(s) => s,
+            Err(_) => return err(500, "KFA session mutex poisoned"),
+        };
+        match session.transcribe(&samples, sr) {
+            Ok(r) => r,
+            Err(e) => return err(500, &format!("Transcription failed: {e}")),
+        }
+    };
+
+    ok(
+        "Transcription complete",
+        serde_json::json!({ "text": text }),
     )
 }

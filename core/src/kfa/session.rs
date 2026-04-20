@@ -32,11 +32,21 @@ fn get_model_path() -> Result<std::path::PathBuf> {
 
     if !model_path.exists() {
         tracing::info!(url = MODEL_URL, "Downloading KFA ONNX model…");
-        let response = reqwest::blocking::get(MODEL_URL)
-            .context("Failed to download KFA ONNX model")?;
-        let content = response.bytes().context("Failed to read model bytes")?;
+        let client = reqwest::blocking::Client::builder()
+            .timeout(None)
+            .build()
+            .context("Failed to build HTTP client")?;
+        let mut response = client
+            .get(MODEL_URL)
+            .send()
+            .context("Failed to download KFA ONNX model")?
+            .error_for_status()
+            .context("KFA model download returned non-success status")?;
         let mut dest = std::fs::File::create(&tmp_path)?;
-        std::io::copy(&mut content.as_ref(), &mut dest)?;
+        response
+            .copy_to(&mut dest)
+            .context("Failed to stream model bytes to disk")?;
+        drop(dest);
         std::fs::rename(&tmp_path, &model_path)?;
         tracing::info!("KFA model saved to {}", model_path.display());
     }
@@ -254,5 +264,12 @@ impl AlignmentSession {
         }
 
         Ok(results)
+    }
+
+    /// Run CTC greedy decoding to produce a raw Khmer transcript.
+    /// This uses the same underlying ONNX model without requiring
+    /// a text transcript for forced alignment.
+    pub fn transcribe(&mut self, samples: &[f32], sample_rate: u32) -> Result<String> {
+        crate::kfa::transcribe::transcribe(samples, sample_rate, &mut self.session)
     }
 }

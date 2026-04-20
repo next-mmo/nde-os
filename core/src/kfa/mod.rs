@@ -27,7 +27,9 @@ pub mod lexicon;
 pub mod normalizer;
 pub mod number_verbalize;
 pub mod session;
+pub mod srt;
 pub mod text_normalize;
+pub mod transcribe;
 pub mod vocab;
 
 pub use session::{Alignment, AlignmentSession, SAMPLE_RATE};

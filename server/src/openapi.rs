@@ -173,6 +173,105 @@ pub fn openapi_spec() -> serde_json::Value {
                     }
                 }
             },
+            "/api/kfa/align-srt":{
+                "post":{
+                    "tags":["kfa"],
+                    "summary":"Forced-align Khmer audio (multipart) -> SRT",
+                    "operationId":"kfaAlignSrtMultipart",
+                    "description":"Upload a 16 kHz mono WAV file and a Khmer text transcript. Returns SRT subtitle text directly.",
+                    "requestBody":{
+                        "required":true,
+                        "content":{
+                            "multipart/form-data":{
+                                "schema":{
+                                    "type":"object",
+                                    "required":["audio","text"],
+                                    "properties":{
+                                        "audio":{"type":"string","format":"binary","description":"WAV audio file (16 kHz mono)"},
+                                        "text":{"type":"string","description":"Khmer transcript, one sentence per line"}
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "responses":{
+                        "200":{"description":"SRT generation successful","content":{"application/json":{"schema":{"$ref":"#/components/schemas/KfaSrtResponse"}}}},
+                        "400":{"description":"Invalid input"},
+                        "500":{"description":"Alignment failed"}
+                    }
+                }
+            },
+            "/api/kfa/align-srt-json":{
+                "post":{
+                    "tags":["kfa"],
+                    "summary":"Forced-align Khmer audio (JSON) -> SRT",
+                    "operationId":"kfaAlignSrtJson",
+                    "description":"Accepts JSON body with base64 audio and text. Returns SRT subtitle text directly.",
+                    "requestBody":{
+                        "required":true,
+                        "content":{"application/json":{"schema":{"$ref":"#/components/schemas/KfaAlignJsonRequest"}}}
+                    },
+                    "responses":{
+                        "200":{"description":"SRT generation successful","content":{"application/json":{"schema":{"$ref":"#/components/schemas/KfaSrtResponse"}}}},
+                        "400":{"description":"Invalid input"},
+                        "500":{"description":"Alignment failed"}
+                    }
+                }
+            },
+            "/api/kfa/transcribe":{
+                "post":{
+                    "tags":["kfa"],
+                    "summary":"Transcribe Khmer audio (multipart)",
+                    "operationId":"kfaTranscribeMultipart",
+                    "description":"Upload a 16 kHz mono WAV file. Returns raw Khmer transcript using CTC greedy decoding.",
+                    "requestBody":{
+                        "required":true,
+                        "content":{
+                            "multipart/form-data":{
+                                "schema":{
+                                    "type":"object",
+                                    "required":["audio"],
+                                    "properties":{
+                                        "audio":{"type":"string","format":"binary","description":"WAV audio file (16 kHz mono)"}
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "responses":{
+                        "200":{"description":"Transcription successful","content":{"application/json":{"schema":{"$ref":"#/components/schemas/KfaTranscribeResponse"}}}},
+                        "400":{"description":"Invalid input"},
+                        "500":{"description":"Transcription failed"}
+                    }
+                }
+            },
+            "/api/kfa/transcribe-json":{
+                "post":{
+                    "tags":["kfa"],
+                    "summary":"Transcribe Khmer audio (JSON)",
+                    "operationId":"kfaTranscribeJson",
+                    "description":"Accepts JSON body with base64 audio. Returns raw Khmer transcript using CTC greedy decoding.",
+                    "requestBody":{
+                        "required":true,
+                        "content":{
+                            "application/json":{
+                                "schema":{
+                                    "type":"object",
+                                    "required":["audio_base64"],
+                                    "properties":{
+                                        "audio_base64":{"type":"string","description":"Base64-encoded WAV audio file"}
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "responses":{
+                        "200":{"description":"Transcription successful","content":{"application/json":{"schema":{"$ref":"#/components/schemas/KfaTranscribeResponse"}}}},
+                        "400":{"description":"Invalid input"},
+                        "500":{"description":"Transcription failed"}
+                    }
+                }
+            },
             "/api/viking/stop":{
                 "post":{
                     "tags":["viking"],
@@ -277,6 +376,32 @@ pub fn openapi_spec() -> serde_json::Value {
                         "type":"object",
                         "properties":{
                             "segments":{"type":"array","items":{"$ref":"#/components/schemas/KfaSegment"}}
+                        }
+                    }
+                }
+            },
+            "KfaSrtResponse":{
+                "type":"object",
+                "properties":{
+                    "success":{"type":"boolean"},
+                    "message":{"type":"string"},
+                    "data":{
+                        "type":"object",
+                        "properties":{
+                            "srt":{"type":"string","description":"Raw SRT formatted subtitle text"}
+                        }
+                    }
+                }
+            },
+            "KfaTranscribeResponse":{
+                "type":"object",
+                "properties":{
+                    "success":{"type":"boolean"},
+                    "message":{"type":"string"},
+                    "data":{
+                        "type":"object",
+                        "properties":{
+                            "text":{"type":"string","description":"Transcribed Khmer text"}
                         }
                     }
                 }
