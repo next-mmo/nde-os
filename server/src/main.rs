@@ -120,6 +120,10 @@ const ROUTES: &str = "\
     DELETE /api/kanban/tasks/{file}         <- delete task
     GET    /api/kanban/tasks/{file}/content <- read content
     PUT    /api/kanban/tasks/{file}/content <- write content
+
+  KFA (Khmer Forced Aligner):
+    POST   /api/kfa/align                   <- multipart WAV + text → timestamps
+    POST   /api/kfa/align-json              <- JSON base64 WAV + text → timestamps
 ";
 
 fn main() {

@@ -35,6 +35,17 @@ bzip2 = "0.6"
 flate2 = "1"
 # Movie dub WAV I/O
 hound = "3.5"
+# Khmer Forced Aligner (KFA) dependencies
+rustfst = "1.2.6"
+crfs = "0.2.0"
+ndarray = "0.16"
+khmercut = "0.1.5"
+fancy-regex = "0.14"
+unicode-normalization = "0.1"
+dirs = "5"
+ort = { version = "2.0.0-rc.12", features = ["download-binaries", "cuda", "api-17", "load-dynamic"] }
+once_cell = "1"
+regex = "1"
 
 [dev-dependencies]
 tempfile = "3"

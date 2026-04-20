@@ -18,7 +18,8 @@ pub fn openapi_spec() -> serde_json::Value {
             {"name":"store","description":"Store: upload apps via folder, zip, or git URL"},
             {"name":"system","description":"Health & system info"},
             {"name":"agent","description":"Agent chat, conversations, and config"},
-            {"name":"viking","description":"OpenViking context database — install, start, stop, and status"}
+            {"name":"viking","description":"OpenViking context database — install, start, stop, and status"},
+            {"name":"kfa","description":"Khmer Forced Aligner — word-level timestamp alignment using wav2vec2 CTC ONNX"}
         ],
         "paths":{
             "/api/health":{"get":{"tags":["system"],"summary":"Health check","operationId":"healthCheck","responses":{"200":{"description":"Healthy"}}}},
@@ -119,6 +120,59 @@ pub fn openapi_spec() -> serde_json::Value {
                     }
                 }
             },
+            "/api/kfa/align":{
+                "post":{
+                    "tags":["kfa"],
+                    "summary":"Forced-align Khmer audio (multipart)",
+                    "operationId":"kfaAlignMultipart",
+                    "description":"Upload a 16 kHz mono WAV file and a Khmer text transcript. Returns word-level start/end timestamps.\n\n**Downloads the ONNX model (~150 MB) on first call.** Subsequent calls are instant.\n\n`audio` must be WAV (16 kHz mono strongly preferred; other sample rates are resampled).",
+                    "requestBody":{
+                        "required":true,
+                        "content":{
+                            "multipart/form-data":{
+                                "schema":{
+                                    "type":"object",
+                                    "required":["audio","text"],
+                                    "properties":{
+                                        "audio":{"type":"string","format":"binary","description":"WAV audio file (16 kHz mono)"},
+                                        "text":{"type":"string","description":"Khmer transcript, one sentence per line"}
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "responses":{
+                        "200":{"description":"Alignment results","content":{"application/json":{"schema":{"$ref":"#/components/schemas/KfaAlignResponse"}}}},
+                        "400":{"description":"Invalid input — missing audio/text field or bad WAV format"},
+                        "500":{"description":"Alignment failed or model unavailable"}
+                    }
+                }
+            },
+            "/api/kfa/align-json":{
+                "post":{
+                    "tags":["kfa"],
+                    "summary":"Forced-align Khmer audio (JSON/base64)",
+                    "operationId":"kfaAlignJson",
+                    "description":"Same as `/api/kfa/align` but accepts a JSON body with the WAV audio base64-encoded. Convenient for automation scripts.",
+                    "requestBody":{
+                        "required":true,
+                        "content":{
+                            "application/json":{
+                                "schema":{"$ref":"#/components/schemas/KfaAlignJsonRequest"},
+                                "example":{
+                                    "audio_base64":"UklGRiQAAABXQVZFZm10IBAAAA…",
+                                    "text":"ការប្រើប្រាស់បច្ចេកវិទ្យា"
+                                }
+                            }
+                        }
+                    },
+                    "responses":{
+                        "200":{"description":"Alignment results","content":{"application/json":{"schema":{"$ref":"#/components/schemas/KfaAlignResponse"}}}},
+                        "400":{"description":"Invalid base64, missing fields, or bad WAV"},
+                        "500":{"description":"Alignment failed"}
+                    }
+                }
+            },
             "/api/viking/stop":{
                 "post":{
                     "tags":["viking"],
@@ -193,6 +247,38 @@ pub fn openapi_spec() -> serde_json::Value {
                 "type":"object",
                 "properties":{
                     "running":{"type":"boolean","example":false}
+                }
+            },
+            "KfaAlignJsonRequest":{
+                "type":"object",
+                "required":["audio_base64","text"],
+                "properties":{
+                    "audio_base64":{"type":"string","description":"Base64-encoded WAV audio file (16 kHz mono)"},
+                    "text":{"type":"string","description":"Khmer text transcript — one sentence per line"}
+                }
+            },
+            "KfaSegment":{
+                "type":"object",
+                "properties":{
+                    "text":{"type":"string","description":"Aligned text segment"},
+                    "start":{"type":"number","format":"double","description":"Segment start time in seconds (inclusive of gap to previous)"},
+                    "end":{"type":"number","format":"double","description":"Segment end time in seconds"},
+                    "actual_start":{"type":"number","format":"double","description":"Precise start (excluding padding)"},
+                    "actual_end":{"type":"number","format":"double","description":"Precise end (excluding padding)"},
+                    "score":{"type":"number","format":"float","description":"Confidence score [0,1]"}
+                }
+            },
+            "KfaAlignResponse":{
+                "type":"object",
+                "properties":{
+                    "success":{"type":"boolean"},
+                    "message":{"type":"string"},
+                    "data":{
+                        "type":"object",
+                        "properties":{
+                            "segments":{"type":"array","items":{"$ref":"#/components/schemas/KfaSegment"}}
+                        }
+                    }
                 }
             }
         }}

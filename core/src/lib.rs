@@ -37,6 +37,9 @@ pub mod actor;
 // FreeCut video editor engine
 pub mod freecut;
 
+// Khmer Forced Aligner (KFA) — native Rust wav2vec2 CTC alignment engine
+pub mod kfa;
+
 // Download Center — provider-pluggable media downloader
 pub mod downloader;
 

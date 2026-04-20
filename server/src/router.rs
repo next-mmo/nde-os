@@ -299,6 +299,13 @@ pub fn route(req: &mut Request, state: &AppState) -> HttpResponse {
         (Method::Get, "/api/downloads") => {
             return subsystems::downloads::list(&state.download_engine)
         }
+        // ── KFA (Khmer Forced Aligner) ──────────────────────────────────────
+        (Method::Post, "/api/kfa/align") => {
+            return subsystems::kfa::handle_align_multipart(req)
+        }
+        (Method::Post, "/api/kfa/align-json") => {
+            return subsystems::kfa::handle_align_json(req)
+        }
         _ => {}
     }
 

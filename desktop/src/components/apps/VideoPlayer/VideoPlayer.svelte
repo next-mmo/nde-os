@@ -9,7 +9,7 @@
   import {
     Play, Pause, SkipBack, SkipForward, Volume2, VolumeX,
     Maximize, Minimize, FolderOpen, Film, ChevronLeft, ChevronRight,
-    PictureInPicture2, MonitorSmartphone, LayoutGrid, RotateCcw
+    PictureInPicture2, MonitorSmartphone, LayoutGrid, RotateCcw, List
   } from "@lucide/svelte";
   import type { DesktopWindow } from "🍎/state/desktop.svelte";
 
@@ -63,6 +63,7 @@
   // ── Gallery state ────────────────────────────────────────────────────────
   let galleryVideos = $state<{ name: string; path: string; size: number }[]>([]);
   let isLoadingGallery = $state(false);
+  let galleryViewMode = $state<"list" | "grid">("list");
 
   $effect(() => {
     if (playlist.length === 0 && galleryVideos.length === 0 && !isLoadingGallery) {
@@ -388,10 +389,28 @@
             <Film class="w-6 h-6 text-indigo-400" />
             <h2 class="text-2xl font-bold font-display tracking-tight text-neutral-100">Video Gallery</h2>
           </div>
-          <Button variant="outline" size="sm" class="bg-white/5 border-white/10 hover:bg-white/10 text-white/80 cursor-pointer" onclick={loadGallery}>
-            <RotateCcw class="w-4 h-4 mr-2 {isLoadingGallery ? 'animate-spin' : ''}" />
-            Refresh
-          </Button>
+          <div class="flex items-center gap-2">
+            <div class="flex items-center bg-white/5 border border-white/10 rounded-md p-0.5">
+              <button 
+                class="p-1.5 rounded text-white/60 hover:text-white transition-colors {galleryViewMode === 'list' ? 'bg-white/10 text-white' : ''}"
+                onclick={() => galleryViewMode = 'list'}
+                title="List View"
+              >
+                <List class="w-4 h-4" />
+              </button>
+              <button 
+                class="p-1.5 rounded text-white/60 hover:text-white transition-colors {galleryViewMode === 'grid' ? 'bg-white/10 text-white' : ''}"
+                onclick={() => galleryViewMode = 'grid'}
+                title="Grid View"
+              >
+                <LayoutGrid class="w-4 h-4" />
+              </button>
+            </div>
+            <Button variant="outline" size="sm" class="bg-white/5 border-white/10 hover:bg-white/10 text-white/80 cursor-pointer" onclick={loadGallery}>
+              <RotateCcw class="w-4 h-4 mr-2 {isLoadingGallery ? 'animate-spin' : ''}" />
+              Refresh
+            </Button>
+          </div>
         </div>
         
         <ScrollArea class="flex-1 -mx-2 px-2" viewportClasses="pe-4">
@@ -403,34 +422,64 @@
               <p>No videos found in your workspace.</p>
             </div>
           {:else}
-            <div class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4 pb-8">
-              {#each galleryVideos as vid}
-                <button
-                  class="flex flex-col text-left group overflow-hidden rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition-all cursor-pointer focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
-                  onclick={() => playGalleryItem(vid)}
-                >
-                  <div class="w-full aspect-video bg-black flex items-center justify-center relative overflow-hidden group-hover:bg-neutral-900 transition-colors">
-                    <!-- svelte-ignore a11y_media_has_caption -->
-                    <video 
-                      src="{convertFileSrc(vid.path)}#t=1.5" 
-                      class="absolute inset-0 w-full h-full object-cover opacity-70 group-hover:opacity-100 group-hover:scale-105 transition-all duration-500 pointer-events-none"
-                      preload="metadata"
-                      muted
-                      playsinline
-                    ></video>
-                    
-                    <div class="absolute inset-0 bg-black/30 group-hover:bg-transparent transition-colors z-0"></div>
-                    <Play class="w-10 h-10 text-white opacity-0 group-hover:opacity-100 transition-opacity drop-shadow-xl z-10 drop-shadow-[0_0_8px_rgba(0,0,0,0.8)]" />
-                  </div>
-                  <div class="p-3">
-                    <p class="text-sm font-medium text-neutral-200 line-clamp-2 leading-snug" title={vid.name}>
-                      {vid.name}
-                    </p>
-                    <p class="text-xs text-neutral-500 mt-1 uppercase">{(vid.size / (1024 * 1024)).toFixed(1)} MB</p>
-                  </div>
-                </button>
-              {/each}
-            </div>
+            {#if galleryViewMode === 'grid'}
+              <div class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4 pb-8">
+                {#each galleryVideos as vid}
+                  <button
+                    class="flex flex-col text-left group overflow-hidden rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition-all cursor-pointer focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+                    onclick={() => playGalleryItem(vid)}
+                  >
+                    <div class="w-full aspect-video bg-black flex items-center justify-center relative overflow-hidden group-hover:bg-neutral-900 transition-colors">
+                      <!-- svelte-ignore a11y_media_has_caption -->
+                      <video 
+                        src="{convertFileSrc(vid.path)}#t=1.5" 
+                        class="absolute inset-0 w-full h-full object-cover opacity-70 group-hover:opacity-100 group-hover:scale-105 transition-all duration-500 pointer-events-none"
+                        preload="metadata"
+                        muted
+                        playsinline
+                      ></video>
+                      
+                      <div class="absolute inset-0 bg-black/30 group-hover:bg-transparent transition-colors z-0"></div>
+                      <Play class="w-10 h-10 text-white opacity-0 group-hover:opacity-100 transition-opacity drop-shadow-xl z-10 drop-shadow-[0_0_8px_rgba(0,0,0,0.8)]" />
+                    </div>
+                    <div class="p-3">
+                      <p class="text-sm font-medium text-neutral-200 line-clamp-2 leading-snug" title={vid.name}>
+                        {vid.name}
+                      </p>
+                      <p class="text-xs text-neutral-500 mt-1 uppercase">{(vid.size / (1024 * 1024)).toFixed(1)} MB</p>
+                    </div>
+                  </button>
+                {/each}
+              </div>
+            {:else}
+              <div class="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-3 pb-8">
+                {#each galleryVideos as vid}
+                  <button
+                    class="flex items-center text-left group overflow-hidden rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 transition-all cursor-pointer focus:outline-none focus:ring-2 focus:ring-indigo-500/50 p-2 gap-3"
+                    onclick={() => playGalleryItem(vid)}
+                  >
+                    <div class="w-28 aspect-video bg-black flex-shrink-0 flex items-center justify-center relative overflow-hidden rounded group-hover:bg-neutral-900 transition-colors">
+                      <!-- svelte-ignore a11y_media_has_caption -->
+                      <video 
+                        src="{convertFileSrc(vid.path)}#t=1.5" 
+                        class="absolute inset-0 w-full h-full object-cover opacity-70 group-hover:opacity-100 group-hover:scale-105 transition-all duration-500 pointer-events-none"
+                        preload="metadata"
+                        muted
+                        playsinline
+                      ></video>
+                      <div class="absolute inset-0 bg-black/30 group-hover:bg-transparent transition-colors z-0"></div>
+                      <Play class="w-8 h-8 text-white opacity-0 group-hover:opacity-100 transition-opacity drop-shadow-xl z-10 drop-shadow-[0_0_8px_rgba(0,0,0,0.8)]" />
+                    </div>
+                    <div class="flex-1 min-w-0 flex flex-col justify-center pr-2">
+                      <p class="text-sm font-medium text-neutral-200 truncate" title={vid.name}>
+                        {vid.name}
+                      </p>
+                      <p class="text-xs text-neutral-500 mt-1 uppercase">{(vid.size / (1024 * 1024)).toFixed(1)} MB</p>
+                    </div>
+                  </button>
+                {/each}
+              </div>
+            {/if}
           {/if}
         </ScrollArea>
       </div>
