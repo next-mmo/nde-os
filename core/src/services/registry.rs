@@ -35,6 +35,11 @@ pub fn detect_all(base_dir: &Path) -> Vec<ServiceStatus> {
     // LDPlayer: detect if the Android emulator is installed on this system
     let ld_detection = crate::shield::ldplayer::detect_ldplayer();
 
+    // KFA: native Khmer forced-aligner (ONNX Runtime dylib + wav2vec2 model)
+    let kfa_dylib_cached = crate::kfa::ort_runtime::is_dylib_cached(base_dir);
+    let kfa_model_cached = crate::kfa::is_model_cached(base_dir);
+    let kfa_installed = kfa_dylib_cached && kfa_model_cached;
+
     vec![
         ServiceStatus {
             id: "voice-runtime".to_string(),
@@ -188,6 +193,29 @@ pub fn detect_all(base_dir: &Path) -> Vec<ServiceStatus> {
             },
         },
         ServiceStatus {
+            id: "kfa".to_string(),
+            name: "Khmer Forced Aligner".to_string(),
+            description: "wav2vec2 CTC word-level timestamp alignment + transcription for Khmer audio. Downloads ONNX Runtime (~15 MB) and a pretrained model (~360 MB).".to_string(),
+            group: ServiceGroup::Voice,
+            installed: kfa_installed,
+            version: None,
+            path: Some(crate::kfa::model_path(base_dir).to_string_lossy().to_string()),
+            used_by: vec!["FreeCut".to_string(), "MovieDub".to_string()],
+            optional: true,
+            details: if kfa_installed {
+                Some("Runtime + model ready".to_string())
+            } else {
+                let mut missing = Vec::new();
+                if !kfa_dylib_cached {
+                    missing.push("ONNX Runtime");
+                }
+                if !kfa_model_cached {
+                    missing.push("wav2vec2 model");
+                }
+                Some(format!("Missing: {}", missing.join(", ")))
+            },
+        },
+        ServiceStatus {
             id: "ldplayer".to_string(),
             name: "LDPlayer".to_string(),
             description: "Android emulator for mobile testing and anti-detect browsing".to_string(),
@@ -283,6 +311,17 @@ pub fn install_service(service_id: &str, base_dir: &Path) -> Result<String> {
         "ldplayer" => {
             anyhow::bail!("LDPlayer must be installed manually from https://www.ldplayer.net — download and install, then restart NDE-OS")
         }
+        "kfa" => {
+            let dylib = crate::kfa::ort_runtime::ensure_dylib(base_dir)
+                .context("failed to fetch ONNX Runtime for KFA")?;
+            let model = crate::kfa::ensure_model(base_dir)
+                .context("failed to fetch KFA wav2vec2 model")?;
+            Ok(format!(
+                "KFA installed — runtime at {} — model at {}",
+                dylib.display(),
+                model.display()
+            ))
+        }
         _ => anyhow::bail!("Unknown service: {service_id}"),
     }
 }
@@ -340,5 +379,6 @@ mod tests {
         assert!(ids.contains(&"ai-vision-runtime"));
         assert!(ids.contains(&"demucs"));
         assert!(ids.contains(&"ldplayer"));
+        assert!(ids.contains(&"kfa"));
     }
 }

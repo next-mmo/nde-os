@@ -23,33 +23,52 @@ const EMISSION_INTERVAL_SECS: f64 = 30.0;
 const CONTEXT_RATIO: f64 = 0.1;
 pub const SAMPLE_RATE: u32 = 16_000;
 
-fn get_model_path() -> Result<std::path::PathBuf> {
-    let cache_dir = dirs::cache_dir().unwrap_or_else(|| std::path::PathBuf::from("./.cache"));
-    let kfa_dir = cache_dir.join("nde-kfa");
-    std::fs::create_dir_all(&kfa_dir)?;
-    let model_path = kfa_dir.join("wav2vec2-km-base-1500.onnx");
-    let tmp_path = kfa_dir.join("wav2vec2-km-base-1500.onnx.tmp");
+/// Where the model lives (or will live) inside the NDE-OS workspace — no I/O.
+pub fn model_path(base_dir: &std::path::Path) -> std::path::PathBuf {
+    base_dir.join("kfa").join("wav2vec2-km-base-1500.onnx")
+}
 
-    if !model_path.exists() {
-        tracing::info!(url = MODEL_URL, "Downloading KFA ONNX model…");
-        let client = reqwest::blocking::Client::builder()
-            .timeout(None)
-            .build()
-            .context("Failed to build HTTP client")?;
-        let mut response = client
-            .get(MODEL_URL)
-            .send()
-            .context("Failed to download KFA ONNX model")?
-            .error_for_status()
-            .context("KFA model download returned non-success status")?;
-        let mut dest = std::fs::File::create(&tmp_path)?;
-        response
-            .copy_to(&mut dest)
-            .context("Failed to stream model bytes to disk")?;
-        drop(dest);
-        std::fs::rename(&tmp_path, &model_path)?;
-        tracing::info!("KFA model saved to {}", model_path.display());
+/// True when the KFA ONNX model is already cached on disk.
+pub fn is_model_cached(base_dir: &std::path::Path) -> bool {
+    model_path(base_dir).exists()
+}
+
+/// True when both the ORT dylib and the KFA model are cached — i.e. the KFA
+/// service is "installed" from the Service Hub's perspective.
+pub fn is_installed(base_dir: &std::path::Path) -> bool {
+    is_model_cached(base_dir) && crate::kfa::ort_runtime::is_dylib_cached(base_dir)
+}
+
+/// Download the KFA ONNX model if missing. Streams to disk, no timeout.
+pub fn ensure_model(base_dir: &std::path::Path) -> Result<std::path::PathBuf> {
+    let model_path = model_path(base_dir);
+    if model_path.exists() {
+        return Ok(model_path);
     }
+    let kfa_dir = model_path
+        .parent()
+        .ok_or_else(|| anyhow!("invalid model cache path"))?;
+    std::fs::create_dir_all(kfa_dir)?;
+    let tmp_path = model_path.with_extension("onnx.tmp");
+
+    tracing::info!(url = MODEL_URL, "Downloading KFA ONNX model…");
+    let client = reqwest::blocking::Client::builder()
+        .timeout(None)
+        .build()
+        .context("Failed to build HTTP client")?;
+    let mut response = client
+        .get(MODEL_URL)
+        .send()
+        .context("Failed to download KFA ONNX model")?
+        .error_for_status()
+        .context("KFA model download returned non-success status")?;
+    let mut dest = std::fs::File::create(&tmp_path)?;
+    response
+        .copy_to(&mut dest)
+        .context("Failed to stream model bytes to disk")?;
+    drop(dest);
+    std::fs::rename(&tmp_path, &model_path)?;
+    tracing::info!("KFA model saved to {}", model_path.display());
     Ok(model_path)
 }
 
@@ -75,25 +94,30 @@ pub struct AlignmentSession {
 }
 
 impl AlignmentSession {
-    /// Create a new session. Downloads model on first call.
-    pub fn new(use_cuda: bool) -> Result<Self> {
-        let _ = ort::init().with_name("NDE-KFA").commit();
-
-        let model_path = get_model_path()?;
-
-        let mut builder = Session::builder()
-            .map_err(ort_err)?
-            .with_optimization_level(GraphOptimizationLevel::Level3)
-            .map_err(ort_err)?;
-
-        if use_cuda {
-            use ort::ep::CUDA;
-            builder = builder
-                .with_execution_providers([CUDA::default().build()])
-                .map_err(|e| anyhow!("CUDA EP failed: {e}"))?;
+    /// Create a new session. Requires the KFA service to be installed via the
+    /// Service Hub first — does NOT auto-download resources. Returns a clear
+    /// error if the ONNX Runtime dylib or the model file is missing.
+    ///
+    /// `use_cuda` is accepted for API compatibility but ignored — CUDA belongs
+    /// to per-app sandboxes, not the KFA core.
+    pub fn new(base_dir: &std::path::Path, _use_cuda: bool) -> Result<Self> {
+        if !is_installed(base_dir) {
+            return Err(anyhow!(
+                "KFA is not installed. Open Service Hub and install the \"Khmer Forced Aligner\" service to download the ~375 MB of runtime + model files."
+            ));
         }
 
-        let session = builder
+        let dylib_path = crate::kfa::ort_runtime::dylib_path(base_dir);
+        if let Ok(builder) = ort::init_from(dylib_path.to_string_lossy().as_ref()) {
+            let _ = builder.with_name("NDE-KFA").commit();
+        }
+
+        let model_path = model_path(base_dir);
+
+        let session = Session::builder()
+            .map_err(ort_err)?
+            .with_optimization_level(GraphOptimizationLevel::Level3)
+            .map_err(ort_err)?
             .commit_from_file(&model_path)
             .map_err(ort_err)?;
 

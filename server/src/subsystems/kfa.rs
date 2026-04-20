@@ -3,22 +3,24 @@
 //! POST /api/kfa/align      — multipart/form-data: `audio` (WAV) + `text` (Khmer)
 //! POST /api/kfa/align-json — JSON body: `{ "audio_base64": "...", "text": "..." }`
 
-use std::io::Read;
+use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 use ai_launcher_core::kfa::audio::load_wav_mono_16k_bytes;
-use ai_launcher_core::kfa::{Alignment, AlignmentSession};
+use ai_launcher_core::kfa::{is_installed as kfa_is_installed, Alignment, AlignmentSession};
 use once_cell::sync::OnceCell;
 use tiny_http::Request;
 
 use crate::response::{err, ok, HttpResponse};
 
 /// Shared lazy-initialized alignment session (model load is expensive).
+/// Bound to the workspace `base_dir` captured on first call — data_dir is
+/// immutable for the process lifetime, so this is safe.
 static SESSION: OnceCell<Arc<Mutex<AlignmentSession>>> = OnceCell::new();
 
-fn get_session() -> Result<Arc<Mutex<AlignmentSession>>, String> {
+fn get_session(base_dir: &Path) -> Result<Arc<Mutex<AlignmentSession>>, String> {
     match SESSION.get_or_try_init(|| -> Result<_, String> {
-        AlignmentSession::new(false)
+        AlignmentSession::new(base_dir, false)
             .map(|s| Arc::new(Mutex::new(s)))
             .map_err(|e| e.to_string())
     }) {
@@ -137,60 +139,72 @@ fn extract_json(req: &mut Request, require_text: bool) -> Result<(Vec<u8>, Strin
 }
 
 /// POST /api/kfa/align — multipart form upload (audio WAV + text transcript).
-pub fn handle_align_multipart(req: &mut Request) -> HttpResponse {
+pub fn handle_align_multipart(req: &mut Request, base_dir: &Path) -> HttpResponse {
     match extract_multipart(req, true) {
-        Ok((audio_bytes, text)) => run_alignment(&audio_bytes, &text),
+        Ok((audio_bytes, text)) => run_alignment(base_dir, &audio_bytes, &text),
         Err(e) => e,
     }
 }
 
 /// POST /api/kfa/align-json — JSON body
-pub fn handle_align_json(req: &mut Request) -> HttpResponse {
+pub fn handle_align_json(req: &mut Request, base_dir: &Path) -> HttpResponse {
     match extract_json(req, true) {
-        Ok((audio_bytes, text)) => run_alignment(&audio_bytes, &text),
+        Ok((audio_bytes, text)) => run_alignment(base_dir, &audio_bytes, &text),
         Err(e) => e,
     }
 }
 
 /// POST /api/kfa/align-srt — multipart form upload (audio WAV + text transcript) -> SRT
-pub fn handle_align_srt_multipart(req: &mut Request) -> HttpResponse {
+pub fn handle_align_srt_multipart(req: &mut Request, base_dir: &Path) -> HttpResponse {
     match extract_multipart(req, true) {
-        Ok((audio_bytes, text)) => run_alignment_srt(&audio_bytes, &text),
+        Ok((audio_bytes, text)) => run_alignment_srt(base_dir, &audio_bytes, &text),
         Err(e) => e,
     }
 }
 
 /// POST /api/kfa/align-srt-json — JSON body -> SRT
-pub fn handle_align_srt_json(req: &mut Request) -> HttpResponse {
+pub fn handle_align_srt_json(req: &mut Request, base_dir: &Path) -> HttpResponse {
     match extract_json(req, true) {
-        Ok((audio_bytes, text)) => run_alignment_srt(&audio_bytes, &text),
+        Ok((audio_bytes, text)) => run_alignment_srt(base_dir, &audio_bytes, &text),
         Err(e) => e,
     }
 }
 
 /// POST /api/kfa/transcribe — multipart form upload (audio WAV) -> text
-pub fn handle_transcribe_multipart(req: &mut Request) -> HttpResponse {
+pub fn handle_transcribe_multipart(req: &mut Request, base_dir: &Path) -> HttpResponse {
     match extract_multipart(req, false) {
-        Ok((audio_bytes, _)) => run_transcription(&audio_bytes),
+        Ok((audio_bytes, _)) => run_transcription(base_dir, &audio_bytes),
         Err(e) => e,
     }
 }
 
 /// POST /api/kfa/transcribe-json — JSON body -> text
-pub fn handle_transcribe_json(req: &mut Request) -> HttpResponse {
+pub fn handle_transcribe_json(req: &mut Request, base_dir: &Path) -> HttpResponse {
     match extract_json(req, false) {
-        Ok((audio_bytes, _)) => run_transcription(&audio_bytes),
+        Ok((audio_bytes, _)) => run_transcription(base_dir, &audio_bytes),
         Err(e) => e,
     }
 }
 
-fn run_alignment(audio_bytes: &[u8], text: &str) -> HttpResponse {
+/// 409 Conflict when the KFA service hasn't been installed via the Service Hub.
+fn kfa_not_installed_response() -> HttpResponse {
+    err(
+        409,
+        "KFA is not installed. Open Service Hub and install \"Khmer Forced Aligner\" (downloads ONNX Runtime + wav2vec2 model).",
+    )
+}
+
+fn run_alignment(base_dir: &Path, audio_bytes: &[u8], text: &str) -> HttpResponse {
+    if !kfa_is_installed(base_dir) {
+        return kfa_not_installed_response();
+    }
+
     let (samples, sr) = match load_wav_mono_16k_bytes(audio_bytes) {
         Ok(v) => v,
         Err(e) => return err(400, &format!("Failed to decode WAV: {e}")),
     };
 
-    let session_arc = match get_session() {
+    let session_arc = match get_session(base_dir) {
         Ok(s) => s,
         Err(e) => return err(500, &format!("KFA session init failed: {e}")),
     };
@@ -212,13 +226,17 @@ fn run_alignment(audio_bytes: &[u8], text: &str) -> HttpResponse {
     )
 }
 
-fn run_alignment_srt(audio_bytes: &[u8], text: &str) -> HttpResponse {
+fn run_alignment_srt(base_dir: &Path, audio_bytes: &[u8], text: &str) -> HttpResponse {
+    if !kfa_is_installed(base_dir) {
+        return kfa_not_installed_response();
+    }
+
     let (samples, sr) = match load_wav_mono_16k_bytes(audio_bytes) {
         Ok(v) => v,
         Err(e) => return err(400, &format!("Failed to decode WAV: {e}")),
     };
 
-    let session_arc = match get_session() {
+    let session_arc = match get_session(base_dir) {
         Ok(s) => s,
         Err(e) => return err(500, &format!("KFA session init failed: {e}")),
     };
@@ -242,13 +260,17 @@ fn run_alignment_srt(audio_bytes: &[u8], text: &str) -> HttpResponse {
     )
 }
 
-fn run_transcription(audio_bytes: &[u8]) -> HttpResponse {
+fn run_transcription(base_dir: &Path, audio_bytes: &[u8]) -> HttpResponse {
+    if !kfa_is_installed(base_dir) {
+        return kfa_not_installed_response();
+    }
+
     let (samples, sr) = match load_wav_mono_16k_bytes(audio_bytes) {
         Ok(v) => v,
         Err(e) => return err(400, &format!("Failed to decode WAV: {e}")),
     };
 
-    let session_arc = match get_session() {
+    let session_arc = match get_session(base_dir) {
         Ok(s) => s,
         Err(e) => return err(500, &format!("KFA session init failed: {e}")),
     };

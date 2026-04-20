@@ -12,7 +12,8 @@
 //! let wav_bytes = std::fs::read("audio.wav").unwrap();
 //! let (samples, sr) = load_wav_mono_16k_bytes(&wav_bytes).unwrap();
 //!
-//! let mut session = AlignmentSession::new(false).unwrap();
+//! let base_dir = std::path::Path::new("/path/to/nde-workspace");
+//! let mut session = AlignmentSession::new(base_dir, false).unwrap();
 //! let text = "ការប្រើប្រាស់បច្ចេកវិទ្យា";
 //! let alignments = session.align(&samples, sr, text, None).unwrap();
 //! for seg in &alignments {
@@ -26,10 +27,14 @@ pub mod g2p;
 pub mod lexicon;
 pub mod normalizer;
 pub mod number_verbalize;
+pub mod ort_runtime;
 pub mod session;
 pub mod srt;
 pub mod text_normalize;
 pub mod transcribe;
 pub mod vocab;
 
-pub use session::{Alignment, AlignmentSession, SAMPLE_RATE};
+pub use session::{
+    ensure_model, is_installed, is_model_cached, model_path, Alignment, AlignmentSession,
+    SAMPLE_RATE,
+};

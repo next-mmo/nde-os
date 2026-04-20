@@ -301,22 +301,22 @@ pub fn route(req: &mut Request, state: &AppState) -> HttpResponse {
         }
         // ── KFA (Khmer Forced Aligner) ──────────────────────────────────────
         (Method::Post, "/api/kfa/align") => {
-            return subsystems::kfa::handle_align_multipart(req)
+            return subsystems::kfa::handle_align_multipart(req, &state.data_dir)
         }
         (Method::Post, "/api/kfa/align-json") => {
-            return subsystems::kfa::handle_align_json(req)
+            return subsystems::kfa::handle_align_json(req, &state.data_dir)
         }
         (Method::Post, "/api/kfa/align-srt") => {
-            return subsystems::kfa::handle_align_srt_multipart(req)
+            return subsystems::kfa::handle_align_srt_multipart(req, &state.data_dir)
         }
         (Method::Post, "/api/kfa/align-srt-json") => {
-            return subsystems::kfa::handle_align_srt_json(req)
+            return subsystems::kfa::handle_align_srt_json(req, &state.data_dir)
         }
         (Method::Post, "/api/kfa/transcribe") => {
-            return subsystems::kfa::handle_transcribe_multipart(req)
+            return subsystems::kfa::handle_transcribe_multipart(req, &state.data_dir)
         }
         (Method::Post, "/api/kfa/transcribe-json") => {
-            return subsystems::kfa::handle_transcribe_json(req)
+            return subsystems::kfa::handle_transcribe_json(req, &state.data_dir)
         }
         _ => {}
     }
