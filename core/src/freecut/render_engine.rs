@@ -302,6 +302,10 @@ fn render_composed_frame(
                 let text = item.text.as_deref().unwrap_or("");
                 let font_size = item.font_size.unwrap_or(60.0) as u32;
                 let color = item.color.as_deref().unwrap_or("white");
+                let font_param = item.font_family.as_deref()
+                    .filter(|f| !f.is_empty())
+                    .map(|f| format!(":font='{}'" , f.replace('\'', "'\\''")))
+                    .unwrap_or_default();
                 
                 let base_x = item.transform.as_ref().and_then(|t| t.x).unwrap_or((res.width / 2) as f64);
                 let base_y = item.transform.as_ref().and_then(|t| t.y).unwrap_or((res.height / 2) as f64);
@@ -313,7 +317,7 @@ fn render_composed_frame(
                 // Escape single quotes for FFmpeg.
                 let escaped_text = text.replace('\'', "'\\''");
                 filter_parts.push(format!(
-                    "{last_label}drawtext=text='{escaped_text}':fontsize={font_size}:fontcolor={color}:x={x:.0}:y={y:.0}{text_label}"
+                    "{last_label}drawtext=text='{escaped_text}':fontsize={font_size}:fontcolor={color}:x={x:.0}:y={y:.0}{font_param}{text_label}"
                 ));
                 last_label = text_label;
             }
@@ -667,6 +671,10 @@ pub fn export_video(
                 }
                 let fsize = item.font_size.unwrap_or(60.0) as u32;
                 let color = item.color.as_deref().unwrap_or("white");
+                let font_param = item.font_family.as_deref()
+                    .filter(|f| !f.is_empty())
+                    .map(|f| format!(":font='{}'" , f.replace('\'', "'\\''")))
+                    .unwrap_or_default();
                 
                 let base_x = item.transform.as_ref().and_then(|t| t.x).unwrap_or((res.width / 2) as f64);
                 let base_y = item.transform.as_ref().and_then(|t| t.y).unwrap_or((res.height / 2) as f64);
@@ -680,7 +688,7 @@ pub fn export_video(
                 let escaped = text.replace('\'', "'\\''").replace(':', "\\:");
                 let lbl = format!("[txt{input_idx}]");
                 filter_parts.push(format!(
-                    "{last_video}drawtext=text='{escaped}':fontsize={fsize}:fontcolor={color}:x='{x_expr}':y='{y_expr}':enable='between(t,{item_start:.6},{t1:.6})'{lbl}"
+                    "{last_video}drawtext=text='{escaped}':fontsize={fsize}:fontcolor={color}:x='{x_expr}':y='{y_expr}':enable='between(t,{item_start:.6},{t1:.6})'{font_param}{lbl}"
                 ));
                 last_video = lbl;
             }
@@ -913,6 +921,10 @@ fn export_video_no_audio(
                 }
                 let fsize = item.font_size.unwrap_or(60.0) as u32;
                 let color = item.color.as_deref().unwrap_or("white");
+                let font_param = item.font_family.as_deref()
+                    .filter(|f| !f.is_empty())
+                    .map(|f| format!(":font='{}'" , f.replace('\'', "'\\''")))
+                    .unwrap_or_default();
                 
                 let base_x = item.transform.as_ref().and_then(|t| t.x).unwrap_or((res.width / 2) as f64);
                 let base_y = item.transform.as_ref().and_then(|t| t.y).unwrap_or((res.height / 2) as f64);
@@ -926,7 +938,7 @@ fn export_video_no_audio(
                 let escaped = text.replace('\'', "'\\''").replace(':', "\\:");
                 let lbl = format!("[txt{input_idx}]");
                 filter_parts.push(format!(
-                    "{last_video}drawtext=text='{escaped}':fontsize={fsize}:fontcolor={color}:x='{x_expr}':y='{y_expr}':enable='between(t,{item_start:.6},{t1:.6})'{lbl}"
+                    "{last_video}drawtext=text='{escaped}':fontsize={fsize}:fontcolor={color}:x='{x_expr}':y='{y_expr}':enable='between(t,{item_start:.6},{t1:.6})'{font_param}{lbl}"
                 ));
                 last_video = lbl;
             }

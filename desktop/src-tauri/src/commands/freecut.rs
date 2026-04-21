@@ -7,8 +7,8 @@
 use crate::state::AppState;
 use ai_launcher_core::freecut::{
     dubbing::{
-        detect_local_tools, generate_dubbing_assets, import_srt_as_session, DubbingImportResult,
-        DubbingToolReport, WhisperSettings,
+        auto_generate_srt_from_video, detect_local_tools, generate_dubbing_assets,
+        import_srt_as_session, DubbingImportResult, DubbingToolReport, WhisperSettings,
     },
     media_probe,
     project::{
@@ -587,6 +587,33 @@ pub async fn freecut_import_dubbing_srt(file_path: String) -> Result<DubbingImpo
         .await
         .map_err(|e| e.to_string())?
         .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn freecut_auto_generate_srt(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, FreeCutState>,
+    video_path: String,
+    whisper: Option<WhisperSettings>,
+    translate_to: Option<String>,
+) -> Result<DubbingImportResult, String> {
+    let render_dir = state.render_dir.join("auto-srt");
+    let tooling_dir = state.tooling_dir.clone();
+    let app_clone = app.clone();
+    let whisper = whisper.unwrap_or_default();
+    let _guard = state.tool_env_lock.lock().await;
+
+    tokio::task::spawn_blocking(move || {
+        with_tool_runtime_path(tooling_dir, || {
+            let path = PathBuf::from(&video_path);
+            auto_generate_srt_from_video(&path, &render_dir, whisper, translate_to, move |update| {
+                let _ = app_clone.emit("freecut://dubbing-progress", update);
+            })
+            .map_err(|e| e.to_string())
+        })
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]

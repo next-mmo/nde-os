@@ -210,6 +210,7 @@ pub fn run() {
             commands::freecut::freecut_export_video,
             commands::freecut::freecut_detect_dubbing_tools,
             commands::freecut::freecut_import_dubbing_srt,
+            commands::freecut::freecut_auto_generate_srt,
             commands::freecut::freecut_generate_dub_assets,
             commands::freecut::freecut_install_dubbing_runtime,
             commands::freecut::freecut_remove_background,

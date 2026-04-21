@@ -138,9 +138,11 @@ pub fn detect_local_tools() -> Result<DubbingToolReport> {
 }
 
 pub fn import_srt_as_session(file_path: &Path) -> Result<DubbingImportResult> {
-    let content = fs::read_to_string(file_path)
+    let raw = fs::read_to_string(file_path)
         .with_context(|| format!("failed to read SRT file {}", file_path.display()))?;
-    let mut segments = parse_srt(&content)?;
+    // Strip UTF-8 BOM if present (common in Khmer subtitle exports).
+    let content = raw.strip_prefix('\u{FEFF}').unwrap_or(&raw);
+    let mut segments = parse_srt(content)?;
     if segments.is_empty() {
         bail!("no subtitle segments found in {}", file_path.display());
     }
@@ -151,6 +153,125 @@ pub fn import_srt_as_session(file_path: &Path) -> Result<DubbingImportResult> {
         segments,
         speakers,
     })
+}
+
+/// Auto-generate subtitles from a video file.
+///
+/// 1. Extract audio track to a temporary WAV via FFmpeg.
+/// 2. Transcribe the WAV using local Whisper.
+/// 3. Parse the generated SRT into `DubbingImportResult`.
+///
+/// `output_dir` is used for intermediate files (extracted WAV, generated SRT).
+pub fn auto_generate_srt_from_video<F>(
+    video_path: &Path,
+    output_dir: &Path,
+    whisper: WhisperSettings,
+    translate_to: Option<String>,
+    progress: F,
+) -> Result<DubbingImportResult>
+where
+    F: Fn(DubbingProgressUpdate),
+{
+    if !video_path.exists() {
+        bail!("video file not found: {}", video_path.display());
+    }
+    fs::create_dir_all(output_dir).with_context(|| {
+        format!("failed to create output directory {}", output_dir.display())
+    })?;
+
+    let base_dir = crate::app_manager::default_base_dir();
+    let runtime = VoiceRuntime::new(&base_dir);
+
+    // Step 1: Extract audio from video to WAV (16kHz mono for Whisper).
+    progress(DubbingProgressUpdate {
+        phase: "extract".to_string(),
+        current: 0,
+        total: 4,
+        message: "Extracting audio from video".to_string(),
+    });
+
+    let stem = video_path
+        .file_stem()
+        .and_then(|v| v.to_str())
+        .unwrap_or("audio");
+    let wav_path = output_dir.join(format!("{stem}_extracted.wav"));
+
+    // Use FFmpeg to extract audio as 16kHz mono WAV (ideal for Whisper).
+    let ffmpeg_bin = crate::media::ffmpeg::find_ffmpeg(&base_dir)
+        .map(|bins| bins.ffmpeg)
+        .unwrap_or_else(|| PathBuf::from("ffmpeg"));
+
+    let extract_status = Command::new(&ffmpeg_bin)
+        .args(["-y", "-i"])
+        .arg(video_path)
+        .args(["-vn", "-acodec", "pcm_s16le", "-ar", "16000", "-ac", "1"])
+        .arg(&wav_path)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped())
+        .status()
+        .context("failed to run FFmpeg for audio extraction")?;
+
+    if !extract_status.success() {
+        bail!("FFmpeg audio extraction failed for {}", video_path.display());
+    }
+    if !wav_path.exists() {
+        bail!("audio extraction produced no output at {}", wav_path.display());
+    }
+
+    // Step 2: Transcribe with Whisper.
+    progress(DubbingProgressUpdate {
+        phase: "transcribe".to_string(),
+        current: 1,
+        total: 4,
+        message: "Transcribing audio with Whisper".to_string(),
+    });
+
+    let srt_path = transcribe_with_whisper(&wav_path, output_dir, whisper, &runtime)?;
+
+    // Step 3: Parse the SRT into segments.
+    progress(DubbingProgressUpdate {
+        phase: "parse".to_string(),
+        current: 2,
+        total: 4,
+        message: "Parsing generated subtitles".to_string(),
+    });
+
+    let mut result = import_srt_as_session(&srt_path)?;
+
+    // Step 4: Translate if requested.
+    if let Some(target_lang) = translate_to {
+        let llm = DubbingLlmConfig {
+            enabled: true,
+            model: None,
+            mode: Some("translate".to_string()),
+        };
+        let lang_str = if target_lang == "km" || target_lang.eq_ignore_ascii_case("khmer") { "Khmer" } else { &target_lang };
+        
+        progress(DubbingProgressUpdate {
+            phase: "translate".to_string(),
+            current: 3,
+            total: 4,
+            message: format!("Translating subtitles to {}", lang_str),
+        });
+
+        apply_nde_llm_to_segments(&mut result.segments, &llm, lang_str, &progress)?;
+
+        // Overwrite the original text with the translated text.
+        for seg in &mut result.segments {
+            if let Some(translated) = seg.output_text.take() {
+                seg.text = translated;
+            }
+        }
+    }
+
+    progress(DubbingProgressUpdate {
+        phase: "done".to_string(),
+        current: 4,
+        total: 4,
+        message: format!("Generated {} subtitle segments", result.segments.len()),
+    });
+
+    Ok(result)
 }
 
 pub fn generate_dubbing_assets<F>(
@@ -325,8 +446,8 @@ where
     for (idx, segment) in segments.iter_mut().enumerate() {
         let prompt = if mode.eq_ignore_ascii_case("polish") {
             format!(
-                "Polish this subtitle for natural dubbing in {}. Keep it short and return only the final subtitle text.\n\n{}",
-                target_language, segment.text
+                "Polish this subtitle text for spoken dubbing. Keep it concise and natural. Return only the polished subtitle text.\n\n{}",
+                segment.text
             )
         } else {
             format!(
@@ -345,6 +466,7 @@ where
             .context("failed to contact the local NDE LLM service")?
             .error_for_status()
             .context("local NDE LLM returned an error")?;
+            
         let body: NdeEnvelope<NdeAgentChatData> =
             response.json().context("invalid NDE LLM response body")?;
         if !body.success {

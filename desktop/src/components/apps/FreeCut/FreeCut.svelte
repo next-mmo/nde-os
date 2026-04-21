@@ -13,7 +13,8 @@
     ChevronRight, Repeat, PanelLeftClose, PanelRightClose, PanelLeft, PanelRight,
     MousePointer2, Slice, GripHorizontal, FolderOpen, Download, Sparkles,
     Circle, Triangle, RectangleHorizontal, Undo2, Redo2, Grid,
-    Magnet, Maximize2, Minus, GripVertical, Check, AlertCircle, File
+    Magnet, Maximize2, Minus, GripVertical, Check, AlertCircle, File,
+    Captions
   } from "@lucide/svelte";
 
   // ─── Stores (Zustand vanilla → Svelte 5 reactive) ─────────────────────
@@ -165,11 +166,8 @@
   // Preview scrubber (ghost playhead on hover)
   let previewFrame = $state<number | null>(null);
 
-  // Playback video preview — native <video> for smooth real-time playback
-  let playbackVideoEl: HTMLVideoElement | undefined = $state();
-  let activePlaybackVideoSrc: string | null = null;
-  let activePlaybackItemId: string | null = null;
-  let lastSetVideoRate = -1;   // cache to avoid redundant playbackRate sets
+  // Playback preview — DOM overlays for smooth real-time playback
+  let activePreviewItems = $state<TimelineItem[]>([]);
   let audioSyncCounter = 0;
   let lastPlaybackFrame = 0;
 
@@ -367,17 +365,17 @@
     const { startTime, startFrame, rate, fps } = _clock;
 
     // 1. Video-driven: use the topmost video's currentTime as master clock.
-    const vid = playbackVideoEl;
-    if (vid && !vid.paused && !vid.seeking && vid.readyState >= 2 && activePlaybackItemId) {
-      const item = itemsStore.getState().itemById[activePlaybackItemId];
-      if (item) {
-        const sourceFps = item.sourceFps ?? fps;
-        const speed = Math.abs(item.speed ?? 1) || 1;
-        const sourceStartFrame = item.sourceStart ?? 0;
+    const topItem = [...activePreviewItems].reverse().find(i => i.type === 'video');
+    if (topItem) {
+      const vid = document.querySelector(`video[data-preview-video="${topItem.id}"]`) as HTMLVideoElement | null;
+      if (vid && !vid.paused && !vid.seeking && vid.readyState >= 2) {
+        const sourceFps = topItem.sourceFps ?? fps;
+        const speed = Math.abs(topItem.speed ?? 1) || 1;
+        const sourceStartFrame = topItem.sourceStart ?? 0;
         const sourceFrames = vid.currentTime * sourceFps;
         const timelineFramesInClip = (sourceFrames - sourceStartFrame) / speed;
-        const frame = item.from + timelineFramesInClip;
-        if (Number.isFinite(frame) && frame >= item.from - 2 && frame < item.from + item.durationInFrames + 2) {
+        const frame = topItem.from + timelineFramesInClip;
+        if (Number.isFinite(frame) && frame >= topItem.from - 2 && frame < topItem.from + topItem.durationInFrames + 2) {
           return frame;
         }
       }
@@ -454,7 +452,7 @@
     // a head-start. Since computeExactFrame falls back to wall-clock until
     // video.readyState ≥ HAVE_CURRENT_DATA, the playhead starts on wall-clock
     // and transparently hands off to the media clock once ready.
-    updatePlaybackVideo(startFrame);
+    updateActivePreviewItems(startFrame);
     syncAudioToFrame(startFrame, true, fps);
     audioSyncCounter = 0;
 
@@ -469,8 +467,12 @@
 
       // Detect the wall-clock → media-clock handoff and rebase the fallback
       // anchor so any fallback read afterwards stays in phase with media.
-      const vid = playbackVideoEl;
-      const mediaReady = !!(vid && !vid.paused && vid.readyState >= 2 && activePlaybackItemId);
+      const topItem = [...activePreviewItems].reverse().find(i => i.type === 'video');
+      let mediaReady = false;
+      if (topItem) {
+        const vid = document.querySelector(`video[data-preview-video="${topItem.id}"]`) as HTMLVideoElement | null;
+        if (vid && !vid.paused && vid.readyState >= 2) mediaReady = true;
+      }
       if (!_handedOffToMediaClock && mediaReady) {
         _handedOffToMediaClock = true;
         rebaseClock(exactFrame, tnow);
@@ -504,13 +506,9 @@
           if (c.tcRuler) c.tcRuler.textContent = tc;
         }
 
-        // Clip-transition detection: if the topmost video item at this frame
-        // changed, immediately re-init the <video> element. Fast O(N) scan
-        // over items but only runs on frame boundaries (30×/s at most).
-        const topItem = findTopmostVideoItem(intFrame);
-        const topItemId = topItem?.id ?? null;
-        if (topItemId !== activePlaybackItemId) {
-          updatePlaybackVideo(intFrame);
+        // Clip-transition detection: update active items if the set changed.
+        const changed = updateActivePreviewItems(intFrame);
+        if (changed) {
           // Hand back to wall-clock briefly while new clip's decoder warms up.
           _handedOffToMediaClock = false;
           rebaseClock(intFrame, tnow);
@@ -533,16 +531,33 @@
           c.maxFrames = itemsStore.getState().maxItemEndFrame || 1;
 
           if (c.rate !== prevRate) {
-            const v = playbackVideoEl;
-            if (v && !v.paused && topItem) {
-              const sourceFps = topItem.sourceFps ?? c.fps;
-              const newRate = Math.abs(topItem.speed ?? 1) * c.rate * (c.fps / sourceFps);
-              v.playbackRate = newRate;
-              lastSetVideoRate = newRate;
-            }
-            // Rate is item-specific for audio; force an audio resync next tick
-            // so syncAudioToFrame recomputes el.playbackRate.
+            // Video playback rates will be updated in the main tick loop below
             c.lastAudioSyncFrame = intFrame - c.fps;
+          }
+        }
+      }
+
+      // Sync all active video elements' currentTime and playbackRate
+      for (const item of activePreviewItems) {
+        if (item.type === 'video') {
+          const video = document.querySelector(`video[data-preview-video="${item.id}"]`) as HTMLVideoElement | null;
+          if (video && video.readyState >= 1) {
+            const frameInClip = exactFrame - item.from;
+            const speed = item.speed ?? 1;
+            const sourceStartFrame = item.sourceStart ?? 0;
+            const sourceFps = item.sourceFps ?? c.fps;
+            const targetTime = (sourceStartFrame + frameInClip * speed) / sourceFps;
+            const effectiveRate = Math.abs(speed) * c.rate * (c.fps / sourceFps);
+            
+            if (!video.seeking && Math.abs(video.currentTime - targetTime) > 0.1) {
+              video.currentTime = targetTime;
+            }
+            if (video.playbackRate !== effectiveRate) {
+              video.playbackRate = effectiveRate;
+            }
+            if (video.paused) {
+              video.play().catch(() => {});
+            }
           }
         }
       }
@@ -555,9 +570,13 @@
   function stopPlaybackLoop() {
     if (animFrame) { cancelAnimationFrame(animFrame); animFrame = null; }
     isPlayingRaw = false;
-    lastSetVideoRate = -1;
     _clock = null;
-    pausePlaybackVideo();
+    activePreviewItems.forEach(item => {
+      if (item.type === 'video') {
+        const vid = document.querySelector(`video[data-preview-video="${item.id}"]`) as HTMLVideoElement | null;
+        if (vid && !vid.paused) vid.pause();
+      }
+    });
     pauseAllAudio();
     // Use the full setCurrentFrame (with epoch bump) on stop
     // so the UI updates the playhead position, render preview, etc.
@@ -726,108 +745,28 @@
     });
   }
 
-  /** Find the topmost (last in layer order) video item visible at the given frame. */
-  function findTopmostVideoItem(frame: number): TimelineItem | null {
-    const items = itemsStore.getState().items;
-    let topmost: TimelineItem | null = null;
-    for (const item of items) {
-      if (item.type !== 'video') continue;
-      if (!item.src) continue;
-      const itemEnd = item.from + item.durationInFrames;
-      if (frame >= item.from && frame < itemEnd) {
-        topmost = item;
+  /** Update the active preview items based on the current frame. Returns true if changed. */
+  function updateActivePreviewItems(frame: number): boolean {
+    const currentActive = itemsStore.getState().items.filter(i => {
+      return frame >= i.from && frame < i.from + i.durationInFrames;
+    });
+    
+    let changed = false;
+    if (currentActive.length !== activePreviewItems.length) {
+      changed = true;
+    } else {
+      for (let i = 0; i < currentActive.length; i++) {
+        if (currentActive[i].id !== activePreviewItems[i].id) { changed = true; break; }
       }
     }
-    return topmost;
-  }
-
-  /**
-   * Start or update the native preview <video> to show the topmost clip
-   * at `frame`. Must be idempotent — re-calling with the same active item
-   * and close-enough currentTime should be a no-op (no extra seek).
-   */
-  function updatePlaybackVideo(frame: number) {
-    const video = playbackVideoEl;
-    if (!video) return;
-
-    const item = findTopmostVideoItem(frame);
-    if (!item || !item.src) {
-      if (activePlaybackItemId) {
-        video.pause();
-        activePlaybackItemId = null;
-        activePlaybackVideoSrc = null;
-      }
-      return;
+    if (changed) {
+      const tracks = itemsStore.getState().tracks;
+      const orderMap = new Map(tracks.map(t => [t.id, t.order]));
+      currentActive.sort((a,b) => (orderMap.get(a.trackId) ?? 0) - (orderMap.get(b.trackId) ?? 0));
+      activePreviewItems = currentActive;
+      return true;
     }
-
-    const currentFps = itemsStore.getState().fps;
-    const timelineRate = playbackStore.getState().playbackRate;
-    const frameInClip = frame - item.from;
-    const speed = item.speed ?? 1;
-    const sourceStartFrame = item.sourceStart ?? 0;
-    const sourceFrame = sourceStartFrame + frameInClip * speed;
-    const sourceFps = item.sourceFps ?? currentFps;
-    const targetTime = sourceFrame / sourceFps;
-    const effectiveRate = Math.abs(speed) * timelineRate * (currentFps / sourceFps);
-
-    const itemChanged = activePlaybackItemId !== item.id;
-    const srcChanged = activePlaybackVideoSrc !== item.src;
-
-    if (srcChanged) {
-      // Different source file — load new source.
-      activePlaybackVideoSrc = item.src;
-      activePlaybackItemId = item.id;
-      video.src = assetUrl(item.src);
-      video.currentTime = targetTime;
-      video.playbackRate = effectiveRate;
-      lastSetVideoRate = effectiveRate;
-      video.play().catch(() => {});
-      return;
-    }
-
-    if (itemChanged) {
-      // Same source file, different clip — seek to new in-point.
-      // This path fires on split-clip transitions (A/B both use same video).
-      activePlaybackItemId = item.id;
-      if (Math.abs(video.currentTime - targetTime) > 0.05) {
-        video.currentTime = targetTime;
-      }
-      if (lastSetVideoRate !== effectiveRate) {
-        video.playbackRate = effectiveRate;
-        lastSetVideoRate = effectiveRate;
-      }
-      if (video.paused) video.play().catch(() => {});
-      return;
-    }
-
-    // Same clip, same source. This path fires on play-start after a scrub
-    // (where the video element's currentTime is stale) AND on legitimate
-    // "keep playing" state refreshes. Seek only when there's an actual
-    // drift — avoids unnecessary decoder resets during normal playback.
-    //
-    // During active playback the rAF tick derives the playhead from
-    // video.currentTime, so drift stays near-zero and this check is a
-    // no-op. On play-start after scrub it correctly re-seeks.
-    if (!video.seeking && Math.abs(video.currentTime - targetTime) > 0.1) {
-      video.currentTime = targetTime;
-    }
-    if (lastSetVideoRate !== effectiveRate) {
-      video.playbackRate = effectiveRate;
-      lastSetVideoRate = effectiveRate;
-    }
-    if (video.paused) {
-      video.play().catch(() => {});
-    }
-  }
-
-  /** Pause the preview video when playback stops. */
-  function pausePlaybackVideo() {
-    const video = playbackVideoEl;
-    if (video && !video.paused) {
-      video.pause();
-    }
-    // Keep activePlaybackVideoSrc/Id cached — avoids reloading the same
-    // video from disk on every play/pause cycle.
+    return false;
   }
 
   // During playback, audio sync is handled by the rAF tick.
@@ -936,6 +875,27 @@
     if (playing) return;
     const frame = pb.currentFrame;
     if (frame !== lastRenderedFrame && currentProject) {
+      // 1. Instantly update DOM overlays for real-time preview during scrubbing
+      updateActivePreviewItems(frame);
+      setTimeout(() => {
+        activePreviewItems.forEach(item => {
+          if (item.type === 'video') {
+            const video = document.querySelector(`video[data-preview-video="${item.id}"]`) as HTMLVideoElement | null;
+            if (video && video.readyState >= 1) {
+              const frameInClip = frame - item.from;
+              const speed = item.speed ?? 1;
+              const sourceStartFrame = item.sourceStart ?? 0;
+              const sourceFps = item.sourceFps ?? itemsStore.getState().fps;
+              const targetTime = (sourceStartFrame + frameInClip * speed) / sourceFps;
+              if (Math.abs(video.currentTime - targetTime) > 0.05) {
+                video.currentTime = targetTime;
+              }
+            }
+          }
+        });
+      }, 0);
+
+      // 2. Debounced backend render for precise composition preview
       if (_renderDebounceTimer) clearTimeout(_renderDebounceTimer);
       _renderDebounceTimer = setTimeout(() => {
         _renderDebounceTimer = null;
@@ -1636,6 +1596,249 @@
     };
     state.addTrack(track);
     return id;
+  }
+
+  // ─── SRT Import → Timeline ────────────────────────────────────────────
+  /** Detect if text contains Khmer Unicode characters (U+1780–U+17FF). */
+  function containsKhmer(text: string): boolean {
+    return /[\u1780-\u17FF]/.test(text);
+  }
+
+  let srtImportBusy = $state(false);
+
+  async function importSrtToTimeline() {
+    if (!currentProject) return;
+    try {
+      srtImportBusy = true;
+      const selected = await open({
+        multiple: false,
+        filters: [{ name: "Subtitles", extensions: ["srt"] }],
+      });
+      if (!selected || Array.isArray(selected) || typeof selected !== "string") {
+        srtImportBusy = false;
+        return;
+      }
+
+      // Parse SRT via the existing backend command
+      const imported: DubbingImportResult = await invoke("freecut_import_dubbing_srt", { filePath: selected });
+      if (!imported.segments || imported.segments.length === 0) {
+        srtImportBusy = false;
+        toastMessage = "No subtitle segments found in SRT file";
+        if (toastTimer) clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => { toastMessage = null; }, 3000);
+        return;
+      }
+
+      historyStore.getState().push();
+
+      // Detect Khmer content by sampling the first few segments
+      const sampleText = imported.segments.slice(0, 10).map((s: DubbingSegment) => s.text).join(" ");
+      const isKhmer = containsKhmer(sampleText);
+
+      // Create a dedicated subtitle track
+      const state = itemsStore.getState();
+      const subtitleTrackId = crypto.randomUUID();
+      const existingSubtitleTracks = state.tracks.filter(t => t.name.startsWith("Subtitles")).length;
+      const trackName = existingSubtitleTracks > 0 ? `Subtitles ${existingSubtitleTracks + 1}` : "Subtitles";
+      const subtitleTrack: TimelineTrack = {
+        id: subtitleTrackId,
+        name: trackName,
+        kind: "video",
+        height: 50,
+        locked: false,
+        visible: true,
+        muted: false,
+        solo: false,
+        order: state.tracks.length,
+        isGroup: false,
+        isCollapsed: false,
+        color: "#F59E0B",
+      };
+      state.addTrack(subtitleTrack);
+
+      // Place each SRT segment as a text item on the timeline
+      const width = currentProject.metadata.width;
+      const height = currentProject.metadata.height;
+      const fontFamily = isKhmer ? "Noto Sans Khmer" : "Inter";
+      const fontSize = isKhmer ? 38 : 42;
+      const yPos = height - 120;
+
+      const items: TimelineItem[] = [];
+      for (const [index, segment] of imported.segments.entries()) {
+        const from = Math.max(0, Math.round(segment.startSecs * fps));
+        const duration = Math.max(1, Math.round((segment.endSecs - segment.startSecs) * fps));
+        const clipText = segment.text;
+
+        items.push({
+          id: crypto.randomUUID(),
+          trackId: subtitleTrackId,
+          from,
+          durationInFrames: duration,
+          label: clipText.length > 30 ? clipText.slice(0, 30) + "…" : clipText,
+          type: "text",
+          text: clipText,
+          fontSize,
+          fontFamily,
+          color: "#ffffff",
+          textAlign: "center",
+          fillColor: "#ffffff",
+          transform: { x: width / 2, y: yPos, rotation: 0, opacity: 1 },
+        });
+      }
+
+      itemsStore.getState().addItems(items);
+
+      // Show success toast
+      const langTag = isKhmer ? " (ខ្មែរ)" : "";
+      toastMessage = `✅ Placed ${items.length} subtitles on timeline${langTag}`;
+      if (toastTimer) clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => { toastMessage = null; }, 3000);
+
+      console.log(`[FreeCut] Imported ${items.length} SRT segments to timeline (Khmer: ${isKhmer})`);
+    } catch (e: any) {
+      console.error("[FreeCut] SRT import error:", e);
+      toastMessage = `SRT import failed: ${e?.toString?.() ?? "Unknown error"}`;
+      if (toastTimer) clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => { toastMessage = null; }, 4000);
+    } finally {
+      srtImportBusy = false;
+    }
+  }
+
+  let autoGenBusy = $state(false);
+  let autoGenPhase = $state('');
+
+  async function autoGenerateSrtFromVideo(targetMedia?: MediaItem, language?: string) {
+    if (!currentProject) return;
+
+    // Use provided media or find the first video.
+    const video = targetMedia ?? mediaLibrary.find(m => m.mediaType === 'video');
+    if (!video || video.mediaType !== 'video') {
+      toastMessage = "No video found — import a video first";
+      if (toastTimer) clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => { toastMessage = null; }, 3000);
+      return;
+    }
+
+    try {
+      autoGenBusy = true;
+      const langLabel = language === 'km' ? 'ខ្មែរ' : language === 'en' ? 'English' : '';
+      autoGenPhase = `Extracting audio${langLabel ? ` (${langLabel})` : ''}…`;
+
+      // Listen for progress events from the backend.
+      const { listen } = await import("@tauri-apps/api/event");
+      const unlisten = await listen<{ phase: string; message: string }>("freecut://dubbing-progress", (ev) => {
+        autoGenPhase = ev.payload.message;
+      });
+
+      // Build whisper settings with language if provided.
+      // We let Whisper auto-detect the source language (language: null).
+      // If requesting Khmer, use Whisper's 'translate' task (to English) first,
+      // because Whisper's native Khmer transcription is poor.
+      // We pass the requested language to translateTo for the LLM translation pass.
+      const whisperSettings: WhisperSettings | null = { 
+        language: null, 
+        model: null, 
+        task: language === 'km' ? 'translate' : 'transcribe', 
+        diarize: null 
+      };
+      const translateTo = language;
+
+      // Call the backend to extract audio → transcribe → translate → parse SRT.
+      const imported: DubbingImportResult = await invoke("freecut_auto_generate_srt", {
+        videoPath: video.filePath,
+        whisper: whisperSettings,
+        translateTo,
+      });
+
+      unlisten();
+
+      if (!imported.segments || imported.segments.length === 0) {
+        autoGenBusy = false;
+        autoGenPhase = '';
+        toastMessage = "Whisper produced no subtitle segments";
+        if (toastTimer) clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => { toastMessage = null; }, 3000);
+        return;
+      }
+
+      historyStore.getState().push();
+
+      // Detect Khmer content from output (may differ from requested language).
+      const sampleText = imported.segments.slice(0, 10).map((s: DubbingSegment) => s.text).join(" ");
+      const isKhmer = language === 'km' || containsKhmer(sampleText);
+
+      // Create subtitle track.
+      const state = itemsStore.getState();
+      const subtitleTrackId = crypto.randomUUID();
+      const existingSubtitleTracks = state.tracks.filter(t => t.name.startsWith("Subtitles")).length;
+      const trackSuffix = langLabel ? ` (${langLabel})` : '';
+      const trackName = existingSubtitleTracks > 0
+        ? `Subtitles ${existingSubtitleTracks + 1}${trackSuffix}`
+        : `Subtitles${trackSuffix}`;
+      const subtitleTrack: TimelineTrack = {
+        id: subtitleTrackId,
+        name: trackName,
+        kind: "video",
+        height: 50,
+        locked: false,
+        visible: true,
+        muted: false,
+        solo: false,
+        order: state.tracks.length,
+        isGroup: false,
+        isCollapsed: false,
+        color: isKhmer ? "#F59E0B" : "#3B82F6",
+      };
+      state.addTrack(subtitleTrack);
+
+      // Place subtitle items.
+      const width = currentProject.metadata.width;
+      const height = currentProject.metadata.height;
+      const fontFamily = isKhmer ? "Noto Sans Khmer" : "Inter";
+      const fontSize = isKhmer ? 38 : 42;
+      const yPos = height - 120;
+
+      const items: TimelineItem[] = [];
+      for (const segment of imported.segments) {
+        const from = Math.max(0, Math.round(segment.startSecs * fps));
+        const duration = Math.max(1, Math.round((segment.endSecs - segment.startSecs) * fps));
+        const clipText = segment.text;
+
+        items.push({
+          id: crypto.randomUUID(),
+          trackId: subtitleTrackId,
+          from,
+          durationInFrames: duration,
+          label: clipText.length > 30 ? clipText.slice(0, 30) + "…" : clipText,
+          type: "text",
+          text: clipText,
+          fontSize,
+          fontFamily,
+          color: "#ffffff",
+          textAlign: "center",
+          fillColor: "#ffffff",
+          transform: { x: width / 2, y: yPos, rotation: 0, opacity: 1 },
+        });
+      }
+
+      itemsStore.getState().addItems(items);
+
+      const langTag = isKhmer ? " (ខ្មែរ)" : language === 'en' ? " (English)" : "";
+      toastMessage = `✅ Auto-generated ${items.length} subtitles${langTag}`;
+      if (toastTimer) clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => { toastMessage = null; }, 4000);
+
+      console.log(`[FreeCut] Auto-generated ${items.length} SRT segments from ${video.fileName} (lang: ${language ?? 'auto'})`);
+    } catch (e: any) {
+      console.error("[FreeCut] Auto-generate SRT error:", e);
+      toastMessage = `Auto-generate failed: ${e?.toString?.() ?? "Unknown error"}`;
+      if (toastTimer) clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => { toastMessage = null; }, 5000);
+    } finally {
+      autoGenBusy = false;
+      autoGenPhase = '';
+    }
   }
 
   function goBack() {
@@ -2465,6 +2668,26 @@
                   <FolderOpen class="w-3.5 h-3.5" />
                   Import from NDE
                 </button>
+                <button
+                  class="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg border border-dashed border-amber-500/20 hover:border-amber-400/40 hover:bg-amber-500/8 text-amber-400/50 hover:text-amber-300 text-xs transition-all disabled:opacity-40 disabled:cursor-wait"
+                  onclick={importSrtToTimeline}
+                  disabled={srtImportBusy}
+                >
+                  <Captions class="w-3.5 h-3.5" />
+                  {srtImportBusy ? 'Importing…' : 'Import SRT to Timeline'}
+                </button>
+                <button
+                  class="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg border border-dashed border-fuchsia-500/20 hover:border-fuchsia-400/40 hover:bg-fuchsia-500/8 text-fuchsia-400/50 hover:text-fuchsia-300 text-xs transition-all disabled:opacity-40 disabled:cursor-wait"
+                  onclick={autoGenerateSrtFromVideo}
+                  disabled={autoGenBusy || mediaLibrary.filter(m => m.mediaType === 'video').length === 0}
+                >
+                  <Sparkles class="w-3.5 h-3.5" />
+                  {#if autoGenBusy}
+                    {autoGenPhase || 'Generating…'}
+                  {:else}
+                    Auto-Generate Subtitles
+                  {/if}
+                </button>
               </div>
               <div class="px-2 pb-2 space-y-0.5">
                 {#each mediaLibrary as media (media.id)}
@@ -2570,25 +2793,49 @@
             {#if activePreviewTab === 'timeline'}
               <div
                 class="border border-white/5 rounded-sm bg-black shadow-2xl overflow-hidden flex items-center justify-center relative"
-                style="aspect-ratio: {currentProject.metadata.width} / {currentProject.metadata.height}; height: 100%; max-width: 100%;"
+                style="aspect-ratio: {currentProject.metadata.width} / {currentProject.metadata.height}; height: 100%; max-width: 100%; container-type: size;"
               >
-                <!-- Native video for smooth real-time playback (muted — audio from hidden elements) -->
-                <!-- svelte-ignore a11y_media_has_caption -->
-                <video
-                  bind:this={playbackVideoEl}
-                  class="absolute inset-0 w-full h-full object-contain will-change-transform"
-                  class:invisible={!isPlayingRaw}
-                  muted
-                  playsinline
-                  preload="auto"
-                ></video>
-                {#if !isPlayingRaw}
-                  {#if renderedFramePath}
-                    <img src="{assetUrl(renderedFramePath)}?t={renderEpoch}" alt="Preview" class="w-full h-full object-contain" />
-                  {:else}
-                    <Film class="w-16 h-16 text-white/5" />
-                  {/if}
-                {/if}
+                <!-- DOM Overlays for real-time preview -->
+                <div class="absolute inset-0 overflow-hidden pointer-events-none">
+                  <div 
+                    class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 origin-center"
+                    style="width: {currentProject.metadata.width}px; height: {currentProject.metadata.height}px; transform: scale(min(calc(100cqw / {currentProject.metadata.width}), calc(100cqh / {currentProject.metadata.height})));"
+                  >
+                    {#each activePreviewItems as item (item.id)}
+                      {@const scale = item.transform?.scale ?? 1}
+                      {@const x = item.transform?.x ?? (currentProject.metadata.width / 2)}
+                      {@const y = item.transform?.y ?? (currentProject.metadata.height / 2)}
+                      {@const opacity = item.transform?.opacity ?? 1}
+                      <div
+                        class="absolute will-change-transform flex items-center justify-center"
+                        style="
+                          width: {item.transform?.width ?? currentProject.metadata.width}px;
+                          height: {item.transform?.height ?? currentProject.metadata.height}px;
+                          left: 0; top: 0;
+                          transform: translate({x}px, {y}px) scale({scale}) translate(-50%, -50%);
+                          opacity: {opacity};
+                          transform-origin: center;
+                        "
+                      >
+                        {#if item.type === 'video'}
+                          <!-- svelte-ignore a11y_media_has_caption -->
+                          <video 
+                            data-preview-video={item.id}
+                            src={assetUrl(item.src)}
+                            class="w-full h-full object-contain"
+                            muted playsinline preload="auto"
+                          ></video>
+                        {:else if item.type === 'image'}
+                          <img src={assetUrl(item.src)} alt="" class="w-full h-full object-contain" />
+                        {:else if item.type === 'text'}
+                          <div style="font-family: {item.fontFamily}; font-size: {item.fontSize}px; color: {item.color}; text-align: {item.textAlign || 'center'}; white-space: pre-wrap; width: 100%; text-shadow: 0 2px 4px rgba(0,0,0,0.5);">
+                            {item.text}
+                          </div>
+                        {/if}
+                      </div>
+                    {/each}
+                  </div>
+                </div>
               </div>
               <div class="absolute bottom-3 left-1/2 -translate-x-1/2 flex items-center gap-3 px-3 py-1 rounded-md border border-white/5 pointer-events-none z-10 {isPlayingRaw ? 'bg-black/80' : 'bg-black/60 backdrop-blur-sm'}">
                 <span data-tc="preview" class="font-mono text-[11px] text-white/60">{currentTime}</span>
@@ -2832,7 +3079,7 @@
                           <div
                             role="button"
                             tabindex="-1"
-                            class="absolute top-[3px] rounded-md cursor-pointer select-none overflow-hidden transition-all duration-75"
+                            class="absolute top-[3px] rounded-md cursor-pointer select-none overflow-hidden"
                             style:left="{startPx}px"
                             style:width="{Math.max(8, widthPx)}px"
                             style:height="calc(100% - 6px)"
@@ -2853,7 +3100,7 @@
                               {/if}
                             {/if}
 
-                            <div class="relative z-10 flex items-center gap-1.5 px-2 h-full pointer-events-none bg-gradient-to-r from-black/90 via-black/40 to-transparent w-full">
+                            <div class="relative z-10 flex items-center gap-1.5 px-2 h-full pointer-events-none bg-black/20 w-full">
                               <div class="p-1 rounded-sm bg-black/40 backdrop-blur-sm">
                                 <MediaIcon2 class="w-2.5 h-2.5 shrink-0" style="color: {color}; filter: drop-shadow(0 1px 1px rgba(0,0,0,1));" />
                               </div>
@@ -3250,13 +3497,32 @@
     onkeydown={undefined}
   >
     <div
-      class="absolute min-w-[160px] py-1 rounded-xl bg-zinc-900 border border-white/10 shadow-xl shadow-black/50"
+      class="absolute min-w-[180px] py-1 rounded-xl bg-zinc-900 border border-white/10 shadow-xl shadow-black/50"
       style="left: {contextMenuMedia.x}px; top: {contextMenuMedia.y}px;"
     >
       <!-- Add to Timeline -->
       <button class="flex items-center gap-2 w-[calc(100%-8px)] px-2.5 py-1.5 text-[11px] text-left bg-transparent border-none cursor-default rounded-md mx-1 hover:bg-violet-500/20 text-white/80 hover:text-white transition-colors" onclick={() => { if (contextMenuMedia?.media) addMediaToTimeline(contextMenuMedia.media); closeContextMenu(); }}>
         <Plus class="w-3.5 h-3.5 opacity-70" /> Add to Timeline
       </button>
+      {#if contextMenuMedia.media.mediaType === 'video'}
+        <div class="h-px mx-2 my-1 bg-white/10"></div>
+        <!-- Generate SRT submenu -->
+        <div class="px-2.5 py-1 text-[9px] uppercase tracking-wider text-white/30 font-semibold">Generate Subtitles</div>
+        <button
+          class="flex items-center gap-2 w-[calc(100%-8px)] px-2.5 py-1.5 text-[11px] text-left bg-transparent border-none cursor-default rounded-md mx-1 hover:bg-amber-500/20 text-amber-400/80 hover:text-amber-300 transition-colors disabled:opacity-40 disabled:cursor-wait"
+          disabled={autoGenBusy}
+          onclick={() => { const m = contextMenuMedia?.media; closeContextMenu(); if (m) autoGenerateSrtFromVideo(m, 'km'); }}
+        >
+          <Sparkles class="w-3.5 h-3.5 opacity-70" /> ខ្មែរ (Khmer)
+        </button>
+        <button
+          class="flex items-center gap-2 w-[calc(100%-8px)] px-2.5 py-1.5 text-[11px] text-left bg-transparent border-none cursor-default rounded-md mx-1 hover:bg-blue-500/20 text-blue-400/80 hover:text-blue-300 transition-colors disabled:opacity-40 disabled:cursor-wait"
+          disabled={autoGenBusy}
+          onclick={() => { const m = contextMenuMedia?.media; closeContextMenu(); if (m) autoGenerateSrtFromVideo(m, 'en'); }}
+        >
+          <Sparkles class="w-3.5 h-3.5 opacity-70" /> English
+        </button>
+      {/if}
       <div class="h-px mx-2 my-1 bg-white/10"></div>
       <!-- Delete Media -->
       <button class="flex items-center gap-2 w-[calc(100%-8px)] px-2.5 py-1.5 text-[11px] text-left bg-transparent border-none cursor-default rounded-md mx-1 hover:bg-red-500/20 text-red-400 hover:text-red-300 transition-colors" onclick={() => { if (contextMenuMedia?.media) deleteMedia(contextMenuMedia.media); closeContextMenu(); }}>
@@ -3293,8 +3559,8 @@
           <Plus class="w-5 h-5 rotate-45" />
         </button>
       </div>
-      <div class="flex-1 relative overflow-hidden bg-background">
-        <FileExplorer window={{ data: { onSelectFile: (path) => { showNdeExplorerModal = false; handleNdeImport({ path }); } } }} />
+      <div class="flex-1 relative overflow-hidden bg-zinc-950 dark">
+        <FileExplorer window={{ data: { onSelectFile: (path: string) => { showNdeExplorerModal = false; handleNdeImport({ path }); } } }} />
       </div>
     </div>
   </div>
