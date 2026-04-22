@@ -789,6 +789,11 @@ struct OaiMessage {
     tool_calls: Option<Vec<OaiToolCall>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     tool_call_id: Option<String>,
+    /// llama.cpp emits the `<think>…</think>` block from Qwen3-family
+    /// reasoning models into this separate field. Only used for diagnostics
+    /// — we never serialize it back to the server.
+    #[serde(default, skip_serializing)]
+    reasoning_content: Option<String>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -850,12 +855,14 @@ fn to_oai_messages(messages: &[Message]) -> Vec<OaiMessage> {
                 content: Some(content.clone()),
                 tool_calls: None,
                 tool_call_id: None,
+                reasoning_content: None,
             },
             Message::User { content } => OaiMessage {
                 role: "user".into(),
                 content: Some(content.clone()),
                 tool_calls: None,
                 tool_call_id: None,
+                reasoning_content: None,
             },
             Message::Assistant {
                 content,
@@ -883,6 +890,7 @@ fn to_oai_messages(messages: &[Message]) -> Vec<OaiMessage> {
                     content: content.clone(),
                     tool_calls: tc,
                     tool_call_id: None,
+                    reasoning_content: None,
                 }
             }
             Message::Tool {
@@ -893,6 +901,7 @@ fn to_oai_messages(messages: &[Message]) -> Vec<OaiMessage> {
                 content: Some(content.clone()),
                 tool_calls: None,
                 tool_call_id: Some(tool_call_id.clone()),
+                reasoning_content: None,
             },
         })
         .collect()
@@ -926,11 +935,15 @@ impl LlmProvider for GgufProvider {
         // Re-enable with `tools: to_oai_tools(tools)` for 7B+ models.
         let _ = tools; // suppress unused warning
 
+        // 8192 gives reasoning models (Qwen3, DeepSeek-R1-distill, etc.)
+        // enough room to finish a `<think>…</think>` block AND still produce
+        // content. 2048 was getting fully consumed by thinking, leaving
+        // `content: ""` with `finish_reason: length`.
         let body = ChatRequest {
             model: self.model_name.clone(),
             messages: to_oai_messages(messages),
             tools: vec![],
-            max_tokens: Some(2048),
+            max_tokens: Some(8192),
         };
 
         let resp = self
@@ -986,8 +999,34 @@ impl LlmProvider for GgufProvider {
             _ => StopReason::EndTurn,
         };
 
+        let mut content = choice.message.content;
+
+        // Reasoning-model fallback: if the model ran the whole budget inside
+        // `<think>…</think>` (content empty, reasoning_content present, hit
+        // length cap), log it so callers see *why* the response is empty.
+        // Add `/no_think` to prompts to disable thinking on Qwen3-family.
+        if content.as_deref().map(|c| c.is_empty()).unwrap_or(true)
+            && tool_calls.is_empty()
+            && choice.message.reasoning_content.is_some()
+        {
+            let reasoning_len = choice
+                .message
+                .reasoning_content
+                .as_deref()
+                .map(|r| r.len())
+                .unwrap_or(0);
+            tracing::warn!(
+                finish_reason = ?choice.finish_reason,
+                reasoning_chars = reasoning_len,
+                "GGUF model emitted reasoning but no content — \
+                 budget likely exhausted inside <think> block. \
+                 Retry with `/no_think` in the prompt or a higher max_tokens.",
+            );
+            content = Some(String::new());
+        }
+
         Ok(LlmResponse {
-            content: choice.message.content,
+            content,
             tool_calls,
             stop_reason,
             usage: data.usage.map(|u| Usage {

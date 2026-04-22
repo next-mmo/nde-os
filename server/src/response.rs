@@ -41,6 +41,49 @@ pub fn html(body: &str) -> HttpResponse {
 
 // ── Body parsing ────────────────────────────────────────────────────────────
 
+/// Parse a simple multipart/form-data body.
+/// Returns a list of `(field_name, field_bytes)` pairs.
+pub fn parse_multipart(body: &[u8], boundary: &str) -> Vec<(String, Vec<u8>)> {
+    let mut fields = Vec::new();
+    let delimiter = format!("--{}", boundary).into_bytes();
+
+    let parts = body
+        .windows(delimiter.len())
+        .enumerate()
+        .filter(|(_, w)| *w == delimiter.as_slice())
+        .map(|(i, _)| i)
+        .collect::<Vec<_>>();
+
+    for i in 0..parts.len().saturating_sub(1) {
+        let start = parts[i] + delimiter.len();
+        let end = parts[i + 1];
+
+        let mut part = &body[start..end];
+
+        if part.starts_with(b"\r\n") {
+            part = &part[2..];
+        }
+        if part.ends_with(b"\r\n") {
+            part = &part[..part.len() - 2];
+        }
+
+        if let Some(header_end) = part.windows(4).position(|w| w == b"\r\n\r\n") {
+            let headers = String::from_utf8_lossy(&part[..header_end]);
+            let data = part[header_end + 4..].to_vec();
+
+            if let Some(cd_line) = headers.lines().find(|l| l.starts_with("Content-Disposition")) {
+                if let Some(name_start) = cd_line.find("name=\"") {
+                    let after = &cd_line[name_start + 6..];
+                    if let Some(name_end) = after.find('"') {
+                        fields.push((after[..name_end].to_string(), data));
+                    }
+                }
+            }
+        }
+    }
+    fields
+}
+
 /// Read the raw request body as a String.
 pub fn read_body(req: &mut Request) -> Option<String> {
     let mut buf = String::new();

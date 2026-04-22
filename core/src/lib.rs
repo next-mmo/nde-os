@@ -46,6 +46,9 @@ pub mod downloader;
 // Global voice services (Edge TTS + RVC)
 pub mod voice;
 
+// Standalone SRT translation service (provider-pluggable: Google, LLM, NDE Agent)
+pub mod translate;
+
 // Global service registry (onboarding)
 pub mod services;
 

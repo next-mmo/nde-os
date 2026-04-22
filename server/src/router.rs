@@ -318,6 +318,19 @@ pub fn route(req: &mut Request, state: &AppState) -> HttpResponse {
         (Method::Post, "/api/kfa/transcribe-json") => {
             return subsystems::kfa::handle_transcribe_json(req, &state.data_dir)
         }
+        // ── Translate (SRT translation service) ─────────────────────────────
+        (Method::Get, "/api/translate/providers") => {
+            return subsystems::translate::handle_list_providers()
+        }
+        (Method::Post, "/api/translate/srt") => {
+            return subsystems::translate::handle_translate_srt(req, &state.data_dir, &state.rt, &state.llm_manager)
+        }
+        (Method::Post, "/api/translate/srt-multipart") => {
+            return subsystems::translate::handle_translate_srt_multipart(req, &state.data_dir, &state.rt, &state.llm_manager)
+        }
+        (Method::Post, "/api/translate/text") => {
+            return subsystems::translate::handle_translate_text(req, &state.data_dir, &state.rt, &state.llm_manager)
+        }
         _ => {}
     }
 
