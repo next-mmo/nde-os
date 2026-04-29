@@ -7,7 +7,7 @@
   interface Props {
     svc: ServiceStatus | null;
     onClose: () => void;
-    onInstall?: () => void;
+    onInstall?: (customId?: string) => void;
     onConfigOpen?: () => void;
   }
 
@@ -123,6 +123,43 @@
         </div>
       {/if}
 
+      <!-- Whisper Models (only for voice-runtime) -->
+      {#if svc.id === "voice-runtime" && svc.installed}
+        <div class="space-y-1.5">
+          <p class="text-[10px] font-semibold text-white/50 uppercase tracking-wider flex items-center gap-1.5">
+            <Download class="w-3 h-3" /> Whisper Models
+          </p>
+          <div class="grid gap-2">
+            <!-- Base model -->
+            <div class="rounded-lg bg-black/20 border border-white/5 p-3 flex items-center justify-between">
+              <div>
+                <p class="text-[11px] text-white/80 font-medium">Base Model</p>
+                <p class="text-[9px] text-white/40">~140MB - Fast, good for English</p>
+              </div>
+              <button
+                class="flex items-center gap-1.5 rounded-lg bg-blue-600/20 text-blue-400 border border-blue-500/20 px-2.5 py-1 text-[9px] font-medium transition-colors hover:bg-blue-600 hover:text-white"
+                onclick={() => { onInstall?.("whisper-model-base"); onClose(); }}
+              >
+                <Download class="w-3 h-3" /> Download
+              </button>
+            </div>
+            <!-- Large V3 model -->
+            <div class="rounded-lg bg-black/20 border border-white/5 p-3 flex items-center justify-between">
+              <div>
+                <p class="text-[11px] text-white/80 font-medium">Large V3 Model</p>
+                <p class="text-[9px] text-white/40">~1.5GB - Most accurate, multilingual</p>
+              </div>
+              <button
+                class="flex items-center gap-1.5 rounded-lg bg-blue-600/20 text-blue-400 border border-blue-500/20 px-2.5 py-1 text-[9px] font-medium transition-colors hover:bg-blue-600 hover:text-white"
+                onclick={() => { onInstall?.("whisper-model-large-v3"); onClose(); }}
+              >
+                <Download class="w-3 h-3" /> Download
+              </button>
+            </div>
+          </div>
+        </div>
+      {/if}
+
       <!-- Used By -->
       {#if svc.usedBy.length > 0}
         <div class="space-y-1.5">
@@ -175,7 +212,7 @@
       {#if onInstall}
         <button
           class="flex items-center gap-1.5 rounded-lg bg-violet-600 px-3.5 py-1.5 text-[10px] font-medium text-white transition-all hover:bg-violet-500 active:scale-95"
-          onclick={onInstall}
+          onclick={() => onInstall()}
         >
           <Download class="w-3.5 h-3.5" />
           {svc.installed ? "Re-install" : "Install"}

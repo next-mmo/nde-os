@@ -872,6 +872,6 @@
 <ServiceDrawer
   svc={drawerService}
   onClose={() => drawerService = null}
-  onInstall={drawerService ? () => installService(drawerService!.id) : undefined}
+  onInstall={drawerService ? (customId) => { installService(typeof customId === 'string' ? customId : drawerService!.id); drawerService = null; } : undefined}
   onConfigOpen={drawerService ? () => { openConfig(drawerService!.id); drawerService = null; } : undefined}
 />

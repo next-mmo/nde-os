@@ -331,6 +331,10 @@ pub fn route(req: &mut Request, state: &AppState) -> HttpResponse {
         (Method::Post, "/api/translate/text") => {
             return subsystems::translate::handle_translate_text(req, &state.data_dir, &state.rt, &state.llm_manager)
         }
+        // ── Whisper ───────────────────────────────────────────────────────────
+        (Method::Post, "/api/transcript") => {
+            return subsystems::whisper::handle_transcript(req, &state.data_dir, &state.rt)
+        }
         _ => {}
     }
 

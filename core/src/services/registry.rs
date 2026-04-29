@@ -240,6 +240,18 @@ pub fn detect_all(base_dir: &Path) -> Vec<ServiceStatus> {
 /// Install a specific service by ID.
 pub fn install_service(service_id: &str, base_dir: &Path) -> Result<String> {
     match service_id {
+        id if id.starts_with("whisper-model-") => {
+            let model = id.trim_start_matches("whisper-model-");
+            let rt = VoiceRuntime::new(base_dir);
+            if !rt.is_installed() {
+                anyhow::bail!("Voice Runtime must be installed first via Service Hub");
+            }
+            let python = rt.venv_python().context("failed to find Python in voice runtime")?;
+            let mut cmd = std::process::Command::new(python);
+            cmd.arg("-c").arg(format!("import whisper, os; whisper._download(whisper._MODELS['{}'], os.path.expanduser('~/.cache/whisper'), False)", model));
+            crate::voice::runtime::run_checked_command(cmd, &format!("Download whisper {} model", model))?;
+            Ok(format!("Whisper {} model downloaded", model))
+        }
         "voice-runtime" => {
             let rt = VoiceRuntime::new(base_dir);
             let result = rt.install_components(&["core".to_string()])?;
