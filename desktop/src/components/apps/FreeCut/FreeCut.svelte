@@ -132,6 +132,46 @@
   let activePreviewTab = $state<"timeline" | "media">("timeline");
   let previewMediaItem = $state<MediaItem | null>(null);
 
+  // Preview contain-fit sizing (computed via ResizeObserver)
+  let previewWrapperEl = $state<HTMLDivElement | null>(null);
+  let previewFitW = $state(0);
+  let previewFitH = $state(0);
+
+  // Canvas scale: how much to shrink the native-resolution canvas to fit the preview box
+  let previewScale = $derived(
+    currentProject && previewFitW > 0 && previewFitH > 0
+      ? Math.min(previewFitW / currentProject.metadata.width, previewFitH / currentProject.metadata.height)
+      : 1
+  );
+
+  $effect(() => {
+    const el = previewWrapperEl;
+    if (!el || !currentProject) return;
+    const projW = currentProject.metadata.width;
+    const projH = currentProject.metadata.height;
+    function computeFit() {
+      const cs = getComputedStyle(el);
+      const cw = el.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+      const ch = el.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
+      if (cw <= 0 || ch <= 0 || projW <= 0 || projH <= 0) return;
+      const projAR = projW / projH;
+      const containerAR = cw / ch;
+      if (projAR >= containerAR) {
+        // Width-limited (landscape or matching)
+        previewFitW = cw;
+        previewFitH = Math.round(cw / projAR);
+      } else {
+        // Height-limited (portrait)
+        previewFitH = ch;
+        previewFitW = Math.round(ch * projAR);
+      }
+    }
+    computeFit();
+    const ro = new ResizeObserver(computeFit);
+    ro.observe(el);
+    return () => ro.disconnect();
+  });
+
   $effect(() => {
     // Auto-switch to timeline when playback starts
     if (pb.isPlaying && activePreviewTab === "media") {
@@ -2789,17 +2829,17 @@
             <button class="px-3 py-1 rounded-md text-[10px] font-medium transition-colors {activePreviewTab === 'media' ? 'bg-violet-600/90 text-white' : 'text-white/40 hover:bg-white/10 hover:text-white/80'}" onclick={() => activePreviewTab = 'media'} disabled={!previewMediaItem}>Media</button>
           </div>
 
-          <div class="absolute inset-0 flex items-center justify-center p-4">
+          <div class="absolute inset-0 flex items-center justify-center p-4" bind:this={previewWrapperEl}>
             {#if activePreviewTab === 'timeline'}
               <div
                 class="border border-white/5 rounded-sm bg-black shadow-2xl overflow-hidden flex items-center justify-center relative"
-                style="aspect-ratio: {currentProject.metadata.width} / {currentProject.metadata.height}; height: 100%; max-width: 100%; container-type: size;"
+                style="width: {previewFitW}px; height: {previewFitH}px;"
               >
                 <!-- DOM Overlays for real-time preview -->
                 <div class="absolute inset-0 overflow-hidden pointer-events-none">
                   <div 
-                    class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 origin-center"
-                    style="width: {currentProject.metadata.width}px; height: {currentProject.metadata.height}px; transform: scale(min(calc(100cqw / {currentProject.metadata.width}), calc(100cqh / {currentProject.metadata.height})));"
+                    class="absolute origin-top-left"
+                    style="width: {currentProject.metadata.width}px; height: {currentProject.metadata.height}px; top: 0; left: 0; transform: scale({previewScale});"
                   >
                     {#each activePreviewItems as item (item.id)}
                       {@const scale = item.transform?.scale ?? 1}
