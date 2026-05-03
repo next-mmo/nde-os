@@ -7,6 +7,7 @@ pub mod freecut;
 pub mod kfa;
 pub mod translate;
 pub mod whisper;
+pub mod memory;
 
 use serde_json::Value;
 use std::fs;

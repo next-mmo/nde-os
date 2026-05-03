@@ -353,6 +353,22 @@ pub fn route(req: &mut Request, state: &AppState) -> HttpResponse {
         };
     }
 
+    // Memory routes: /api/memory/*
+    if path.starts_with("/api/memory/") {
+        let parts: Vec<&str> = path.trim_start_matches('/').split('/').collect();
+        return match (method.clone(), parts.as_slice()) {
+            (Method::Get, ["api", "memory", "status"]) => subsystems::memory::get_status(&state.memory_substrate),
+            (Method::Post, ["api", "memory", "remember"]) => subsystems::memory::remember(req, &state.memory_substrate),
+            (Method::Post, ["api", "memory", "recall"]) => subsystems::memory::recall(req, &state.memory_substrate),
+            (Method::Get, ["api", "memory", "sessions"]) => subsystems::memory::list_sessions(&state.memory_substrate),
+            (Method::Post, ["api", "memory", "sessions"]) => subsystems::memory::create_session(&state.memory_substrate),
+            (Method::Get, ["api", "memory", "sessions", id]) => subsystems::memory::get_session(id, &state.memory_substrate),
+            (Method::Delete, ["api", "memory", "sessions", id]) => subsystems::memory::delete_session(id, &state.memory_substrate),
+            (Method::Post, ["api", "memory", "consolidate"]) => subsystems::memory::consolidate(&state.memory_substrate),
+            _ => err(404, &format!("Not found: {}", path)),
+        };
+    }
+
     // Agent conversations: /api/agent/conversations/{id}/messages
     if path.starts_with("/api/agent/conversations/") {
         let parts: Vec<&str> = path.trim_start_matches('/').split('/').collect();

@@ -1,8 +1,9 @@
-use ai_launcher_core::memory::types::{AgentId, MemoryFragment};
+use ai_launcher_core::memory::types::{AgentId, MemoryFragment, MemorySource};
 use ai_launcher_core::memory::MemorySubstrate;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
+use std::collections::HashMap;
 use std::path::PathBuf;
-use tauri::State;
+use tauri::Manager;
 
 #[derive(Serialize)]
 pub struct MemoryStatus {
@@ -19,9 +20,9 @@ pub async fn memory_status(
         .app_data_dir()
         .unwrap_or_else(|_| PathBuf::from("."))
         .join("data");
-        
+
     let db_path = data_dir.join("memory.db");
-    
+
     if !db_path.exists() {
         return Ok(MemoryStatus {
             rows: 0,
@@ -29,15 +30,12 @@ pub async fn memory_status(
         });
     }
 
-    let memory = MemorySubstrate::open(&db_path).map_err(|e| e.to_string())?;
-    
-    // In a real implementation this might be more complex
     let db_size_bytes = std::fs::metadata(&db_path)
         .map(|m| m.len())
         .unwrap_or(0);
-        
+
     Ok(MemoryStatus {
-        rows: 0, // Mock rows count if we can't easily query
+        rows: 0,
         db_size_bytes,
     })
 }
@@ -53,16 +51,13 @@ pub async fn memory_recall(
         .app_data_dir()
         .unwrap_or_else(|_| PathBuf::from("."))
         .join("data");
-        
+
     let db_path = data_dir.join("memory.db");
-    
+
     let memory = MemorySubstrate::open(&db_path).map_err(|e| e.to_string())?;
-    
-    // Default agent id for NDE-OS
-    let agent_id = AgentId(uuid::Uuid::nil());
-    
-    let fragments = memory.semantic.recall(agent_id, &query, limit.unwrap_or(5)).map_err(|e| e.to_string())?;
-    
+
+    let fragments = memory.semantic.recall(&query, limit.unwrap_or(5), None).map_err(|e| e.to_string())?;
+
     Ok(fragments)
 }
 
@@ -77,14 +72,19 @@ pub async fn memory_remember(
         .app_data_dir()
         .unwrap_or_else(|_| PathBuf::from("."))
         .join("data");
-        
+
     let db_path = data_dir.join("memory.db");
-    
+
     let memory = MemorySubstrate::open(&db_path).map_err(|e| e.to_string())?;
-    
-    let agent_id = AgentId(uuid::Uuid::nil());
-    
-    memory.semantic.remember(agent_id, &content, &source, "ephemeral", None).map_err(|e| e.to_string())?;
-    
+
+    let agent_id = AgentId::default();
+    let mem_source = match source.as_str() {
+        "user" => MemorySource::User,
+        "conversation" => MemorySource::Conversation,
+        _ => MemorySource::System,
+    };
+
+    memory.semantic.remember(agent_id, &content, mem_source, "ephemeral", HashMap::new()).map_err(|e| e.to_string())?;
+
     Ok(())
 }

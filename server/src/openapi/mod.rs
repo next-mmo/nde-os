@@ -7,6 +7,7 @@ pub mod kfa;
 pub mod translate;
 pub mod schemas;
 pub mod whisper;
+pub mod memory;
 
 use serde_json::{json, Value};
 
@@ -21,6 +22,7 @@ pub fn openapi_spec() -> Value {
     paths.extend(kfa::paths().as_object().unwrap().clone());
     paths.extend(translate::paths().as_object().unwrap().clone());
     paths.extend(whisper::paths().as_object().unwrap().clone());
+    paths.extend(memory::paths().as_object().unwrap().clone());
 
     let mut all_schemas = serde_json::Map::new();
     all_schemas.extend(schemas::components().as_object().unwrap().clone());
@@ -43,7 +45,8 @@ pub fn openapi_spec() -> Value {
             {"name":"agent","description":"Agent chat, conversations, and config"},
             {"name":"kfa","description":"Khmer Forced Aligner — word-level timestamp alignment using wav2vec2 CTC ONNX"},
             {"name":"translate","description":"Standalone SRT translation service with pluggable providers"},
-            {"name":"whisper","description":"Whisper audio transcription operations"}
+            {"name":"whisper","description":"Whisper audio transcription operations"},
+            {"name":"memory","description":"Persistent Memory Substrate operations"}
         ],
         "paths": paths,
         "components": {
