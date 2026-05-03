@@ -212,12 +212,6 @@ function getSavedWallpaper(): string {
   return 'url("/wallpapers/ventura-1.webp")';
 }
 
-function getSavedVikingInstalled(): boolean {
-  try {
-    return localStorage.getItem("ai-launcher:viking-installed") === "true";
-  } catch {}
-  return false;
-}
 
 const createWindow = (
   app_id: WindowAppID | "browser" | "chat",
@@ -271,8 +265,6 @@ export const desktop = $state({
   log_drawer_open: false,
   wallpaper: getSavedWallpaper(),
   notifications: [] as DesktopNotification[],
-  viking_onboard_state: null as { stage: "installing" | "starting" | "ready" | "error"; message: string } | null,
-  viking_is_installed: getSavedVikingInstalled(),
 });
 
 export function addNotification(notif: Omit<DesktopNotification, "id" | "time">) {
@@ -282,11 +274,6 @@ export function addNotification(notif: Omit<DesktopNotification, "id" | "time">)
     time: new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: 'numeric' }).format(new Date()),
   };
   desktop.notifications = [newNotif, ...desktop.notifications];
-}
-
-export function setVikingInstalled() {
-  desktop.viking_is_installed = true;
-  try { localStorage.setItem("ai-launcher:viking-installed", "true"); } catch {}
 }
 
 export function toggleStartExpanded() {

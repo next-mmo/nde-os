@@ -94,44 +94,52 @@ pub fn agent_chat(
     req: &mut Request,
     state: &Mutex<AgentState>,
     llm_manager: &std::sync::Arc<Mutex<ai_launcher_core::llm::manager::LlmManager>>,
+    memory_substrate: &std::sync::Arc<ai_launcher_core::memory::MemorySubstrate>,
 ) -> HttpResponse {
     let chat_req: ChatRequest = match parse_body(req) {
         Ok(r) => r,
         Err(resp) => return resp,
     };
 
-    let state = state.lock().unwrap();
+    let agent_id = ai_launcher_core::memory::types::AgentId(uuid::Uuid::nil());
 
     // Get or create conversation
-    let conv_id = match chat_req.conversation_id {
-        Some(id) => id,
+    let session = match chat_req.conversation_id {
+        Some(id_str) => {
+            if let Ok(id) = uuid::Uuid::parse_str(&id_str) {
+                let s_id = ai_launcher_core::memory::types::SessionId(id);
+                memory_substrate.session.get_session(s_id).unwrap_or(None)
+            } else { None }
+        },
+        None => None,
+    };
+    
+    let mut session = match session {
+        Some(s) => s,
         None => {
-            match state.memory.conversations.create_conversation(
-                &chat_req.message.chars().take(50).collect::<String>(),
-                "nde-chat",
-            ) {
-                Ok(id) => id,
+            match memory_substrate.session.create_session(agent_id) {
+                Ok(mut s) => {
+                    s.label = Some(chat_req.message.chars().take(50).collect());
+                    let _ = memory_substrate.session.save_session(&s);
+                    s
+                },
                 Err(e) => return err(500, &format!("Failed to create conversation: {}", e)),
             }
         }
     };
 
-    // Save user message
-    if let Err(e) = state.memory.conversations.save_message(
-        &conv_id,
-        "user",
-        Some(&chat_req.message),
-        None,
-        None,
-    ) {
-        return err(500, &format!("Failed to save message: {}", e));
-    }
+    let conv_id = session.id.0.to_string();
 
+    // Save user message
+    session.messages.push(ai_launcher_core::memory::types::Message::user(&chat_req.message));
+    let _ = memory_substrate.session.save_session(&session);
+
+    let state_lock = state.lock().unwrap();
     // Build agent runtime and run
     let response_text = {
-        let mut config = state.config.clone();
+        let mut config = state_lock.config.clone();
         sync_model_config(&mut config, llm_manager);
-        state.runtime.block_on(async {
+        state_lock.runtime.block_on(async {
             match agent::AgentRuntime::from_config(config) {
                 Ok(mut runtime) => runtime.run(&chat_req.message).await,
                 Err(e) => Err(e),
@@ -142,11 +150,8 @@ pub fn agent_chat(
     match response_text {
         Ok(text) => {
             // Save assistant response
-            state
-                .memory
-                .conversations
-                .save_message(&conv_id, "assistant", Some(&text), None, None)
-                .ok();
+            session.messages.push(ai_launcher_core::memory::types::Message::assistant(&text));
+            let _ = memory_substrate.session.save_session(&session);
 
             ok(
                 "Chat response",
@@ -178,20 +183,48 @@ pub fn agent_chat(
 }
 
 /// GET /api/agent/conversations — list conversations
-pub fn list_conversations(state: &Mutex<AgentState>) -> HttpResponse {
-    let state = state.lock().unwrap();
-    match state.memory.conversations.list_conversations(50) {
-        Ok(convs) => ok(&format!("{} conversation(s)", convs.len()), convs),
+pub fn list_conversations(memory_substrate: &std::sync::Arc<ai_launcher_core::memory::MemorySubstrate>) -> HttpResponse {
+    let agent_id = ai_launcher_core::memory::types::AgentId(uuid::Uuid::nil());
+    match memory_substrate.session.list_sessions(agent_id) {
+        Ok(sessions) => {
+            let resp: Vec<serde_json::Value> = sessions.into_iter().map(|s| {
+                json!({
+                    "id": s.id.0.to_string(),
+                    "title": s.label.unwrap_or_else(|| "New Chat".into()),
+                    "created_at": chrono::Utc::now().to_rfc3339(), // Approximate
+                    "updated_at": chrono::Utc::now().to_rfc3339(),
+                })
+            }).collect();
+            ok(&format!("{} conversation(s)", resp.len()), serde_json::json!(resp))
+        },
         Err(e) => err(500, &format!("Failed to list conversations: {}", e)),
     }
 }
 
 /// GET /api/agent/conversations/{id}/messages — get conversation history
-pub fn get_conversation_messages(id: &str, state: &Mutex<AgentState>) -> HttpResponse {
-    let state = state.lock().unwrap();
-    match state.memory.conversations.get_messages(id) {
-        Ok(msgs) => ok(&format!("{} message(s)", msgs.len()), msgs),
-        Err(e) => err(500, &format!("Failed to get messages: {}", e)),
+pub fn get_conversation_messages(id: &str, memory_substrate: &std::sync::Arc<ai_launcher_core::memory::MemorySubstrate>) -> HttpResponse {
+    if let Ok(uuid) = uuid::Uuid::parse_str(id) {
+        let session_id = ai_launcher_core::memory::types::SessionId(uuid);
+        match memory_substrate.session.get_session(session_id) {
+            Ok(Some(session)) => {
+                let resp: Vec<serde_json::Value> = session.messages.into_iter().map(|m| {
+                    json!({
+                        "role": match m.role {
+                            ai_launcher_core::memory::types::Role::User => "user",
+                            ai_launcher_core::memory::types::Role::Assistant => "assistant",
+                            ai_launcher_core::memory::types::Role::System => "system",
+                        },
+                        "content": m.content,
+                        "created_at": chrono::Utc::now().to_rfc3339(),
+                    })
+                }).collect();
+                ok(&format!("{} message(s)", resp.len()), serde_json::json!(resp))
+            },
+            Ok(None) => err(404, "Conversation not found"),
+            Err(e) => err(500, &format!("Failed to get messages: {}", e)),
+        }
+    } else {
+        err(400, "Invalid conversation ID format")
     }
 }
 

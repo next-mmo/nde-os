@@ -3,7 +3,7 @@
 /// This module owns Telegram-specific concerns only: config loading, Bot API
 /// DTOs, polling, authorization, and Telegram message/photo delivery.
 use crate::gateway::commands::{self, EmulatorAction};
-use crate::gateway::session::{self, ChatSessions};
+use crate::gateway::session;
 use crate::gateway::GatewayState;
 use crate::router::DesktopActionQueue;
 use ai_launcher_core::agent::manager::AgentManager;
@@ -132,6 +132,7 @@ pub fn start_telegram_gateway(
     state: Arc<GatewayState>,
     log_buffer: super::log::SharedLogBuffer,
     desktop_actions: DesktopActionQueue,
+    memory: Arc<ai_launcher_core::memory::MemorySubstrate>,
 ) {
     if state.running.load(Ordering::SeqCst) {
         println!("  Telegram:    gateway already running, skipping");
@@ -157,7 +158,6 @@ pub fn start_telegram_gateway(
             .expect("Failed to build HTTP client for Telegram");
 
         let mut offset = 0_i64;
-        let mut sessions: ChatSessions = std::collections::HashMap::new();
 
         loop {
             if !state.running.load(Ordering::SeqCst) {
@@ -379,17 +379,41 @@ pub fn start_telegram_gateway(
                                         commands::format_research_response(topic, &raw)
                                     }
                                 } else {
-                                    let prompt = session::build_context(&sessions, chat_id, &text);
+                                    // Use Canonical Memory Substrate for Cross-Channel Session Context
+                                    // Default agent ID for NDE-OS
+                                    let agent_id = ai_launcher_core::memory::types::AgentId(uuid::Uuid::nil());
+                                    
+                                    // Get previous context
+                                    let (summary, recent_messages) = match memory.session.canonical_context(agent_id.clone(), Some(10)) {
+                                        Ok(c) => c,
+                                        Err(e) => {
+                                            tracing::error!("Failed to get canonical context: {}", e);
+                                            (None, vec![])
+                                        }
+                                    };
+                                    
+                                    let prompt = session::build_canonical_context(chat_id, &text, summary, &recent_messages);
+                                    
                                     commands::sync_agent_provider_from_llm(
                                         &agent_manager,
                                         &llm_manager,
                                     )
                                     .await;
-                                    commands::process_with_agent(&prompt, &agent_manager).await
+                                    
+                                    let response = commands::process_with_agent(&prompt, &agent_manager).await;
+                                    
+                                    // Append to Canonical Memory
+                                    let new_messages = vec![
+                                        ai_launcher_core::memory::types::Message::user(text.clone()),
+                                        ai_launcher_core::memory::types::Message::assistant(response.clone()),
+                                    ];
+                                    
+                                    if let Err(e) = memory.session.append_canonical(agent_id, &new_messages, None) {
+                                        tracing::error!("Failed to append canonical messages: {}", e);
+                                    }
+                                    
+                                    response
                                 };
-
-                                session::push_message(&mut sessions, chat_id, "user", &sender, &text);
-                                session::push_message(&mut sessions, chat_id, "assistant", "NDE-OS", &response);
 
                                 if let Err(e) = send_telegram_message(&client, &token, chat_id, &response).await {
                                     tracing::error!(

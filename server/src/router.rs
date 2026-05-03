@@ -38,12 +38,12 @@ pub struct AppState {
     pub llm_manager: Arc<Mutex<LlmManager>>,
     pub data_dir: PathBuf,
     pub agent_manager: Arc<tokio::sync::Mutex<AgentManager>>,
-    pub viking: Arc<Mutex<ai_launcher_core::openviking::VikingProcess>>,
     pub tg_state: Arc<GatewayState>,
     pub log_buffer: SharedLogBuffer,
     pub actor_runner: Arc<tokio::sync::Mutex<ActorRunner>>,
     pub desktop_actions: DesktopActionQueue,
     pub download_engine: Arc<DownloadEngine>,
+    pub memory_substrate: Arc<ai_launcher_core::memory::MemorySubstrate>,
 }
 
 impl AppState {
@@ -113,7 +113,7 @@ pub fn route(req: &mut Request, state: &AppState) -> HttpResponse {
         (Method::Post, "/api/store/upload") => return apps::store_upload(req, &state.mgr),
         // Agent chat
         (Method::Post, "/api/agent/chat") => {
-            return agent::handler::agent_chat(req, &state.agent, &state.llm_manager)
+            return agent::handler::agent_chat(req, &state.agent, &state.llm_manager, &state.memory_substrate)
         }
         (Method::Post, "/api/agent/chat/stream") => {
             return agent::stream::handle_stream_chat(
@@ -122,6 +122,7 @@ pub fn route(req: &mut Request, state: &AppState) -> HttpResponse {
                 &state.agent,
                 &state.llm_manager,
                 Some(&state.agent_manager),
+                &state.memory_substrate,
             );
         }
         (Method::Post, "/api/agent/autocomplete") => {
@@ -135,7 +136,7 @@ pub fn route(req: &mut Request, state: &AppState) -> HttpResponse {
             return agent::stream::list_tasks(&state.agent_manager, &state.rt);
         }
         (Method::Get, "/api/agent/conversations") => {
-            return agent::handler::list_conversations(&state.agent)
+            return agent::handler::list_conversations(&state.memory_substrate)
         }
         (Method::Get, "/api/agent/config") => {
             return agent::handler::agent_config(&state.agent, &state.llm_manager)
@@ -207,28 +208,15 @@ pub fn route(req: &mut Request, state: &AppState) -> HttpResponse {
         // Skills
         (Method::Get, "/api/skills") => return subsystems::list_skills(),
         // Knowledge
-        (Method::Get, "/api/knowledge") => return subsystems::list_knowledge(&state.data_dir),
+        (Method::Get, "/api/knowledge") => return subsystems::list_knowledge(state),
         // Memory
-        (Method::Get, "/api/memory") => return subsystems::list_memory(&state.data_dir),
+        (Method::Get, "/api/memory") => return subsystems::list_memory(state),
         // Kanban static
         (Method::Get, "/api/kanban/tasks") => {
             return kanban::execute_tool("nde_kanban_get_tasks", None)
         }
         (Method::Post, "/api/kanban/tasks") => {
             return kanban::execute_tool("nde_kanban_create_task", Some(req))
-        }
-        // OpenViking
-        (Method::Get, "/api/viking/status") => {
-            return subsystems::viking_status(&state.rt, &state.viking)
-        }
-        (Method::Post, "/api/viking/install") => {
-            return subsystems::viking_install(&state.rt, &state.viking)
-        }
-        (Method::Post, "/api/viking/start") => {
-            return subsystems::viking_start(&state.rt, &state.viking)
-        }
-        (Method::Post, "/api/viking/stop") => {
-            return subsystems::viking_stop(&state.rt, &state.viking)
         }
         // Actors (Shield Actor system)
         (Method::Get, "/api/actors") => return actors::list_actors(&state.data_dir),
@@ -370,7 +358,7 @@ pub fn route(req: &mut Request, state: &AppState) -> HttpResponse {
         let parts: Vec<&str> = path.trim_start_matches('/').split('/').collect();
         return match (method.clone(), parts.as_slice()) {
             (Method::Get, ["api", "agent", "conversations", id, "messages"]) => {
-                agent::handler::get_conversation_messages(id, &state.agent)
+                agent::handler::get_conversation_messages(id, &state.memory_substrate)
             }
             _ => err(404, &format!("Not found: {}", path)),
         };
@@ -428,6 +416,7 @@ pub fn route(req: &mut Request, state: &AppState) -> HttpResponse {
                         state.tg_state.clone(),
                         state.log_buffer.clone(),
                         state.desktop_actions.clone(),
+                        state.memory_substrate.clone(),
                     );
                 } else {
                     state.tg_state.shutdown();
@@ -537,15 +526,24 @@ pub fn route(req: &mut Request, state: &AppState) -> HttpResponse {
     if path.starts_with("/api/knowledge/search") {
         let query = url.split("q=").nth(1).unwrap_or("");
         let decoded = urlencoding::decode(query).unwrap_or_default();
-        return subsystems::search_knowledge(&decoded, &state.data_dir);
+        return subsystems::search_knowledge(&decoded, state);
     }
 
-    // Memory by key: /api/memory/{key}
+    // Memory dynamic routes: /api/memory/...
     if path.starts_with("/api/memory/") {
         let parts: Vec<&str> = path.trim_start_matches('/').split('/').collect();
-        if let ["api", "memory", key] = parts.as_slice() {
-            return subsystems::get_memory(key, &state.data_dir);
-        }
+        return match (method.clone(), parts.as_slice()) {
+            (Method::Post, ["api", "memory", "remember"]) => subsystems::remember_memory(req, state),
+            (Method::Post, ["api", "memory", "recall"]) => subsystems::recall_memory(req, state),
+            (Method::Get, ["api", "memory", "sessions"]) => subsystems::list_sessions(state),
+            (Method::Post, ["api", "memory", "sessions"]) => subsystems::create_session(state),
+            (Method::Get, ["api", "memory", "sessions", id]) => subsystems::get_session(id, state),
+            (Method::Delete, ["api", "memory", "sessions", id]) => subsystems::delete_session(id, state),
+            (Method::Post, ["api", "memory", "consolidate"]) => subsystems::consolidate_memory(state),
+            (Method::Get, ["api", "memory", "status"]) => subsystems::memory_status(state),
+            (Method::Get, ["api", "memory", key]) => subsystems::get_memory(key, state),
+            _ => err(404, &format!("Not found: {}", path)),
+        };
     }
 
     err(404, &format!("Not found: {}", path))

@@ -130,7 +130,6 @@ pub fn set_service_config(
 
 fn config_fields_for(service_id: &str) -> Vec<ConfigField> {
     match service_id {
-        "openviking" => openviking_fields(),
         "rvc" => rvc_fields(),
         "voice-runtime" => voice_runtime_fields(),
         "ffmpeg" => ffmpeg_fields(),
@@ -138,79 +137,6 @@ fn config_fields_for(service_id: &str) -> Vec<ConfigField> {
         "uv" => uv_fields(),
         _ => vec![],
     }
-}
-
-fn openviking_fields() -> Vec<ConfigField> {
-    vec![
-        ConfigField {
-            key: "port".into(),
-            label: "Port".into(),
-            description: "Port the OpenViking server listens on".into(),
-            field_type: ConfigFieldType::Number,
-            default: serde_json::json!(1933),
-            options: vec![],
-            required: true,
-        },
-        ConfigField {
-            key: "embedding_provider".into(),
-            label: "Embedding Provider".into(),
-            description: "Which embedding API to use for dense vectors".into(),
-            field_type: ConfigFieldType::Select,
-            default: serde_json::json!("litellm"),
-            options: vec![
-                "openai".into(),
-                "azure".into(),
-                "ollama".into(),
-                "jina".into(),
-                "gemini".into(),
-                "voyage".into(),
-                "cohere".into(),
-                "litellm".into(),
-                "volcengine".into(),
-                "vikingdb".into(),
-                "minimax".into(),
-            ],
-            required: true,
-        },
-        ConfigField {
-            key: "embedding_model".into(),
-            label: "Embedding Model".into(),
-            description:
-                "Model name for embeddings (e.g. text-embedding-3-large, nomic-embed-text)".into(),
-            field_type: ConfigFieldType::Text,
-            default: serde_json::json!("qwen2.5-0.5b-instruct"),
-            options: vec![],
-            required: true,
-        },
-        ConfigField {
-            key: "embedding_dimension".into(),
-            label: "Embedding Dimension".into(),
-            description: "Vector dimension of the embedding model".into(),
-            field_type: ConfigFieldType::Number,
-            default: serde_json::json!(512),
-            options: vec![],
-            required: true,
-        },
-        ConfigField {
-            key: "embedding_api_key".into(),
-            label: "Embedding API Key".into(),
-            description: "API key for the embedding provider (leave empty for local providers)"
-                .into(),
-            field_type: ConfigFieldType::Password,
-            default: serde_json::json!(""),
-            options: vec![],
-            required: false,
-        },
-        ConfigField {
-            key: "embedding_api_base".into(),
-            label: "Embedding API Base URL".into(),
-            description: "Base URL for the embedding API (e.g. http://127.0.0.1:8090/v1)".into(),
-            field_type: ConfigFieldType::Text,
-            default: serde_json::json!("http://127.0.0.1:8090/v1"),
-            options: vec![],
-            required: false,
-        },
-    ]
 }
 
 fn rvc_fields() -> Vec<ConfigField> {
@@ -320,41 +246,41 @@ mod tests {
         let store = ServiceConfigStore::new(dir.path());
 
         let mut values = HashMap::new();
-        values.insert("port".into(), serde_json::json!(1933));
-        values.insert("embedding_provider".into(), serde_json::json!("openai"));
+        values.insert("model_path".into(), serde_json::json!("/tmp/model.pth"));
+        values.insert("pitch_shift".into(), serde_json::json!(12));
 
-        store.save("openviking", &values).unwrap();
+        store.save("rvc", &values).unwrap();
 
-        let loaded = store.load("openviking").unwrap();
-        assert_eq!(loaded["port"], 1933);
-        assert_eq!(loaded["embedding_provider"], "openai");
+        let loaded = store.load("rvc").unwrap();
+        assert_eq!(loaded["model_path"], "/tmp/model.pth");
+        assert_eq!(loaded["pitch_shift"], 12);
     }
 
     #[test]
     fn test_get_service_config_defaults() {
         let dir = tempfile::tempdir().unwrap();
-        let config = get_service_config("openviking", dir.path()).unwrap();
-        assert_eq!(config.service_id, "openviking");
+        let config = get_service_config("rvc", dir.path()).unwrap();
+        assert_eq!(config.service_id, "rvc");
         assert!(!config.fields.is_empty());
-        assert_eq!(config.values["embedding_provider"], "litellm");
+        assert_eq!(config.values["pitch_shift"], 0);
     }
 
     #[test]
     fn test_get_service_config_with_overrides() {
         let dir = tempfile::tempdir().unwrap();
         let mut values = HashMap::new();
-        values.insert("embedding_provider".into(), serde_json::json!("openai"));
+        values.insert("model_path".into(), serde_json::json!("/tmp/model.pth"));
         values.insert(
-            "embedding_model".into(),
-            serde_json::json!("text-embedding-3-large"),
+            "pitch_shift".into(),
+            serde_json::json!(12),
         );
-        set_service_config("openviking", values, dir.path()).unwrap();
+        set_service_config("rvc", values, dir.path()).unwrap();
 
-        let config = get_service_config("openviking", dir.path()).unwrap();
-        assert_eq!(config.values["embedding_provider"], "openai");
-        assert_eq!(config.values["embedding_model"], "text-embedding-3-large");
+        let config = get_service_config("rvc", dir.path()).unwrap();
+        assert_eq!(config.values["model_path"], "/tmp/model.pth");
+        assert_eq!(config.values["pitch_shift"], 12);
         // Non-overridden fields should still have defaults
-        assert_eq!(config.values["port"], 1933);
+        assert_eq!(config.values["index_path"], "");
     }
 
     #[test]
@@ -369,7 +295,6 @@ mod tests {
     fn test_all_services_have_fields() {
         let dir = tempfile::tempdir().unwrap();
         for id in &[
-            "openviking",
             "rvc",
             "voice-runtime",
             "ffmpeg",

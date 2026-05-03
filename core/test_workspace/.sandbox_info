@@ -1,6 +1,6 @@
 {
   "arch": "x86_64",
-  "created_at": "2026-04-19T18:32:50.025237200+00:00",
+  "created_at": "2026-05-03T15:55:13.990473200+00:00",
   "platform": "windows",
   "readonly_paths": [],
   "sandbox_root": "\\\\?\\C:\\Users\\dila\\Documents\\projects\\nde-os\\core\\test_workspace"

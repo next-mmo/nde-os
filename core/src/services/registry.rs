@@ -4,7 +4,6 @@ use anyhow::{Context, Result};
 use std::path::Path;
 
 use super::types::{ServiceGroup, ServiceStatus};
-use crate::openviking::VikingProcess;
 use crate::voice::runtime::VoiceRuntime;
 
 /// Detect the status of all known NDE-OS services.
@@ -20,11 +19,6 @@ pub fn detect_all(base_dir: &Path) -> Vec<ServiceStatus> {
         || base_dir.join("uv").exists()
         || base_dir.join("uv.exe").exists();
 
-    // OpenViking: detect if the package is installed in the workspace venv
-    let viking_config = crate::openviking::config::VikingConfig::from_service_config(base_dir);
-    let viking_port = viking_config.port;
-    let viking_process = VikingProcess::new(viking_config, base_dir);
-    let viking_installed = viking_process.is_installed_sync();
 
     let vision_rt = crate::freecut::vision::VisionRuntime::new(base_dir);
     let vision_installed = vision_rt.is_installed();
@@ -144,22 +138,6 @@ pub fn detect_all(base_dir: &Path) -> Vec<ServiceStatus> {
             },
         },
         ServiceStatus {
-            id: "openviking".to_string(),
-            name: "OpenViking".to_string(),
-            description: "Context database for agent memory, resources & skills (semantic search, virtual FS)".to_string(),
-            group: ServiceGroup::Ai,
-            installed: viking_installed,
-            version: None,
-            path: None,
-            used_by: vec!["Agent Chat".to_string(), "MCP Tools".to_string()],
-            optional: false,
-            details: if viking_installed {
-                Some(format!("Port {}", viking_port))
-            } else {
-                Some("Not installed — will auto-install on first boot".to_string())
-            },
-        },
-        ServiceStatus {
             id: "ai-vision-runtime".to_string(),
             name: "AI Vision Runtime".to_string(),
             description: "On-device AI vision models for automatic background removal and tracking (rembg)".to_string(),
@@ -273,23 +251,6 @@ pub fn install_service(service_id: &str, base_dir: &Path) -> Result<String> {
             crate::uv_env::ensure_uv(base_dir)?;
             Ok("uv bootstrapped successfully".to_string())
         }
-        "openviking" => {
-            let config = crate::openviking::config::VikingConfig::from_service_config(base_dir);
-            let vp = VikingProcess::new(config, base_dir);
-            let rt = tokio::runtime::Handle::try_current()
-                .map(|_| None)
-                .unwrap_or_else(|_| Some(tokio::runtime::Runtime::new().expect("tokio runtime")));
-            let result = if let Some(ref rt) = rt {
-                rt.block_on(vp.ensure_installed())
-            } else {
-                // We're inside spawn_blocking called from an async runtime
-                tokio::task::block_in_place(|| {
-                    tokio::runtime::Handle::current().block_on(vp.ensure_installed())
-                })
-            };
-            result?;
-            Ok("OpenViking installed successfully".to_string())
-        }
         "ai-vision-runtime" => {
             let rt = crate::freecut::vision::VisionRuntime::new(base_dir);
             rt.install()?;
@@ -387,7 +348,6 @@ mod tests {
         assert!(ids.contains(&"python"));
         assert!(ids.contains(&"uv"));
         assert!(ids.contains(&"rvc"));
-        assert!(ids.contains(&"openviking"));
         assert!(ids.contains(&"ai-vision-runtime"));
         assert!(ids.contains(&"demucs"));
         assert!(ids.contains(&"ldplayer"));

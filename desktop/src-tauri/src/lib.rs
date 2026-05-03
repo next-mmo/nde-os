@@ -1,12 +1,11 @@
 mod commands;
 mod state;
 
-use ai_launcher_core::openviking::{config::VikingConfig, VikingProcess};
 use ai_launcher_core::shield::launcher::BrowserLauncher;
 use ai_launcher_core::shield::ldplayer_db::LdPlayerStore;
 use ai_launcher_core::voice::runtime::VoiceRuntime;
 use commands::freecut::FreeCutState;
-use commands::service_hub::{VikingState, VoiceRuntimeState};
+use commands::service_hub::VoiceRuntimeState;
 use commands::shield::{ShieldLauncherState, ShieldLdPlayerState};
 use commands::workspace::WorkspaceState;
 use state::AppState;
@@ -46,11 +45,6 @@ pub fn run() {
     // FreeCut video editor state
     let freecut_state = FreeCutState::new(&base_dir).expect("Failed to initialize FreeCut state");
 
-    // Viking context database process state
-    let viking_config = VikingConfig::from_service_config(&base_dir);
-    let viking_state = VikingState {
-        process: Arc::new(Mutex::new(VikingProcess::new(viking_config, &base_dir))),
-    };
 
     // LDPlayer emulator DB store
     let ld_player_state = ShieldLdPlayerState {
@@ -86,7 +80,6 @@ pub fn run() {
         .manage(shield_launcher)
         .manage(voice_runtime_state)
         .manage(freecut_state)
-        .manage(viking_state)
         .manage(workspace_state)
         .manage(ld_player_state)
         .manage(commands::pty::PtyState::new())
@@ -224,11 +217,6 @@ pub fn run() {
             commands::service_hub::service_hub_set_config,
             commands::service_hub::voice_runtime_status,
             commands::service_hub::voice_runtime_install,
-            // openviking
-            commands::viking::viking_status,
-            commands::viking::viking_install,
-            commands::viking::viking_start,
-            commands::viking::viking_stop,
             // workspace
             commands::workspace::get_workspace,
             commands::workspace::set_workspace,
@@ -245,6 +233,10 @@ pub fn run() {
             commands::settings::set_global_settings,
             // update checker
             commands::updater::check_for_updates,
+            // memory
+            commands::memory::memory_status,
+            commands::memory::memory_recall,
+            commands::memory::memory_remember,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

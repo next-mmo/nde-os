@@ -185,6 +185,7 @@ pub fn handle_stream_chat(
     agent_state: &Mutex<super::handler::AgentState>,
     llm_manager: &Arc<Mutex<ai_launcher_core::llm::manager::LlmManager>>,
     manager: Option<&Arc<tokio::sync::Mutex<AgentManager>>>,
+    memory_substrate: &std::sync::Arc<ai_launcher_core::memory::MemorySubstrate>,
 ) -> HttpResponse {
     // If AgentManager is available, use the new task-based streaming
     if let Some(manager) = manager {
@@ -193,29 +194,39 @@ pub fn handle_stream_chat(
             Err(resp) => return resp,
         };
 
+        let agent_id = ai_launcher_core::memory::types::AgentId(uuid::Uuid::nil());
+
         // Save to conversation store
-        let conv_id = {
-            let state = agent_state.lock().unwrap();
-            let conv_id = match chat_req.conversation_id {
-                Some(id) => id,
-                None => state
-                    .memory
-                    .conversations
-                    .create_conversation(
-                        &chat_req.message.chars().take(50).collect::<String>(),
-                        "nde-chat",
-                    )
-                    .unwrap_or_else(|_| uuid::Uuid::new_v4().to_string()),
+        let mut session = {
+            let s = match &chat_req.conversation_id {
+                Some(id_str) => {
+                    if let Ok(id) = uuid::Uuid::parse_str(id_str) {
+                        let s_id = ai_launcher_core::memory::types::SessionId(id);
+                        memory_substrate.session.get_session(s_id).unwrap_or(None)
+                    } else { None }
+                },
+                None => None,
             };
-            let _ = state.memory.conversations.save_message(
-                &conv_id,
-                "user",
-                Some(&chat_req.message),
-                None,
-                None,
-            );
-            conv_id
+
+            let mut session = match s {
+                Some(s) => s,
+                None => {
+                    match memory_substrate.session.create_session(agent_id) {
+                        Ok(mut s) => {
+                            s.label = Some(chat_req.message.chars().take(50).collect());
+                            let _ = memory_substrate.session.save_session(&s);
+                            s
+                        },
+                        Err(_) => return err(500, "Failed to create conversation"),
+                    }
+                }
+            };
+
+            session.messages.push(ai_launcher_core::memory::types::Message::user(&chat_req.message));
+            let _ = memory_substrate.session.save_session(&session);
+            session
         };
+        let conv_id = session.id.0.to_string();
 
         let manager = manager.clone();
         let message = chat_req.message.clone();
@@ -267,14 +278,8 @@ pub fn handle_stream_chat(
 
             // Save assistant response
             if !final_output.is_empty() {
-                let state = agent_state.lock().unwrap();
-                let _ = state.memory.conversations.save_message(
-                    &conv_id,
-                    "assistant",
-                    Some(&final_output),
-                    None,
-                    None,
-                );
+                session.messages.push(ai_launcher_core::memory::types::Message::assistant(&final_output));
+                let _ = memory_substrate.session.save_session(&session);
             }
 
             Ok::<Vec<u8>, anyhow::Error>(sse_data)
@@ -300,7 +305,7 @@ pub fn handle_stream_chat(
     }
 
     // Fallback: old behavior (no AgentManager)
-    fallback_stream_chat(req, rt, agent_state, llm_manager)
+    fallback_stream_chat(req, rt, agent_state, llm_manager, memory_substrate)
 }
 
 /// Fallback for when AgentManager is not available (legacy compat).
@@ -309,6 +314,7 @@ fn fallback_stream_chat(
     runtime: &tokio::runtime::Runtime,
     agent_state: &Mutex<super::handler::AgentState>,
     llm_manager: &Arc<Mutex<ai_launcher_core::llm::manager::LlmManager>>,
+    memory_substrate: &std::sync::Arc<ai_launcher_core::memory::MemorySubstrate>,
 ) -> HttpResponse {
     let chat_req: StreamChatRequest = match parse_body(req) {
         Ok(r) => r,
@@ -321,25 +327,37 @@ fn fallback_stream_chat(
 
     let message = chat_req.message.clone();
 
-    let conv_id = match chat_req.conversation_id {
-        Some(id) => id,
-        None => state
-            .memory
-            .conversations
-            .create_conversation(
-                &chat_req.message.chars().take(50).collect::<String>(),
-                "nde-chat",
-            )
-            .unwrap_or_else(|_| uuid::Uuid::new_v4().to_string()),
-    };
+    let agent_id = ai_launcher_core::memory::types::AgentId(uuid::Uuid::nil());
+    let mut session = {
+        let s = match &chat_req.conversation_id {
+            Some(id_str) => {
+                if let Ok(id) = uuid::Uuid::parse_str(id_str) {
+                    let s_id = ai_launcher_core::memory::types::SessionId(id);
+                    memory_substrate.session.get_session(s_id).unwrap_or(None)
+                } else { None }
+            },
+            None => None,
+        };
 
-    let _ = state.memory.conversations.save_message(
-        &conv_id,
-        "user",
-        Some(&chat_req.message),
-        None,
-        None,
-    );
+        let mut session = match s {
+            Some(s) => s,
+            None => {
+                match memory_substrate.session.create_session(agent_id) {
+                    Ok(mut s) => {
+                        s.label = Some(chat_req.message.chars().take(50).collect());
+                        let _ = memory_substrate.session.save_session(&s);
+                        s
+                    },
+                    Err(_) => return err(500, "Failed to create conversation"),
+                }
+            }
+        };
+
+        session.messages.push(ai_launcher_core::memory::types::Message::user(&chat_req.message));
+        let _ = memory_substrate.session.save_session(&session);
+        session
+    };
+    let conv_id = session.id.0.to_string();
 
     let result: Result<String, anyhow::Error> = runtime.block_on(async {
         match ai_launcher_core::agent::AgentRuntime::from_config(config) {
@@ -350,11 +368,8 @@ fn fallback_stream_chat(
 
     match result {
         Ok(response_text) => {
-            state
-                .memory
-                .conversations
-                .save_message(&conv_id, "assistant", Some(&response_text), None, None)
-                .ok();
+            session.messages.push(ai_launcher_core::memory::types::Message::assistant(&response_text));
+            let _ = memory_substrate.session.save_session(&session);
 
             let mut sse_data = Vec::new();
             for word in response_text.split_inclusive(' ') {

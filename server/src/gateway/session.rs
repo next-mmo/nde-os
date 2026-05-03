@@ -1,50 +1,30 @@
 /// Per-gateway chat session management.
 ///
-/// Maintains isolated conversation history per chat_id, reusable across
-/// any gateway transport (Telegram, Discord, WhatsApp, etc.).
-use std::collections::HashMap;
+/// Formats cross-channel memory for Telegram.
 
-const MAX_HISTORY: usize = 20;
-
-pub(crate) struct ChatMessage {
-    pub role: &'static str,
-    pub sender: String,
-    pub text: String,
-}
-
-pub(crate) type ChatSessions = HashMap<i64, Vec<ChatMessage>>;
-
-pub(crate) fn push_message(
-    sessions: &mut ChatSessions,
+pub(crate) fn build_canonical_context(
     chat_id: i64,
-    role: &'static str,
-    sender: &str,
-    text: &str,
-) {
-    let history = sessions.entry(chat_id).or_default();
-    history.push(ChatMessage {
-        role,
-        sender: sender.to_string(),
-        text: text.to_string(),
-    });
-    if history.len() > MAX_HISTORY {
-        let drain_count = history.len() - MAX_HISTORY;
-        history.drain(..drain_count);
+    current_msg: &str,
+    summary: Option<String>,
+    recent_messages: &[ai_launcher_core::memory::types::Message],
+) -> String {
+    let mut ctx = String::from("[Cross-Channel Memory Context]\n");
+    if let Some(s) = summary {
+        ctx.push_str(&format!("[Previous Summary]\n{}\n\n", s));
     }
-}
-
-pub(crate) fn build_context(sessions: &ChatSessions, chat_id: i64, current_msg: &str) -> String {
-    if let Some(history) = sessions.get(&chat_id) {
-        if history.is_empty() {
-            return current_msg.to_string();
+    
+    if !recent_messages.is_empty() {
+        ctx.push_str("[Recent History]\n");
+        for msg in recent_messages {
+            let role_str = match msg.role {
+                ai_launcher_core::memory::types::Role::User => "User",
+                ai_launcher_core::memory::types::Role::Assistant => "Assistant",
+                ai_launcher_core::memory::types::Role::System => "System",
+            };
+            ctx.push_str(&format!("{}: {}\n", role_str, msg.content));
         }
-        let mut ctx = String::from("[Conversation context for this chat]\n");
-        for msg in history.iter() {
-            ctx.push_str(&format!("{} ({}): {}\n", msg.role, msg.sender, msg.text));
-        }
-        ctx.push_str(&format!("\n[Current message]\n{}", current_msg));
-        ctx
-    } else {
-        current_msg.to_string()
+        ctx.push_str("\n");
     }
+    ctx.push_str(&format!("[Current Message (from Telegram chat_id: {})]\n{}", chat_id, current_msg));
+    ctx
 }

@@ -291,54 +291,16 @@ fn register_tools(server: &mut McpServer) {
         }),
     );
 
-    // ── OpenViking context tools ────────────────────────────────────────
-    server.register_tool(
-        "nde_viking_find",
-        "Semantic search across the OpenViking context database. Searches memories, resources, and skills using directory-recursive retrieval.",
-        json!({
-            "type": "object",
-            "properties": {
-                "query": { "type": "string", "description": "Search query for semantic retrieval" }
-            },
-            "required": ["query"]
-        }),
-    );
-
-    server.register_tool(
-        "nde_viking_read",
-        "Read content from the OpenViking context database at a viking:// URI. Supports tiered access: L0 (abstract ~100 tokens), L1 (overview ~2k tokens), L2 (full content).",
-        json!({
-            "type": "object",
-            "properties": {
-                "uri": { "type": "string", "description": "Viking URI (e.g., viking://resources/docs/api.md)" },
-                "tier": { "type": "string", "enum": ["abstract", "overview", "full"], "description": "Content tier: abstract (L0), overview (L1), or full (L2, default)" }
-            },
-            "required": ["uri"]
-        }),
-    );
-
-    server.register_tool(
-        "nde_viking_ls",
-        "List contents at a viking:// URI. Browse the virtual filesystem of agent context (resources, user memories, agent skills).",
-        json!({
-            "type": "object",
-            "properties": {
-                "uri": { "type": "string", "description": "Viking URI to list (e.g., viking://resources/, viking://user/memories/)" },
-                "recursive": { "type": "boolean", "description": "List recursively (default: false)" }
-            },
-            "required": ["uri"]
-        }),
-    );
 }
 
 /// Get the list of built-in MCP server info for the API.
 pub fn builtin_server_info() -> Vec<serde_json::Value> {
     vec![json!({
         "name": "nde-os-tools",
-        "description": "NDE-OS built-in sandboxed tools — filesystem, shell, code analysis, web browsing, git, memory, knowledge graph, OpenViking context database, and system management",
+        "description": "NDE-OS built-in sandboxed tools — filesystem, shell, code analysis, web browsing, git, memory, knowledge graph, and system management",
         "transport": "stdio",
         "status": "running",
-        "tools_count": 22,
+        "tools_count": 19,
         "version": "0.2.0"
     })]
 }
@@ -385,7 +347,7 @@ mod tests {
             .unwrap();
         let parsed: serde_json::Value = serde_json::from_str(&resp).unwrap();
         let tools = parsed["result"]["tools"].as_array().unwrap();
-        assert!(tools.len() >= 22, "Expected 22+ tools, got {}", tools.len());
+        assert!(tools.len() >= 19, "Expected 19+ tools, got {}", tools.len());
     }
 
     #[test]
@@ -418,7 +380,7 @@ mod tests {
             .unwrap();
         let parsed: serde_json::Value = serde_json::from_str(&resp).unwrap();
         let tools = parsed["result"]["tools"].as_array().unwrap();
-        assert!(tools.len() >= 22, "Expected 22+ tools, got {}", tools.len());
+        assert!(tools.len() >= 19, "Expected 19+ tools, got {}", tools.len());
 
         // Clean up
         std::fs::remove_dir_all(&tmp).ok();

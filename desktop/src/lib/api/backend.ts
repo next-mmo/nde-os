@@ -20,7 +20,6 @@ import type {
   SkillInfo,
   KnowledgeEntry,
   MemoryEntry,
-  VikingStatus,
   ServiceConfig,
 } from "./types";
 import type { StoreUploadRequest, StoreUploadResult } from "./types";
@@ -110,11 +109,6 @@ async function httpFallback<T>(command: string, args?: Record<string, unknown>):
     // Memory
     list_memory:     { method: "GET",    url: `/api/memory` },
     get_memory:      { method: "GET",    url: `/api/memory/${args?.key}` },
-    // OpenViking
-    viking_status:   { method: "GET",    url: `/api/viking/status` },
-    viking_install:  { method: "POST",   url: `/api/viking/install` },
-    viking_start:    { method: "POST",   url: `/api/viking/start` },
-    viking_stop:     { method: "POST",   url: `/api/viking/stop` },
     // Kanban
     kanban_get_tasks:   { method: "GET",    url: `/api/kanban/tasks` },
     kanban_create_task: { method: "POST",   url: `/api/kanban/tasks`, body: { title: args?.title, description: args?.description, checklist: args?.checklist } },
@@ -432,24 +426,6 @@ export async function listMemory(): Promise<MemoryEntry[]> {
 
 export async function getMemory(key: string): Promise<MemoryEntry | null> {
   return smartInvoke<MemoryEntry | null>("get_memory", { key });
-}
-
-// ── OpenViking ──
-
-export async function vikingStatus(): Promise<VikingStatus> {
-  return smartInvoke<VikingStatus>("viking_status");
-}
-
-export async function vikingInstall(): Promise<boolean> {
-  return smartInvoke<boolean>("viking_install");
-}
-
-export async function vikingStart(): Promise<VikingStatus> {
-  return smartInvoke<VikingStatus>("viking_start");
-}
-
-export async function vikingStop(): Promise<VikingStatus> {
-  return smartInvoke<VikingStatus>("viking_stop");
 }
 
 // ── Service Config ──

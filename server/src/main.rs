@@ -108,11 +108,6 @@ const ROUTES: &str = "\
     GET    /api/memory                    <- real KvStore
     GET    /api/memory/{key}
 
-  OpenViking:
-    GET    /api/viking/status              <- context database
-    POST   /api/viking/install             <- install via uv/pip
-    POST   /api/viking/start               <- start server
-    POST   /api/viking/stop                <- stop server
 
   Kanban:
     GET    /api/kanban/tasks                <- list all tasks
@@ -248,6 +243,25 @@ fn main() {
     // Desktop action queue (shared between gateway and REST API)
     let desktop_actions: router::DesktopActionQueue = Arc::new(Mutex::new(Vec::new()));
 
+    // Memory Substrate
+    let memory_db_path = base_dir.join("memory.db");
+    let memory_substrate = Arc::new(ai_launcher_core::memory::MemorySubstrate::open(&memory_db_path).expect("Failed to init MemorySubstrate"));
+    println!("  Memory:      initialized (MemorySubstrate)");
+
+    // Start memory consolidation background task (runs every hour)
+    {
+        let memory = memory_substrate.clone();
+        rt.spawn(async move {
+            let mut interval = tokio::time::interval(std::time::Duration::from_secs(3600));
+            loop {
+                interval.tick().await;
+                if let Err(e) = memory.consolidation.consolidate() {
+                    eprintln!("  Memory consolidation failed: {}", e);
+                }
+            }
+        });
+    }
+
     // Telegram gateway
     let tg_state = Arc::new(gateway::GatewayState::new());
 
@@ -260,6 +274,7 @@ fn main() {
             tg_state.clone(),
             log_buffer.clone(),
             desktop_actions.clone(),
+            memory_substrate.clone(),
         );
     } else {
         println!("  Telegram:    not configured (set via Channels settings)");
@@ -267,10 +282,6 @@ fn main() {
 
     gateway::log_info(&log_buffer, "system", "NDE-OS server started");
 
-    // OpenViking
-    let viking_config = ai_launcher_core::openviking::VikingConfig::from_service_config(&base_dir);
-    let viking_process = ai_launcher_core::openviking::VikingProcess::new(viking_config, &base_dir);
-    let viking = Arc::new(Mutex::new(viking_process));
 
     // Actor Runner (Shield Actor system)
     let actor_runner = Arc::new(tokio::sync::Mutex::new(ActorRunner::new(&base_dir)));
@@ -291,12 +302,12 @@ fn main() {
         llm_manager,
         data_dir: base_dir.clone(),
         agent_manager,
-        viking,
         tg_state,
         log_buffer,
         actor_runner,
         desktop_actions,
         download_engine,
+        memory_substrate,
     });
 
     let server = Server::http("0.0.0.0:8080").expect("Failed to bind :8080");

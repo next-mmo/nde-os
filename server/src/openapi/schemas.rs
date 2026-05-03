@@ -33,35 +33,6 @@ pub fn components() -> Value {
         "ConversationSummary":{"type":"object","properties":{"id":{"type":"string"},"title":{"type":"string"},"channel":{"type":"string"},"created_at":{"type":"string"},"updated_at":{"type":"string"}}},
         "StoredMessage":{"type":"object","properties":{"id":{"type":"integer"},"role":{"type":"string"},"content":{"type":"string","nullable":true},"tool_calls":{"type":"string","nullable":true},"tool_call_id":{"type":"string","nullable":true},"created_at":{"type":"string"}}},
         "AgentConfigInfo":{"type":"object","properties":{"name":{"type":"string"},"provider":{"type":"string"},"model":{"type":"string"},"max_iterations":{"type":"integer"},"tools":{"type":"array","items":{"type":"string"}},"workspace":{"type":"string"}}},
-        "VikingStatusResponse":{
-            "type":"object",
-            "properties":{
-                "connected":{"type":"boolean","description":"True when the OpenViking HTTP API is reachable on localhost:1933"},
-                "process_managed":{"type":"boolean","description":"True when NDE-OS spawned and owns the openviking-server process"},
-                "status":{"description":"Raw status object from GET /api/v1/system/status (present only when connected)","nullable":true},
-                "message":{"type":"string","description":"Human-readable hint when not connected","nullable":true}
-            }
-        },
-        "VikingInstallResponse":{
-            "type":"object",
-            "properties":{
-                "installed":{"type":"boolean","description":"True if openviking-server is now available on PATH"}
-            }
-        },
-        "VikingStartResponse":{
-            "type":"object",
-            "properties":{
-                "running":{"type":"boolean"},
-                "port":{"type":"integer","example":1933},
-                "url":{"type":"string","example":"http://localhost:1933"}
-            }
-        },
-        "VikingStopResponse":{
-            "type":"object",
-            "properties":{
-                "running":{"type":"boolean","example":false}
-            }
-        },
         "KfaAlignJsonRequest":{
             "type":"object",
             "required":["audio_base64","text"],

@@ -15,8 +15,6 @@ pub struct VoiceRuntimeState {
     pub runtime: VoiceRuntime,
 }
 
-// Re-export VikingState so lib.rs can use it from a single module
-pub use crate::commands::viking::VikingState;
 
 // ─── Service Hub Commands ──────────────────────────────────────────────────────
 

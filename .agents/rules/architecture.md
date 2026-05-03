@@ -12,7 +12,7 @@ It uses a Rust workspace allowing `core/` to power both a headless `server/` and
 ## Agent Runtime & Channels
 - **State Machine**: Autonomous agent loop handling Thinking, Acting, and Observing.
 - **Channels**: Connected via REST/Tauri-IPC. Includes Desktop Chat and Telegram bot (`teloxide`).
-- **Memory**: Persistent cross-channel memory (`sqlite`), and vector embeddings (`sqlite-vec`).
+- **Memory**: Unified `MemorySubstrate` handling SQLite-backed structured (KV), semantic (vector embeddings), and knowledge graph stores. Supports cross-channel canonical sessions, automatic LLM-based compaction, and fast MsgPack serialization.
 - **Tools**: Includes `file_read`, `file_write`, `shell_exec`. Connects to external MCP clients/servers.
 - **Skills**: Discovers `.md` skill files providing extra workflows.
 - **Security**: Prompt injection scanning, cryptographically secure audit trails, and strict sandbox constraints.

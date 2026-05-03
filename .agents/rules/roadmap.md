@@ -175,7 +175,7 @@ Phase 0.5    Desktop migration (Tauri 2) ← CURRENT
 Phase 0.6    License server (Axum + Ed25519)
 Phase 0.7    Server-side logic split + client hardening
 Phase 1      Agent runtime (loop, LLM drivers, tools)
-Phase 2      Memory & tools (SQLite, MCP, 20+ built-in)
+Phase 2  ✅  Memory & tools (SQLite-backed substrate, canonical sessions)
 Phase 3      Workflows & orchestration (DAG, sub-agents)
 Phase 4      Channels & autonomy (Telegram, Discord, cron)
 Phase 5      Compatibility & ecosystem (OpenFang/DeerFlow skills)

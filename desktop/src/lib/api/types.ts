@@ -260,12 +260,3 @@ export interface ServiceConfig {
   values: Record<string, unknown>;
 }
 
-// ── OpenViking types ────────────────────────────────────────────────────────
-
-export interface VikingStatus {
-  connected: boolean;
-  process_managed: boolean;
-  port: number;
-  status?: Record<string, unknown>;
-  message?: string;
-}

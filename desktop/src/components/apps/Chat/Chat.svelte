@@ -20,11 +20,11 @@
     { cmd: "/todo_add",     emoji: "✅", label: "Add a new todo task",          example: "/todo_add Buy groceries" },
     { cmd: "/todo_list",    emoji: "📋", label: "List all kanban tasks",        example: "/todo_list" },
     { cmd: "/todo_done",    emoji: "✔️", label: "Mark a task as done",          example: "/todo_done my-task.md" },
-    { cmd: "/openviking",   emoji: "🕹️", label: "OpenViking server control",    example: "/openviking status" },
     { cmd: "/apps",         emoji: "🚀", label: "List or manage installed apps", example: "/apps" },
     { cmd: "/system",       emoji: "💻", label: "Show system info & resources",  example: "/system" },
     { cmd: "/files",        emoji: "📁", label: "List workspace files",         example: "/files" },
     { cmd: "/shell",        emoji: "🖥️", label: "Run a sandbox shell command",  example: "/shell ls -la" },
+    { cmd: "/memory",       emoji: "🧠", label: "Query persistent memory",      example: "/memory check status" },
     { cmd: "/help",         emoji: "❓", label: "Show all available commands",   example: "/help" },
   ] as const;
 
@@ -120,10 +120,6 @@
 
   /** Translate slash commands and @mentions to full agent prompts */
   function resolveSlashCommand(text: string): string {
-    if (text === "/openviking" || text.startsWith("/openviking ")) {
-      const sub = text.slice("/openviking".length).trim() || "status";
-      return `OpenViking action: ${sub}. Use the http_fetch tool to check http://127.0.0.1:3000/health for server status, or the shell_exec tool to check if the openviking-server process is running. Report the full status.`;
-    }
     if (text === "/apps" || text.startsWith("/apps ")) {
       return `List all installed NDE-OS apps and their status. Use the app_list tool with include_catalog=true.`;
     }
@@ -137,6 +133,13 @@
     if (text.startsWith("/shell ")) {
       const cmd = text.slice("/shell ".length).trim();
       return `Run this shell command inside the NDE-OS sandbox: ${cmd}. Use the shell_exec tool. Show the full output.`;
+    }
+    if (text === "/memory" || text.startsWith("/memory ")) {
+      const query = text.slice("/memory".length).trim();
+      if (query) {
+          return `Search persistent memory for: "${query}". Use the memory_recall tool to fetch relevant context.`;
+      }
+      return `Check the status of the persistent memory substrate. Use the memory_status tool.`;
     }
     if (text === "/help") {
       const cmdList = SLASH_COMMANDS.map(c => "  " + c.emoji + " " + c.cmd + " — " + c.label + " (example: " + c.example + ")").join("\n");
@@ -636,14 +639,14 @@
             <button class="suggestion" onclick={() => sendMessage("/todo_list")}>
               📋 /todo_list
             </button>
-            <button class="suggestion" onclick={() => sendMessage("/openviking status")}>
-              🕹️ /openviking
-            </button>
             <button class="suggestion" onclick={() => sendMessage("/apps")}>
               🚀 /apps
             </button>
             <button class="suggestion" onclick={() => sendMessage("/system")}>
               💻 /system
+            </button>
+            <button class="suggestion" onclick={() => sendMessage("/memory")}>
+              🧠 /memory
             </button>
             <button class="suggestion" onclick={() => sendMessage("/help")}>
               ❓ /help

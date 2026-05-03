@@ -16,11 +16,11 @@ use std::path::Path;
 
 /// Convert a core Entity to a JSON value.
 /// Used by both list_knowledge and search_knowledge to avoid duplication.
-fn entity_to_json(e: &ai_launcher_core::knowledge::Entity) -> serde_json::Value {
+fn entity_to_json(e: &ai_launcher_core::memory::types::Entity) -> serde_json::Value {
     serde_json::json!({
         "id": e.id,
         "key": e.name,
-        "value": e.metadata,
+        "value": e.properties,
         "category": e.entity_type,
     })
 }
@@ -265,68 +265,60 @@ pub fn list_skills() -> HttpResponse {
 // ── Knowledge ───────────────────────────────────────────────────────────────
 
 /// GET /api/knowledge — list all knowledge entries from real KnowledgeGraph.
-pub fn list_knowledge(data_dir: &Path) -> HttpResponse {
-    let db_path = data_dir.join("knowledge.db");
-    match ai_launcher_core::knowledge::KnowledgeGraph::new(&db_path) {
-        Ok(kg) => {
-            let mut all_entities = Vec::new();
-            for entity_type in &[
-                "app",
-                "concept",
-                "project",
-                "architecture",
-                "security",
-                "llm",
-                "plugins",
-                "channels",
-            ] {
-                if let Ok(entities) = kg.find_by_type(entity_type) {
-                    all_entities.extend(entities);
-                }
-            }
-            if let Ok(entities) = kg.search("%") {
-                for entity in entities {
-                    if !all_entities
-                        .iter()
-                        .any(|e: &ai_launcher_core::knowledge::Entity| e.id == entity.id)
-                    {
-                        all_entities.push(entity);
-                    }
-                }
-            }
+pub fn list_knowledge(state: &crate::router::AppState) -> HttpResponse {
+    let mut all_entities = Vec::new();
+    let kg = &state.memory_substrate.knowledge;
 
-            let entries: Vec<serde_json::Value> = all_entities.iter().map(entity_to_json).collect();
-            ok(&format!("{} knowledge entries", entries.len()), entries)
-        }
-        Err(e) => {
-            eprintln!("Knowledge graph error: {}", e);
-            ok("0 knowledge entries", serde_json::json!([]))
+    // Pattern match to get all entities (or implement a list method if we had one)
+    // For now we'll simulate the search by querying all nodes up to a certain limit
+    if let Ok(matches) = kg.query_graph(ai_launcher_core::memory::types::GraphPattern {
+        source: None,
+        relation: None,
+        target: None,
+        max_depth: 1,
+    }) {
+        for m in matches {
+            if !all_entities.iter().any(|e: &ai_launcher_core::memory::types::Entity| e.id == m.source.id) {
+                all_entities.push(m.source);
+            }
+            if !all_entities.iter().any(|e: &ai_launcher_core::memory::types::Entity| e.id == m.target.id) {
+                all_entities.push(m.target);
+            }
         }
     }
+
+    let entries: Vec<serde_json::Value> = all_entities.iter().map(entity_to_json).collect();
+    ok(&format!("{} knowledge entries", entries.len()), entries)
 }
 
 /// GET /api/knowledge/search?q=... — search knowledge.
-pub fn search_knowledge(query: &str, data_dir: &Path) -> HttpResponse {
-    let db_path = data_dir.join("knowledge.db");
-    match ai_launcher_core::knowledge::KnowledgeGraph::new(&db_path) {
-        Ok(kg) => match kg.search(query) {
-            Ok(entities) => {
-                let entries: Vec<serde_json::Value> = entities.iter().map(entity_to_json).collect();
-                ok(
-                    &format!("Knowledge search: {} ({} results)", query, entries.len()),
-                    entries,
-                )
+pub fn search_knowledge(query: &str, state: &crate::router::AppState) -> HttpResponse {
+    let kg = &state.memory_substrate.knowledge;
+    // We do a source OR target match on the query name
+    match kg.query_graph(ai_launcher_core::memory::types::GraphPattern {
+        source: Some(query.to_string()),
+        relation: None,
+        target: None,
+        max_depth: 1,
+    }) {
+        Ok(matches) => {
+            let mut all_entities = Vec::new();
+            for m in matches {
+                if !all_entities.iter().any(|e: &ai_launcher_core::memory::types::Entity| e.id == m.source.id) {
+                    all_entities.push(m.source);
+                }
+                if !all_entities.iter().any(|e: &ai_launcher_core::memory::types::Entity| e.id == m.target.id) {
+                    all_entities.push(m.target);
+                }
             }
-            Err(e) => {
-                eprintln!("Knowledge search error: {}", e);
-                ok(
-                    &format!("Knowledge search: {}", query),
-                    serde_json::json!([]),
-                )
-            }
-        },
+            let entries: Vec<serde_json::Value> = all_entities.iter().map(entity_to_json).collect();
+            ok(
+                &format!("Knowledge search: {} ({} results)", query, entries.len()),
+                entries,
+            )
+        }
         Err(e) => {
-            eprintln!("Knowledge graph error: {}", e);
+            eprintln!("Knowledge search error: {}", e);
             ok(
                 &format!("Knowledge search: {}", query),
                 serde_json::json!([]),
@@ -338,151 +330,152 @@ pub fn search_knowledge(query: &str, data_dir: &Path) -> HttpResponse {
 // ── Memory ──────────────────────────────────────────────────────────────────
 
 /// GET /api/memory — list all memory entries from real MemoryManager.
-pub fn list_memory(data_dir: &Path) -> HttpResponse {
-    let db_path = data_dir.join("memory.db");
-    match ai_launcher_core::memory::KvStore::new(&db_path) {
-        Ok(kv) => match kv.list_keys("") {
-            Ok(keys) => {
-                let mut entries = Vec::new();
-                for key in &keys {
-                    let value = kv.get(key).unwrap_or(None).unwrap_or_default();
-                    entries.push(serde_json::json!({
-                        "key": key,
-                        "value": value,
-                    }));
-                }
-                ok(&format!("{} memory entries", entries.len()), entries)
+pub fn list_memory(state: &crate::router::AppState) -> HttpResponse {
+    let kv = &state.memory_substrate.structured;
+    // Note: We need a default agent ID for global memory. Let's use a zero UUID.
+    let global_agent = ai_launcher_core::memory::types::AgentId(uuid::Uuid::nil());
+    
+    match kv.list_kv(global_agent) {
+        Ok(pairs) => {
+            let mut entries = Vec::new();
+            for (key, value) in pairs {
+                entries.push(serde_json::json!({
+                    "key": key,
+                    "value": value,
+                }));
             }
-            Err(e) => {
-                eprintln!("Memory list error: {}", e);
-                ok("0 memory entries", serde_json::json!([]))
-            }
-        },
+            ok(&format!("{} memory entries", entries.len()), entries)
+        }
         Err(e) => {
-            eprintln!("Memory store error: {}", e);
+            eprintln!("Memory list error: {}", e);
             ok("0 memory entries", serde_json::json!([]))
         }
     }
 }
 
 /// GET /api/memory/{key} — get a specific memory value.
-pub fn get_memory(key: &str, data_dir: &Path) -> HttpResponse {
-    let db_path = data_dir.join("memory.db");
-    match ai_launcher_core::memory::KvStore::new(&db_path) {
-        Ok(kv) => match kv.get(key) {
-            Ok(Some(value)) => ok(
-                &format!("Memory: {}", key),
-                serde_json::json!({
-                    "key": key,
-                    "value": value,
-                }),
-            ),
-            Ok(None) => err(404, &format!("Memory key not found: {}", key)),
-            Err(e) => err(500, &format!("Memory read error: {}", e)),
-        },
-        Err(e) => err(500, &format!("Memory store error: {}", e)),
-    }
-}
-
-// ── OpenViking ──────────────────────────────────────────────────────────────
-
-/// GET /api/viking/status — check OpenViking server status (process + connectivity).
-pub fn viking_status(
-    rt: &tokio::runtime::Runtime,
-    viking: &std::sync::Mutex<ai_launcher_core::openviking::VikingProcess>,
-) -> HttpResponse {
-    let process_running = match viking.lock() {
-        Ok(mut v) => v.is_running(),
-        Err(_) => false,
-    };
-
-    let client = ai_launcher_core::openviking::VikingClient::new("http://localhost:1933");
-    let healthy = rt.block_on(async { client.health().await.unwrap_or(false) });
-
-    if healthy {
-        let status = rt.block_on(async { client.status().await }).ok();
-        ok(
-            "OpenViking connected",
+pub fn get_memory(key: &str, state: &crate::router::AppState) -> HttpResponse {
+    let kv = &state.memory_substrate.structured;
+    let global_agent = ai_launcher_core::memory::types::AgentId(uuid::Uuid::nil());
+    
+    match kv.get(global_agent, key) {
+        Ok(Some(value)) => ok(
+            &format!("Memory: {}", key),
             serde_json::json!({
-                "connected": true,
-                "process_managed": process_running,
-                "status": status,
+                "key": key,
+                "value": value,
             }),
-        )
-    } else {
-        ok(
-            "OpenViking not available",
-            serde_json::json!({
-                "connected": false,
-                "process_managed": process_running,
-                "message": "OpenViking server not running. Use POST /api/viking/install then POST /api/viking/start"
-            }),
-        )
+        ),
+        Ok(None) => err(404, &format!("Memory key not found: {}", key)),
+        Err(e) => err(500, &format!("Memory read error: {}", e)),
     }
 }
 
-/// POST /api/viking/install — install OpenViking via uv/pip inside the sandbox.
-pub fn viking_install(
-    rt: &tokio::runtime::Runtime,
-    viking: &std::sync::Mutex<ai_launcher_core::openviking::VikingProcess>,
-) -> HttpResponse {
-    let v = match viking.lock() {
+/// POST /api/memory/remember
+pub fn remember_memory(req: &mut tiny_http::Request, state: &crate::router::AppState) -> HttpResponse {
+    let payload: serde_json::Value = match crate::response::parse_body(req) {
         Ok(v) => v,
-        Err(_) => return err(500, "Viking process lock failed"),
+        Err(resp) => return resp,
     };
-
-    match rt.block_on(v.ensure_installed()) {
-        Ok(true) => ok(
-            "OpenViking installed",
-            serde_json::json!({ "installed": true }),
-        ),
-        Ok(false) => err(
-            500,
-            "OpenViking installation failed. Ensure Python and uv/pip are available.",
-        ),
-        Err(e) => err(500, &format!("Installation error: {}", e)),
+    
+    let content = payload.get("content").and_then(|v| v.as_str()).unwrap_or("");
+    if content.is_empty() {
+        return err(400, "Missing 'content' field");
+    }
+    
+    let scope = payload.get("scope").and_then(|v| v.as_str()).unwrap_or("global");
+    
+    let agent_id = ai_launcher_core::memory::types::AgentId(uuid::Uuid::nil());
+    let source = ai_launcher_core::memory::types::MemorySource::User; 
+    let metadata = std::collections::HashMap::new();
+    
+    match state.memory_substrate.semantic.remember(agent_id, content, source, scope, metadata) {
+        Ok(id) => ok("Memory stored", serde_json::json!({ "id": id.0.to_string() })),
+        Err(e) => err(500, &format!("Failed to store memory: {}", e)),
     }
 }
 
-/// POST /api/viking/start — start the OpenViking server process.
-pub fn viking_start(
-    rt: &tokio::runtime::Runtime,
-    viking: &std::sync::Mutex<ai_launcher_core::openviking::VikingProcess>,
-) -> HttpResponse {
-    let mut v = match viking.lock() {
+/// POST /api/memory/recall
+pub fn recall_memory(req: &mut tiny_http::Request, state: &crate::router::AppState) -> HttpResponse {
+    let payload: serde_json::Value = match crate::response::parse_body(req) {
         Ok(v) => v,
-        Err(_) => return err(500, "Viking process lock failed"),
+        Err(resp) => return resp,
     };
+    
+    let query = payload.get("query").and_then(|v| v.as_str()).unwrap_or("");
+    let limit = payload.get("limit").and_then(|v| v.as_u64()).unwrap_or(5) as usize;
+    
+    match state.memory_substrate.semantic.recall(query, limit, None) {
+        Ok(fragments) => ok("Memories recalled", serde_json::json!(fragments)),
+        Err(e) => err(500, &format!("Failed to recall memories: {}", e)),
+    }
+}
 
-    match rt.block_on(v.start()) {
-        Ok(()) => {
-            let port = v.config().port;
-            ok(
-                "OpenViking server started",
-                serde_json::json!({
-                    "running": true,
-                    "port": port,
-                    "url": format!("http://localhost:{}", port),
-                }),
-            )
+/// GET /api/memory/sessions
+pub fn list_sessions(state: &crate::router::AppState) -> HttpResponse {
+    let agent_id = ai_launcher_core::memory::types::AgentId(uuid::Uuid::nil());
+    match state.memory_substrate.session.list_sessions(agent_id) {
+        Ok(sessions) => ok("Sessions listed", serde_json::json!(sessions)),
+        Err(e) => err(500, &format!("Failed to list sessions: {}", e)),
+    }
+}
+
+/// POST /api/memory/sessions
+pub fn create_session(state: &crate::router::AppState) -> HttpResponse {
+    let agent_id = ai_launcher_core::memory::types::AgentId(uuid::Uuid::nil());
+    match state.memory_substrate.session.create_session(agent_id) {
+        Ok(session) => ok("Session created", serde_json::json!({ "id": session.id.0.to_string() })),
+        Err(e) => err(500, &format!("Failed to create session: {}", e)),
+    }
+}
+
+/// GET /api/memory/sessions/{id}
+pub fn get_session(id: &str, state: &crate::router::AppState) -> HttpResponse {
+    if let Ok(session_uuid) = uuid::Uuid::parse_str(id) {
+        let session_id = ai_launcher_core::memory::types::SessionId(session_uuid);
+        match state.memory_substrate.session.get_session(session_id) {
+            Ok(Some(session)) => ok("Session loaded", serde_json::json!(session)),
+            Ok(None) => err(404, "Session not found"),
+            Err(e) => err(500, &format!("Failed to load session: {}", e)),
         }
-        Err(e) => err(500, &format!("Failed to start OpenViking: {}", e)),
+    } else {
+        err(400, "Invalid session ID format")
     }
 }
 
-/// POST /api/viking/stop — stop the OpenViking server process.
-pub fn viking_stop(
-    rt: &tokio::runtime::Runtime,
-    viking: &std::sync::Mutex<ai_launcher_core::openviking::VikingProcess>,
-) -> HttpResponse {
-    let mut v = match viking.lock() {
-        Ok(v) => v,
-        Err(_) => return err(500, "Viking process lock failed"),
-    };
+/// DELETE /api/memory/sessions/{id}
+pub fn delete_session(id: &str, state: &crate::router::AppState) -> HttpResponse {
+    if let Ok(session_uuid) = uuid::Uuid::parse_str(id) {
+        let session_id = ai_launcher_core::memory::types::SessionId(session_uuid);
+        match state.memory_substrate.session.delete_session(session_id) {
+            Ok(_) => ok("Session deleted", serde_json::json!({ "success": true })),
+            Err(e) => err(500, &format!("Failed to delete session: {}", e)),
+        }
+    } else {
+        err(400, "Invalid session ID format")
+    }
+}
 
-    rt.block_on(v.stop());
-    ok(
-        "OpenViking server stopped",
-        serde_json::json!({ "running": false }),
-    )
+/// POST /api/memory/consolidate
+pub fn consolidate_memory(state: &crate::router::AppState) -> HttpResponse {
+    match state.memory_substrate.consolidation.consolidate() {
+        Ok(report) => ok("Consolidation complete", serde_json::json!(report)),
+        Err(e) => err(500, &format!("Failed to consolidate memory: {}", e)),
+    }
+}
+
+/// GET /api/memory/status
+pub fn memory_status(state: &crate::router::AppState) -> HttpResponse {
+    let agent_id = ai_launcher_core::memory::types::AgentId(uuid::Uuid::nil());
+    // Get basic stats to show
+    let mut stats = serde_json::json!({
+        "status": "online",
+        "agent": agent_id.0.to_string(),
+    });
+    
+    if let Ok(sessions) = state.memory_substrate.session.list_sessions(agent_id) {
+        stats["total_sessions"] = serde_json::json!(sessions.len());
+    }
+    
+    ok("Memory status", stats)
 }

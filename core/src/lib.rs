@@ -22,9 +22,6 @@ pub mod tools;
 pub mod mcp;
 pub mod plugins;
 
-// OpenViking context database integration
-pub mod openviking;
-
 // Figma JSON Render Engine
 pub mod figma_json;
 

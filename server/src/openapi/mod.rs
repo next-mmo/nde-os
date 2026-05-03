@@ -3,7 +3,6 @@ pub mod catalog;
 pub mod apps;
 pub mod sandbox;
 pub mod agent;
-pub mod viking;
 pub mod kfa;
 pub mod translate;
 pub mod schemas;
@@ -19,7 +18,6 @@ pub fn openapi_spec() -> Value {
     paths.extend(apps::paths().as_object().unwrap().clone());
     paths.extend(sandbox::paths().as_object().unwrap().clone());
     paths.extend(agent::paths().as_object().unwrap().clone());
-    paths.extend(viking::paths().as_object().unwrap().clone());
     paths.extend(kfa::paths().as_object().unwrap().clone());
     paths.extend(translate::paths().as_object().unwrap().clone());
     paths.extend(whisper::paths().as_object().unwrap().clone());
@@ -43,7 +41,6 @@ pub fn openapi_spec() -> Value {
             {"name":"store","description":"Store: upload apps via folder, zip, or git URL"},
             {"name":"system","description":"Health & system info"},
             {"name":"agent","description":"Agent chat, conversations, and config"},
-            {"name":"viking","description":"OpenViking context database — install, start, stop, and status"},
             {"name":"kfa","description":"Khmer Forced Aligner — word-level timestamp alignment using wav2vec2 CTC ONNX"},
             {"name":"translate","description":"Standalone SRT translation service with pluggable providers"},
             {"name":"whisper","description":"Whisper audio transcription operations"}
