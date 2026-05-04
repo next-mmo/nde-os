@@ -29,6 +29,58 @@ pub struct RenderedFrame {
 
 use super::project::TimelineKeyframe;
 
+/// Returns `true` if `text` contains Khmer (U+1780..U+17FF) or other complex script
+/// codepoints that require HarfBuzz shaping and a font with proper OpenType tables.
+fn contains_complex_script(text: &str) -> bool {
+    text.chars().any(|c| {
+        let cp = c as u32;
+        // Khmer block U+1780–U+17FF
+        (0x1780..=0x17FF).contains(&cp)
+        // Thai block U+0E00–U+0E7F
+        || (0x0E00..=0x0E7F).contains(&cp)
+        // Arabic block U+0600–U+06FF
+        || (0x0600..=0x06FF).contains(&cp)
+        // Devanagari U+0900–U+097F
+        || (0x0900..=0x097F).contains(&cp)
+    })
+}
+
+/// Resolve the directory containing bundled font files (e.g. `NotoSansKhmer.ttf`).
+/// At runtime the binary lives in `desktop/src-tauri/target/…` so we walk up from
+/// `env::current_exe()` looking for `core/assets/fonts/`. As a fallback we also
+/// try the cargo workspace root relative to `CARGO_MANIFEST_DIR` at compile time.
+fn bundled_fonts_dir() -> Option<PathBuf> {
+    // 1. Try relative to current exe (production)
+    if let Ok(exe) = std::env::current_exe() {
+        for ancestor in exe.ancestors().take(8) {
+            let candidate = ancestor.join("core").join("assets").join("fonts");
+            if candidate.is_dir() {
+                return Some(candidate);
+            }
+        }
+    }
+    // 2. Try CARGO_MANIFEST_DIR (development / tests)
+    if let Ok(manifest) = std::env::var("CARGO_MANIFEST_DIR") {
+        let candidate = PathBuf::from(manifest).join("assets").join("fonts");
+        if candidate.is_dir() {
+            return Some(candidate);
+        }
+    }
+    None
+}
+
+/// Resolve the effective font name for ASS rendering.
+/// When the text contains complex script characters (Khmer, Thai, etc.) and the
+/// user hasn't explicitly selected a font, fall back to `Noto Sans Khmer` which
+/// ships in `core/assets/fonts/` and renders perfectly with libass/HarfBuzz.
+fn resolve_font_name(user_font: Option<&str>, text: &str) -> String {
+    match user_font {
+        Some(f) if !f.is_empty() => f.to_string(),
+        _ if contains_complex_script(text) => "Noto Sans Khmer".to_string(),
+        _ => "Arial".to_string(),
+    }
+}
+
 /// Statically evaluate a keyframe property at a specific absolute frame.
 fn eval_keyframe_at(
     prop: &str,
@@ -211,8 +263,10 @@ fn render_composed_frame(
     ]);
 
     let mut input_index = 1u32;
+    let mut text_index = 0u32;
     let mut filter_parts: Vec<String> = Vec::new();
     let mut last_label = "[0:v]".to_string();
+    let mut temp_files: Vec<PathBuf> = Vec::new();
 
     for item in items {
         match item.item_type {
@@ -298,13 +352,31 @@ fn render_composed_frame(
                 }
             }
             ItemType::Text => {
-                // Text rendering via drawtext filter.
+                // Text rendering via subtitles + overlay to guarantee HarfBuzz complex shaping (Khmer/Arabic).
                 let text = item.text.as_deref().unwrap_or("");
                 let font_size = item.font_size.unwrap_or(60.0) as u32;
-                let color = item.color.as_deref().unwrap_or("white");
-                let font_param = item.font_family.as_deref()
-                    .filter(|f| !f.is_empty())
-                    .map(|f| format!(":font='{}'" , f.replace('\'', "'\\''")))
+                let color_str = item.color.as_deref().unwrap_or("white");
+                
+                // Convert CSS color to ASS color format (&HAABBGGRR)
+                let ass_color = if color_str.starts_with('#') && color_str.len() >= 7 {
+                    let r = &color_str[1..3];
+                    let g = &color_str[3..5];
+                    let b = &color_str[5..7];
+                    format!("&H00{}{}{}", b, g, r)
+                } else {
+                    match color_str.to_lowercase().as_str() {
+                        "black" => "&H00000000".to_string(),
+                        "red" => "&H000000FF".to_string(),
+                        "green" => "&H0000FF00".to_string(),
+                        "blue" => "&H00FF0000".to_string(),
+                        "yellow" => "&H0000FFFF".to_string(),
+                        _ => "&H00FFFFFF".to_string(),
+                    }
+                };
+
+                let font_name = resolve_font_name(item.font_family.as_deref(), text);
+                let fonts_dir_param = bundled_fonts_dir()
+                    .map(|d| format!(":fontsdir='{}'", d.to_string_lossy().replace('\\', "/").replace(':', "\\:")))
                     .unwrap_or_default();
                 
                 let base_x = item.transform.as_ref().and_then(|t| t.x).unwrap_or((res.width / 2) as f64);
@@ -313,13 +385,53 @@ fn render_composed_frame(
                 let x = eval_keyframe_at("x", base_x, &item.keyframes, item.from, frame);
                 let y = eval_keyframe_at("y", base_y, &item.keyframes, item.from, frame);
 
-                let text_label = format!("[t{input_index}]");
-                // Escape single quotes for FFmpeg.
-                let escaped_text = text.replace('\'', "'\\''");
+                let text_label = format!("[t{text_index}]");
+                
+                // Write text to an ASS file to prevent Windows CLI from mangling complex unicode (Khmer)
+                // Alignment 7 = Top-Left, matching default drawtext behavior.
+                let temp_ass = out.parent().unwrap_or_else(|| Path::new("")).join(format!("text_{}_{}.ass", frame, text_index));
+                temp_files.push(temp_ass.clone());
+                let ass_content = format!(
+                    "[Script Info]\n\
+                    ScriptType: v4.00+\n\
+                    PlayResX: {w}\n\
+                    PlayResY: {h}\n\
+                    \n\
+                    [V4+ Styles]\n\
+                    Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\n\
+                    Style: Default,{font_name},{font_size},{ass_color},&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,0,0,7,0,0,0,1\n\
+                    \n\
+                    [Events]\n\
+                    Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n\
+                    Dialogue: 0,0:00:00.00,9:00:00.00,Default,,0,0,0,,{text}\n",
+                    w = res.width,
+                    h = res.height,
+                    font_name = font_name,
+                    font_size = font_size,
+                    ass_color = ass_color,
+                    text = text.replace('\n', "\\N")
+                );
+
+                let _ = std::fs::write(&temp_ass, ass_content);
+                let escaped_path = temp_ass.to_string_lossy().replace('\\', "/").replace(':', "\\:");
+
+                // Render subtitles on a transparent dummy stream, then overlay with evaluated x/y.
                 filter_parts.push(format!(
-                    "{last_label}drawtext=text='{escaped_text}':fontsize={font_size}:fontcolor={color}:x={x:.0}:y={y:.0}{font_param}{text_label}"
+                    "color=c=black@0.0:s={w}x{h}:r=30:d=1,format=rgba[txtbg{idx}];\
+                     [txtbg{idx}]ass='{escaped_path}':alpha=1{fonts_dir}[txtlayer{idx}];\
+                     {last_label}[txtlayer{idx}]overlay=x={x:.0}:y={y:.0}{text_label}",
+                    w = res.width,
+                    h = res.height,
+                    idx = text_index,
+                    escaped_path = escaped_path,
+                    fonts_dir = fonts_dir_param,
+                    last_label = last_label,
+                    x = x,
+                    y = y,
+                    text_label = text_label
                 ));
                 last_label = text_label;
+                text_index += 1;
             }
             _ => {
                 // Shape, Adjustment, Composition — skip for now.
@@ -352,6 +464,10 @@ fn render_composed_frame(
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         bail!("ffmpeg compose failed: {stderr}");
+    }
+
+    for temp in temp_files {
+        let _ = std::fs::remove_file(temp);
     }
 
     Ok(())
@@ -512,9 +628,11 @@ pub fn export_video(
     ]);
 
     let mut input_idx = 1u32;
+    let mut text_idx = 0u32;
     let mut filter_parts: Vec<String> = Vec::new();
     let mut last_video = "[0:v]".to_string();
     let mut audio_labels: Vec<String> = Vec::new();
+    let mut temp_files: Vec<PathBuf> = Vec::new();
 
     // Sort items by layer order (from position).
     let mut sorted: Vec<&TimelineItem> = timeline.items.iter().collect();
@@ -666,14 +784,29 @@ pub fn export_video(
             }
             ItemType::Text => {
                 let text = item.text.as_deref().unwrap_or("");
-                if text.is_empty() {
-                    continue;
-                }
                 let fsize = item.font_size.unwrap_or(60.0) as u32;
-                let color = item.color.as_deref().unwrap_or("white");
-                let font_param = item.font_family.as_deref()
-                    .filter(|f| !f.is_empty())
-                    .map(|f| format!(":font='{}'" , f.replace('\'', "'\\''")))
+                let color_str = item.color.as_deref().unwrap_or("white");
+                
+                // Convert CSS color to ASS color format (&HAABBGGRR)
+                let ass_color = if color_str.starts_with('#') && color_str.len() >= 7 {
+                    let r = &color_str[1..3];
+                    let g = &color_str[3..5];
+                    let b = &color_str[5..7];
+                    format!("&H00{}{}{}", b, g, r)
+                } else {
+                    match color_str.to_lowercase().as_str() {
+                        "black" => "&H00000000".to_string(),
+                        "red" => "&H000000FF".to_string(),
+                        "green" => "&H0000FF00".to_string(),
+                        "blue" => "&H00FF0000".to_string(),
+                        "yellow" => "&H0000FFFF".to_string(),
+                        _ => "&H00FFFFFF".to_string(),
+                    }
+                };
+
+                let font_name = resolve_font_name(item.font_family.as_deref(), text);
+                let fonts_dir_param = bundled_fonts_dir()
+                    .map(|d| format!(":fontsdir='{}'", d.to_string_lossy().replace('\\', "/").replace(':', "\\:")))
                     .unwrap_or_default();
                 
                 let base_x = item.transform.as_ref().and_then(|t| t.x).unwrap_or((res.width / 2) as f64);
@@ -685,12 +818,56 @@ pub fn export_video(
 
                 let t1 = (item.from + item.duration_in_frames) as f64 / fps as f64;
 
-                let escaped = text.replace('\'', "'\\''").replace(':', "\\:");
-                let lbl = format!("[txt{input_idx}]");
+                let temp_ass = output_path.parent().unwrap_or_else(|| Path::new("")).join(format!("export_text_{}_{}.ass", text_idx, input_idx));
+                temp_files.push(temp_ass.clone());
+                let ass_content = format!(
+                    "[Script Info]\n\
+                    ScriptType: v4.00+\n\
+                    PlayResX: {w}\n\
+                    PlayResY: {h}\n\
+                    \n\
+                    [V4+ Styles]\n\
+                    Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\n\
+                    Style: Default,{font_name},{font_size},{ass_color},&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,0,0,7,0,0,0,1\n\
+                    \n\
+                    [Events]\n\
+                    Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n\
+                    Dialogue: 0,0:00:00.00,9:00:00.00,Default,,0,0,0,,{text}\n",
+                    w = res.width,
+                    h = res.height,
+                    font_name = font_name,
+                    font_size = fsize,
+                    ass_color = ass_color,
+                    text = text.replace('\n', "\\N")
+                );
+
+                let _ = std::fs::write(&temp_ass, ass_content);
+                let escaped_path = temp_ass.to_string_lossy().replace('\\', "/").replace(':', "\\:");
+
+                let lbl = format!("[txt{text_idx}]");
+                
+                // Render subtitles on a transparent dummy stream, then overlay with evaluated x/y expressions.
+                // We use enable='between(t,...)' on the overlay filter.
                 filter_parts.push(format!(
-                    "{last_video}drawtext=text='{escaped}':fontsize={fsize}:fontcolor={color}:x='{x_expr}':y='{y_expr}':enable='between(t,{item_start:.6},{t1:.6})'{font_param}{lbl}"
+                    "color=c=black@0.0:s={w}x{h}:r={fps}:d={dur:.6},format=rgba[txtbg{idx}];\
+                     [txtbg{idx}]ass='{escaped_path}':alpha=1{fonts_dir}[txtlayer{idx}];\
+                     {last_video}[txtlayer{idx}]overlay=x='{x_expr}':y='{y_expr}':enable='between(t,{item_start:.6},{t1:.6})'{lbl}",
+                    w = res.width,
+                    h = res.height,
+                    fps = fps,
+                    dur = total_duration,
+                    idx = text_idx,
+                    escaped_path = escaped_path,
+                    fonts_dir = fonts_dir_param,
+                    last_video = last_video,
+                    x_expr = x_expr,
+                    y_expr = y_expr,
+                    item_start = item_start,
+                    t1 = t1,
+                    lbl = lbl
                 ));
                 last_video = lbl;
+                text_idx += 1;
             }
             _ => {}
         }
@@ -785,6 +962,11 @@ pub fn export_video(
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
+        
+        for temp in temp_files {
+            let _ = std::fs::remove_file(temp);
+        }
+
         // Retry without audio if audio extraction failed.
         if has_audio && stderr.contains("does not contain any stream") {
             return export_video_no_audio(project, config, ffmpeg_bin, on_progress);
@@ -793,6 +975,10 @@ pub fn export_video(
             "export failed: {}",
             stderr.chars().take(500).collect::<String>()
         );
+    }
+
+    for temp in temp_files {
+        let _ = std::fs::remove_file(temp);
     }
 
     Ok(output_path)
@@ -836,8 +1022,10 @@ fn export_video_no_audio(
     ]);
 
     let mut input_idx = 1u32;
+    let mut text_idx = 0u32;
     let mut filter_parts: Vec<String> = Vec::new();
     let mut last_video = "[0:v]".to_string();
+    let mut temp_files: Vec<PathBuf> = Vec::new();
 
     let mut sorted: Vec<&TimelineItem> = timeline.items.iter().collect();
     sorted.sort_by_key(|i| i.from);
@@ -916,14 +1104,29 @@ fn export_video_no_audio(
             }
             ItemType::Text => {
                 let text = item.text.as_deref().unwrap_or("");
-                if text.is_empty() {
-                    continue;
-                }
                 let fsize = item.font_size.unwrap_or(60.0) as u32;
-                let color = item.color.as_deref().unwrap_or("white");
-                let font_param = item.font_family.as_deref()
-                    .filter(|f| !f.is_empty())
-                    .map(|f| format!(":font='{}'" , f.replace('\'', "'\\''")))
+                let color_str = item.color.as_deref().unwrap_or("white");
+                
+                // Convert CSS color to ASS color format (&HAABBGGRR)
+                let ass_color = if color_str.starts_with('#') && color_str.len() >= 7 {
+                    let r = &color_str[1..3];
+                    let g = &color_str[3..5];
+                    let b = &color_str[5..7];
+                    format!("&H00{}{}{}", b, g, r)
+                } else {
+                    match color_str.to_lowercase().as_str() {
+                        "black" => "&H00000000".to_string(),
+                        "red" => "&H000000FF".to_string(),
+                        "green" => "&H0000FF00".to_string(),
+                        "blue" => "&H00FF0000".to_string(),
+                        "yellow" => "&H0000FFFF".to_string(),
+                        _ => "&H00FFFFFF".to_string(),
+                    }
+                };
+
+                let font_name = resolve_font_name(item.font_family.as_deref(), text);
+                let fonts_dir_param = bundled_fonts_dir()
+                    .map(|d| format!(":fontsdir='{}'", d.to_string_lossy().replace('\\', "/").replace(':', "\\:")))
                     .unwrap_or_default();
                 
                 let base_x = item.transform.as_ref().and_then(|t| t.x).unwrap_or((res.width / 2) as f64);
@@ -935,12 +1138,56 @@ fn export_video_no_audio(
 
                 let t1 = (item.from + item.duration_in_frames) as f64 / fps as f64;
 
-                let escaped = text.replace('\'', "'\\''").replace(':', "\\:");
-                let lbl = format!("[txt{input_idx}]");
+                let temp_ass = output_path.parent().unwrap_or_else(|| Path::new("")).join(format!("export_noaudio_text_{}_{}.ass", text_idx, input_idx));
+                temp_files.push(temp_ass.clone());
+                let ass_content = format!(
+                    "[Script Info]\n\
+                    ScriptType: v4.00+\n\
+                    PlayResX: {w}\n\
+                    PlayResY: {h}\n\
+                    \n\
+                    [V4+ Styles]\n\
+                    Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\n\
+                    Style: Default,{font_name},{font_size},{ass_color},&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,0,0,7,0,0,0,1\n\
+                    \n\
+                    [Events]\n\
+                    Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n\
+                    Dialogue: 0,0:00:00.00,9:00:00.00,Default,,0,0,0,,{text}\n",
+                    w = res.width,
+                    h = res.height,
+                    font_name = font_name,
+                    font_size = fsize,
+                    ass_color = ass_color,
+                    text = text.replace('\n', "\\N")
+                );
+
+                let _ = std::fs::write(&temp_ass, ass_content);
+                let escaped_path = temp_ass.to_string_lossy().replace('\\', "/").replace(':', "\\:");
+
+                let lbl = format!("[txt{text_idx}]");
+                
+                // Render subtitles on a transparent dummy stream, then overlay with evaluated x/y expressions.
+                // We use enable='between(t,...)' on the overlay filter.
                 filter_parts.push(format!(
-                    "{last_video}drawtext=text='{escaped}':fontsize={fsize}:fontcolor={color}:x='{x_expr}':y='{y_expr}':enable='between(t,{item_start:.6},{t1:.6})'{font_param}{lbl}"
+                    "color=c=black@0.0:s={w}x{h}:r={fps}:d={dur:.6},format=rgba[txtbg{idx}];\
+                     [txtbg{idx}]ass='{escaped_path}':alpha=1{fonts_dir}[txtlayer{idx}];\
+                     {last_video}[txtlayer{idx}]overlay=x='{x_expr}':y='{y_expr}':enable='between(t,{item_start:.6},{t1:.6})'{lbl}",
+                    w = res.width,
+                    h = res.height,
+                    fps = fps,
+                    dur = total_duration,
+                    idx = text_idx,
+                    escaped_path = escaped_path,
+                    fonts_dir = fonts_dir_param,
+                    last_video = last_video,
+                    x_expr = x_expr,
+                    y_expr = y_expr,
+                    item_start = item_start,
+                    t1 = t1,
+                    lbl = lbl
                 ));
                 last_video = lbl;
+                text_idx += 1;
             }
             _ => {}
         }
@@ -1002,10 +1249,17 @@ fn export_video_no_audio(
         .context("ffmpeg no-audio export failed")?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
+        for temp in &temp_files {
+            let _ = std::fs::remove_file(temp);
+        }
         bail!(
             "export failed (no-audio fallback): {}",
             stderr.chars().take(500).collect::<String>()
         );
+    }
+
+    for temp in temp_files {
+        let _ = std::fs::remove_file(temp);
     }
 
     Ok(output_path)
@@ -1399,5 +1653,112 @@ mod tests {
             assert_eq!(h, 1080);
             println!("✅ Frame {frame}: {w}x{h}");
         }
+    }
+
+    // ─── Khmer Text Export (E2E) ────────────────────────────────────────
+
+    #[test]
+    fn export_khmer_text_video() {
+        use crate::freecut::project::ExportConfig;
+
+        let tmp = TempDir::new().unwrap();
+        let output_mp4 = tmp.path().join("khmer-export.mp4");
+
+        let mut project = make_project(1280, 720, 30);
+        project.duration = 60; // 2 seconds at 30fps
+        project.timeline = Some(ProjectTimeline {
+            tracks: vec![Track {
+                id: "t1".to_string(),
+                name: "Khmer Text".to_string(),
+                kind: Some(crate::freecut::project::TrackKind::Video),
+                height: 48.0,
+                locked: false,
+                visible: true,
+                muted: false,
+                solo: false,
+                volume: None,
+                color: None,
+                order: 0,
+                parent_track_id: None,
+                is_group: false,
+                is_collapsed: false,
+            }],
+            items: vec![TimelineItem {
+                id: "khmer-text".to_string(),
+                track_id: "t1".to_string(),
+                from: 0,
+                duration_in_frames: 60,
+                label: "Khmer".to_string(),
+                item_type: ItemType::Text,
+                media_id: None,
+                origin_id: None,
+                linked_group_id: None,
+                composition_id: None,
+                trim_start: None,
+                trim_end: None,
+                source_start: None,
+                source_end: None,
+                source_duration: None,
+                source_fps: None,
+                speed: None,
+                transform: Some(TransformProperties {
+                    x: Some(100.0),
+                    y: Some(300.0),
+                    width: None,
+                    height: None,
+                    scale: Some(1.0),
+                    rotation: None,
+                    opacity: Some(1.0),
+                    corner_radius: None,
+                    aspect_ratio_locked: None,
+                }),
+                volume: None,
+                audio_fade_in: None,
+                audio_fade_out: None,
+                fade_in: None,
+                fade_out: None,
+                effects: vec![],
+                blend_mode: None,
+                keyframes: vec![],
+                src: None,
+                thumbnail_url: None,
+                source_width: None,
+                source_height: None,
+                waveform_data: None,
+                text: Some("\u{179F}\u{17BD}\u{179F}\u{17D2}\u{178F}\u{17B8} \u{1781}\u{17D2}\u{1798}\u{17C2}\u{179A}".to_string()),
+                font_size: Some(72.0),
+                font_family: None, // should auto-select Noto Sans Khmer
+                color: Some("white".to_string()),
+                text_align: None,
+                shape_type: None,
+                fill_color: None,
+                stroke_color: None,
+                stroke_width: None,
+                composition_width: None,
+                composition_height: None,
+            }],
+            ..Default::default()
+        });
+
+        let config = ExportConfig {
+            output_path: output_mp4.to_string_lossy().to_string(),
+            codec: "libx264".to_string(),
+            width: 1280,
+            height: 720,
+            fps: 30,
+            quality: "high".to_string(),
+            hw_accel: None,
+        };
+
+        let result = export_video(&project, &config, None, |_cur, _total| {});
+        assert!(result.is_ok(), "export_video failed: {:?}", result.err());
+
+        let path = result.unwrap();
+        assert!(path.exists(), "exported MP4 must exist");
+
+        let size = std::fs::metadata(&path).unwrap().len();
+        assert!(size > 1000, "exported MP4 too small ({size} bytes)");
+
+        println!("✅ Khmer export: {} ({} bytes)", path.display(), size);
     }
 }
